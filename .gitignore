@@ -62,5 +62,17 @@ terraform.rc
 mywallet.wallet
 .DS_Store
 
-# Machine-local Claude Code settings (.claude/settings.json stays tracked).
-.claude/settings.local.json
+# --- Claude Code local config ------------------------------------------------
+# Machine-local, and not shareable. settings.json is a permission allowlist
+# built up from one operator's real sessions, so it accumulates the identifiers
+# those commands touched: the state bucket (which embeds the account ID), EC2
+# instance ids, internal RPC hostnames, a deployed contract address, and local
+# paths including the operator's ~/.ssh. None of that is useful to anyone else
+# cloning this repo, and CD-10 says it is never committed.
+#
+# NOTE THE **/ — a pattern containing a slash is anchored to THIS file's
+# directory, so a bare `.claude/settings.json` would match only the repo root
+# and would silently miss sbsa_besu/.claude/settings.json. Same trap as the
+# tfvars rule above.
+**/.claude/settings.json
+**/.claude/settings.local.json
