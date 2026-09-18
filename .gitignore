@@ -76,3 +76,11 @@ mywallet.wallet
 # tfvars rule above.
 **/.claude/settings.json
 **/.claude/settings.local.json
+
+# --- The bank's reference pipelines --------------------------------------------
+# sample1.yaml / sample2.yaml are copies of the bank's own GitHub Actions
+# workflows, kept locally and read for SHAPE only (CICD_DESIGN_NOTES.md, CD-10).
+# They carry live values — an AWS account ID, an Octopus space name — that this
+# repo never commits. The leading slash anchors the rule to the repo root on
+# purpose, so it cannot swallow a legitimately named file deeper in the tree.
+/sample*.yaml
