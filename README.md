@@ -59,6 +59,8 @@ private key; the rules and the check to run before adding one are in the root
 [`.gitignore`](.gitignore). Plans embed the AWS account ID, which is why this
 repository stays private.
 
-Also at the root: [`CHART_IMAGES.md`](CHART_IMAGES.md), the 15 images the five
+Also at the root: [`.github/workflows/`](.github/workflows/) — GitHub Actions only
+reads workflows from the repository root, so the platform's `supply-chain.yml` lives
+here and runs with `working-directory: sbsa_besu`; and [`CHART_IMAGES.md`](CHART_IMAGES.md), the 15 images the five
 upstream Helm charts pull on their own — the most likely cause of a failed first
 deployment in an air-gapped VPC, and the one gap `verify-images.sh` does not cover.

@@ -613,6 +613,10 @@ questions CQ-1..CQ-8, R-1..R-10). Load it before touching a workflow or an Octop
   Actions never touches a cluster or an AWS environment (CD-2) — it mirrors, packages
   and publishes. Actions runners have internet; the VPC does not. That boundary is the
   control, not ceremony.
+- **The workflows live at the MONOREPO root**, `../.github/workflows/`, not under
+  `sbsa_besu/` — GitHub ignores any other location. Each job sets
+  `working-directory: sbsa_besu` and its path filters carry the `sbsa_besu/` prefix;
+  the scripts resolve their own files from `${BASH_SOURCE[0]}`, so they need nothing.
 - **Three Octopus projects** (CD-4): `besu-infra` (Terraform, in apply order),
   `besu-workloads` (in-cluster Helm), and **`besu-validators` — separate on purpose**.
 - **THE VALIDATOR RELEASE IS NEVER DEPLOYED BY A HELM STEP** (CD-5). A standard "Deploy

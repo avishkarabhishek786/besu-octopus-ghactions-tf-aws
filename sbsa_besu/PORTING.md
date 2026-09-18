@@ -183,7 +183,12 @@ record rather than an omission. All four guard paths behaviour-tested.
 **Still to do in item 4** (see the CT-3a update below for the full list):
 - Push the 5 upstream charts to ECR as OCI artefacts and repoint the `helm_release`
   blocks at `oci://`
-- `modules/registry` and `scripts/supply-chain/` — the mirror itself
+- ~~`scripts/supply-chain/` — the mirror itself~~ ✅ built 2026-09-09 (CD-46); workflow at
+  the monorepo root since 2026-09-18. **Never yet run** — needs the GitHub-side wiring
+  (variables, secrets, OIDC role) and a first `workflow_dispatch --dry-run`.
+- ~~`modules/registry`~~ — **deliberately not built** (CD-27): ECR is a central
+  shared-services account in the bank, so repositories are requested, not created.
+  In the personal environment `mirror.sh --create-repos` creates them.
 
 *(A `dockerconfigjson` pull secret is no longer needed: kubelet's ECR credential
 provider authenticates from the node role.)*

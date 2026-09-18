@@ -20,6 +20,13 @@
 # NO BANK-SPECIFIC VALUE APPEARS HERE (CD-10). Registry host, repository prefix,
 # region, role ARN and runner labels are all repository variables and secrets,
 # so moving from a personal environment to the bank is configuration only.
+#
+# WHERE THIS FILE LIVES. GitHub only runs workflows from .github/workflows/ at
+# the REPOSITORY ROOT, and since 2026-09-18 the root is the monorepo, not the
+# platform. The platform is the sbsa_besu/ subtree, so every step below runs
+# with working-directory sbsa_besu (the `defaults` block) and every path
+# filter carries the sbsa_besu/ prefix. The scripts themselves resolve their
+# files from their own location, not the cwd, so they need no change.
 # =============================================================================
 name: supply-chain
 
@@ -45,8 +52,8 @@ on:
     # every merge (CD-3). Mirroring is idempotent but not free — it pulls from
     # rate-limited public registries — so re-running it should be a decision.
     paths:
-      - "scripts/supply-chain/mirror.manifest"
-      - "scripts/supply-chain/mirror.sh"
+      - "sbsa_besu/scripts/supply-chain/mirror.manifest"
+      - "sbsa_besu/scripts/supply-chain/mirror.sh"
       - ".github/workflows/supply-chain.yml"
 
 permissions:
@@ -95,6 +102,13 @@ jobs:
     # ledger VPC is the whole boundary (CD-2).
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS) }}
     timeout-minutes: 45
+
+    # The platform is a subtree of the monorepo (see the header). Every `run:`
+    # below is written relative to sbsa_besu/, as it was when that directory
+    # was the repository root.
+    defaults:
+      run:
+        working-directory: sbsa_besu
 
     steps:
       - uses: actions/checkout@v7
