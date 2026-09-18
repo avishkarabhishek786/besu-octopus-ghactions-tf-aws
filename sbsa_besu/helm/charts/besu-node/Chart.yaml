@@ -1,0 +1,13 @@
+apiVersion: v2
+name: besu-node
+description: >-
+  A single Besu node, parameterized by role (validator | bootnode | rpc).
+  Deployed once PER NODE (replicas=1) so each pod gets a per-node
+  SecretProviderClass that mounts ONLY its own secp256k1 key (least privilege).
+  Builds the static-nodes list and the node-local permissioning allowlist from
+  the genesis ConfigMap, runs Besu (QBFT) with an encrypted gp3 data volume, a
+  PodDisruptionBudget protecting QBFT quorum (validators), and topology spread
+  across nodes/AZs. mTLS on the RPC plane is a hook here, wired in stage 4.
+type: application
+version: 0.1.2
+appVersion: "26.6.1"

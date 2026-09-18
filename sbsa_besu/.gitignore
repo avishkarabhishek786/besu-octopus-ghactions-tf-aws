@@ -1,0 +1,46 @@
+# =============================================================================
+# .gitignore — keep secrets, state, and machine-local Terraform junk out of git.
+# =============================================================================
+
+# --- Terraform working dirs & state (NEVER commit) ---------------------------
+# State can contain plaintext secrets (CA private key, generated passwords),
+# and .terraform/ holds large machine-specific provider binaries.
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+*.tfplan
+*.tfplan.*
+
+# Keep the dependency lock file committed for reproducible provider versions.
+!**/.terraform.lock.hcl
+
+# --- Secrets in tfvars -------------------------------------------------------
+# REAL prod tfvars are never committed. The *.tfvars.example templates ARE
+# committed — they carry no real keys. (*.tfvars.example is not matched by
+# *.tfvars, so examples stay tracked.)
+# NOTE: patterns with a slash are anchored to THIS file's dir (repo root), so the
+# bare `environments/prod/...` form did NOT match terraform/environments/...; use
+# **/ so real prod tfvars are ignored wherever they live. (.example stays tracked
+# — *.tfvars.example is not matched by *.tfvars.)
+#
+# ENVIRONMENT-NAME-AGNOSTIC ON PURPOSE. This used to enumerate the environments
+# (`prod`, then `dev`), and the 2026-09-09 rename dev -> sit + new uat silently
+# un-ignored the real tfvars: still untracked, so `git status` looked normal, but
+# one `git add -A` away from committing deployment values. A wildcard cannot be
+# outrun by the next rename.
+**/environments/*/*.tfvars
+# Any ad-hoc secrets override files.
+*secrets*.tfvars
+*.auto.tfvars
+
+# --- Local tooling -----------------------------------------------------------
+.terraformrc
+terraform.rc
+*.pem
+*.key
+*.p12
+.DS_Store
+mywallet.wallet

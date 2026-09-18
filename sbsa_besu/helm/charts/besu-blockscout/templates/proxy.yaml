@@ -1,0 +1,92 @@
+# nginx single-origin proxy — the ONE entry point for the explorer. Serves the
+# frontend on / and proxies /api, /socket, etc. to the backend, so the UI and API
+# share an origin (no CORS) and the whole thing works through ONE port-forward.
+# Routing mirrors Blockscout's official docker-compose proxy (v11.2.1). Upstreams
+# are ClusterIP service VIPs (stable), so static proxy_pass needs no resolver.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "blockscout.proxyName" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockscout.labels" . | nindent 4 }}
+data:
+  nginx.conf: |
+    worker_processes auto;
+    events { worker_connections 1024; }
+    http {
+      map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+      server {
+        listen {{ .Values.proxy.port }};
+        server_name _;
+        client_max_body_size 50m;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+
+        # Backend (API + websocket + metadata). The (?!-docs$) keeps /api-docs on
+        # the frontend.
+        location ~ ^/(api(?!-docs$)|socket|sitemap\.xml|public-metrics|metadata|auth/auth0|auth/auth0/callback|auth/logout) {
+          proxy_pass http://{{ include "blockscout.backendHost" . }}:{{ .Values.blockscout.port }};
+        }
+        # Everything else -> frontend.
+        location / {
+          proxy_pass http://{{ include "blockscout.frontendHost" . }}:{{ .Values.frontend.port }};
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "blockscout.proxyName" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockscout.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "blockscout.proxyName" . }}
+  ports:
+    - { name: http, port: {{ .Values.proxy.port }}, targetPort: {{ .Values.proxy.port }} }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "blockscout.proxyName" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockscout.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.proxy.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "blockscout.proxyName" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "blockscout.proxyName" . }}
+        {{- include "blockscout.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: nginx
+          image: {{ .Values.proxy.image | quote }}
+          ports:
+            - { name: http, containerPort: {{ .Values.proxy.port }} }
+          volumeMounts:
+            - { name: conf, mountPath: /etc/nginx/nginx.conf, subPath: nginx.conf, readOnly: true }
+          readinessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.proxy.resources | nindent 12 }}
+      volumes:
+        - name: conf
+          configMap:
+            name: {{ include "blockscout.proxyName" . }}

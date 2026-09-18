@@ -1,0 +1,5 @@
+# besu-rpc-edge values. Terraform (modules/besu) injects targetGroupArn.
+namespace: besu
+rpcPort: 8545
+# Target group ARN from modules/rpc-access (the internal NLB's TG).
+targetGroupArn: ""

@@ -1,0 +1,241 @@
+# =============================================================================
+# supply-chain.yml — mirror every third-party artefact into our private ECR.
+# -----------------------------------------------------------------------------
+# ECR is a registry, not a proxy. Pull-through cache needs an internet route on
+# the first pull when ECR is reached through an interface endpoint, and the
+# ledger VPC has none — so nothing arrives in ECR by accident. This workflow is
+# the only way anything gets there.
+#
+# IT NEVER TOUCHES A CLUSTER OR AN ENVIRONMENT (CD-2). It mirrors, and stops.
+# Octopus deploys. That split is not ceremony: this runner has internet and the
+# VPC does not, so a runner that could deploy would put an internet-connected
+# agent inside the air-gap. The boundary IS the control.
+#
+# PUSH IS PUBLIC, PULL IS PRIVATE. ECR has public service endpoints, so this
+# runner pushes from outside the VPC with no network change of any kind. The
+# ecr.api/ecr.dkr interface endpoints exist for the other direction. If anyone
+# reads this file and concludes the pipeline needs NAT or an egress proxy, they
+# have it backwards.
+#
+# NO BANK-SPECIFIC VALUE APPEARS HERE (CD-10). Registry host, repository prefix,
+# region, role ARN and runner labels are all repository variables and secrets,
+# so moving from a personal environment to the bank is configuration only.
+# =============================================================================
+name: supply-chain
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Resolve and report, copy nothing"
+        type: boolean
+        default: false
+      scope:
+        description: "What to mirror"
+        type: choice
+        options: [all, images-only, charts-only]
+        default: all
+      create_repos:
+        description: "Create missing ECR repositories (needs ecr:CreateRepository, which we may not hold)"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    # DELIBERATELY NARROW. The mirror runs when a PINNED VERSION CHANGES, not on
+    # every merge (CD-3). Mirroring is idempotent but not free — it pulls from
+    # rate-limited public registries — so re-running it should be a decision.
+    paths:
+      - "scripts/supply-chain/mirror.manifest"
+      - "scripts/supply-chain/mirror.sh"
+      - ".github/workflows/supply-chain.yml"
+
+permissions:
+  contents: read
+  id-token: write # OIDC federation to AWS. No long-lived keys (CD-9, H38).
+
+# Two concurrent mirrors would race on the same repositories and, with tag
+# immutability enabled, the loser fails confusingly rather than harmlessly.
+concurrency:
+  group: supply-chain-mirror
+  cancel-in-progress: false
+
+env:
+  # crane is pinned HERE and not in scripts/runner/runner-tools.manifest, on
+  # purpose: CI is its only consumer — the in-VPC runner never mirrors — and
+  # adding it to the manifest would ship it in the runner's S3 bundle for
+  # nothing. Any version more than one host depends on (helm, terraform) lives
+  # in the manifest instead and is read at run time. The rule is written out in
+  # scripts/lib/common.sh.
+  #
+  # Resolved from upstream releases 2026-09-09, not assumed. Mirroring MUST be
+  # digest-preserving: docker pull/tag/push re-creates the manifest and changes
+  # the digest (D-18), silently invalidating every H38 pin. crane also streams
+  # blob-to-blob with no daemon, so 23 images do not need 23 images' worth of
+  # disk on a shared runner — and it is the only option that works at all on a
+  # runner pod without a privileged Docker daemon (CD-49).
+  CRANE_VERSION: v0.22.1
+
+jobs:
+  mirror:
+    # The cloud team operates the runner estate and asked us not to stand up our
+    # own (CD-26). Labels are a repository variable so this file carries no
+    # bank-specific value: set CI_RUNNER_LABELS to a JSON array, e.g.
+    #   ["self-hosted","linux","x64"]
+    #
+    # fromJSON, not a bare ${{ vars.X }}: a repository variable is always a
+    # STRING, and self-hosted runners are selected by several labels at once
+    # (all must match). The variable must therefore hold valid JSON — a bare
+    # `self-hosted` fails during expression evaluation and the job never starts.
+    #
+    # PICK LABELS FOR THE POOL THAT EXISTS, NOT FOR WHAT THE JOB DEPLOYS TO. A
+    # `kubernetes` label describes the runner, not the target; this job never
+    # touches a cluster, it pulls from public registries and pushes to ECR.
+    # Choosing a runner *because* it is near Kubernetes is the first step toward
+    # "the runner could just deploy it" — and Actions holding no path into the
+    # ledger VPC is the whole boundary (CD-2).
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS) }}
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # -----------------------------------------------------------------------
+      # Fail fast and for free, before touching AWS or any public registry.
+      # -----------------------------------------------------------------------
+      # The 8 platform images live in two places: var.container_images (what
+      # Terraform deploys) and mirror.manifest (what we mirror). If they
+      # disagree, the mirror copies a version the cluster will never request
+      # while the one it does request is absent — and that presents as
+      # ImagePullBackOff against a registry that looks fully populated.
+      - name: Check manifest agrees with Terraform
+        run: ./scripts/supply-chain/mirror.sh --check-drift
+
+      - name: Install crane and helm
+        run: |
+          set -euo pipefail
+          # Helm's version and download URL come from the pinned manifest, not
+          # from this file. Restating them here is how the CI toolchain and the
+          # in-VPC runner's toolchain drift apart, and for terraform that drift
+          # is not cosmetic: state records the version that last wrote it, so a
+          # newer Terraform can refuse or rewrite state across our four state
+          # files (CD-23).
+          source scripts/lib/common.sh
+          HELM_VERSION="$(tool_version helm)"
+          HELM_URL="$(tool_url helm)"
+          HELM_SHA="$(tool_sha helm)"
+
+          tmp="$(mktemp -d)"; cd "$tmp"
+
+          curl -fsSL -o crane.tgz \
+            "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz"
+          curl -fsSL -o crane-checksums.txt \
+            "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/checksums.txt"
+          grep " go-containerregistry_Linux_x86_64.tar.gz\$" crane-checksums.txt \
+            | sed 's|go-containerregistry_Linux_x86_64.tar.gz|crane.tgz|' | sha256sum -c -
+          tar -xzf crane.tgz crane
+
+          curl -fsSL -o helm.tgz "$HELM_URL"
+          if [ "$HELM_SHA" != "-" ]; then
+            # Preferred: verify against OUR pin. Once push-runner-bundle.sh
+            # --record has filled the manifest's digest column, the manifest is
+            # the trust anchor and the vendor's checksum file is not consulted.
+            echo "$HELM_SHA  helm.tgz" | sha256sum -c -
+            echo "helm verified against the manifest pin"
+          else
+            # Fallback while the column is still '-': the vendor's own checksum
+            # file. Weaker — it trusts the same host as the download — so the
+            # observed sha256 is printed below for pinning.
+            curl -fsSL -o helm.sha "${HELM_URL}.sha256sum"
+            sed "s|$(basename "$HELM_URL")|helm.tgz|" helm.sha | sha256sum -c -
+            echo "::warning::helm is UNPINNED in runner-tools.manifest (sha256 = '-'). Run scripts/runner/push-runner-bundle.sh --record and commit the digests."
+          fi
+          tar -xzf helm.tgz --strip-components=1 linux-amd64/helm
+
+          mkdir -p "$HOME/.local/bin"
+          install -m 0755 crane helm "$HOME/.local/bin/"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+          {
+            echo "### CI toolchain"
+            echo ""
+            echo "| tool | version | source of pin | sha256 |"
+            echo "|---|---|---|---|"
+            echo "| crane | ${CRANE_VERSION} | this workflow (CI-only tool) | \`$(sha256sum crane.tgz | cut -d' ' -f1)\` |"
+            echo "| helm | ${HELM_VERSION} | runner-tools.manifest | \`$(sha256sum helm.tgz | cut -d' ' -f1)\` |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # -----------------------------------------------------------------------
+      # OIDC federation — short-lived credentials, no stored AWS keys (CD-9).
+      # -----------------------------------------------------------------------
+      # This works on self-hosted runners exactly as on GitHub-hosted ones.
+      #
+      # IF THE RUNNERS ARE PODS, THIS STEP MAY BE UNNECESSARY RATHER THAN
+      # MISCONFIGURED. The reference pipelines run on runners labelled
+      # `[self-hosted, kubernetes]` — which describes where the RUNNER lives, not
+      # what the job deploys to, and is consistent with an Actions Runner
+      # Controller estate. On ARC the pod's service account is usually annotated
+      # with an IAM role (IRSA), so credentials are already present in the
+      # environment and this step should simply be deleted rather than made to
+      # work. Two labels are not proof of ARC; the question is R-7.
+      #
+      # WE DO NOT USE STATIC ACCESS KEYS. The reference pipelines hold them as
+      # repository secrets. Long-lived keys in CI are the credential most likely
+      # to outlive the person who created them (CD-9, H38). If the estate cannot
+      # federate at all, that is a constraint to state and design around — not
+      # something to absorb by imitation.
+      #
+      # If marketplace actions are restricted on the bank estate, the fallback
+      # is to do the exchange by hand: request the token from
+      # $ACTIONS_ID_TOKEN_REQUEST_URL and call
+      # `aws sts assume-role-with-web-identity`. Same result, one less
+      # dependency. Raise it if this step is what blocks adoption.
+      #
+      # Trust-policy note: GitHub's `sub` claim gained org and repository ID
+      # suffixes for repositories created after 2026-07-15, so a StringEquals
+      # condition copied from an older tutorial fails with an unhelpful
+      # "Not authorized to perform sts:AssumeRoleWithWebIdentity". Use
+      # StringLike with wildcards, and if auth fails, decode the actual token
+      # claim rather than guessing at the policy.
+      - name: Assume the ECR push role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: supply-chain-mirror
+
+      # -----------------------------------------------------------------------
+      # The registry is a central shared-services account (#25b), so the
+      # repositories may not be ours to create. Report what is missing before
+      # spending any time pulling, and say what to request.
+      # -----------------------------------------------------------------------
+      - name: Check ECR repositories exist
+        if: ${{ !inputs.create_repos }}
+        continue-on-error: true
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          ECR_PREFIX: ${{ vars.ECR_PREFIX }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: ./scripts/supply-chain/mirror.sh --check-repos
+
+      - name: Mirror
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          ECR_PREFIX: ${{ vars.ECR_PREFIX }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          # Docker Hub rate-limits ANONYMOUS pulls at 100 per 6 hours, enforced
+          # per source IP. A shared bank runner estate presents few egress
+          # addresses to every team using it, so an unauthenticated run can fail
+          # intermittently through no fault of its own. Optional: the script
+          # warns and continues without them.
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          args=""
+          case "${{ inputs.scope || 'all' }}" in
+            images-only) args="--images-only" ;;
+            charts-only) args="--charts-only" ;;
+          esac
+          [ "${{ inputs.dry_run }}" = "true" ] && args="$args --dry-run"
+          [ "${{ inputs.create_repos }}" = "true" ] && args="$args --create-repos"
+          ./scripts/supply-chain/mirror.sh $args

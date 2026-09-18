@@ -1,0 +1,58 @@
+# Shared Service selecting every app-rpc-role Besu pod (across per-node releases),
+# exposing the HTTP and WS ports the app NLB target groups front.
+apiVersion: v1
+kind: Service
+metadata:
+  name: besu-app-rpc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: besu
+    besu.role: app-rpc
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: besu-node
+    besu.role: app-rpc
+  ports:
+    - name: rpc-http
+      port: {{ .Values.httpPort }}
+      targetPort: {{ .Values.httpPort }}
+      protocol: TCP
+    {{- if .Values.wsEnabled }}
+    - name: rpc-ws
+      port: {{ .Values.wsPort }}
+      targetPort: {{ .Values.wsPort }}
+      protocol: TCP
+    {{- end }}
+---
+# HTTP TargetGroupBinding — registers app-rpc pod IPs into the app HTTP TG.
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: besu-app-rpc-http
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: besu
+spec:
+  targetGroupARN: {{ required "httpTargetGroupArn is required" .Values.httpTargetGroupArn | quote }}
+  targetType: ip
+  serviceRef:
+    name: besu-app-rpc
+    port: {{ .Values.httpPort }}
+{{- if .Values.wsEnabled }}
+---
+# WS TargetGroupBinding — registers app-rpc pod IPs into the app WS TG.
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: besu-app-rpc-ws
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: besu
+spec:
+  targetGroupARN: {{ required "wsTargetGroupArn is required" .Values.wsTargetGroupArn | quote }}
+  targetType: ip
+  serviceRef:
+    name: besu-app-rpc
+    port: {{ .Values.wsPort }}
+{{- end }}

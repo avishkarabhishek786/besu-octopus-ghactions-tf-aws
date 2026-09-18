@@ -1,0 +1,19 @@
+{{- if eq .Values.role "validator" }}
+# PodDisruptionBudget for validators. With one pod per validator release,
+# maxUnavailable=0 forbids VOLUNTARY evictions (node drain / EKS upgrade) of
+# THIS validator unless it is first cordoned safely — combined with the node
+# group's max_unavailable=1, this guarantees an upgrade never drops more than
+# one validator at a time, preserving QBFT quorum (N=3F+1).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "besu-node.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "besu-node.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "besu-node.selectorLabels" . | nindent 6 }}
+{{- end }}

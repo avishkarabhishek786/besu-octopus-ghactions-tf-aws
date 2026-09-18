@@ -1,0 +1,29 @@
+# RBAC letting the genesis Job publish the genesis ConfigMap in its namespace.
+# Namespaced Role (least privilege) — only configmaps, only this namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.serviceAccount.name }}-cm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "besu-genesis.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.serviceAccount.name }}-cm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "besu-genesis.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.serviceAccount.name }}-cm
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Release.Namespace }}

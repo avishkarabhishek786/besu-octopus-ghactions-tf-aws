@@ -1,0 +1,277 @@
+# =============================================================================
+# besu-genesis Job — the one-shot bootstrap.
+# -----------------------------------------------------------------------------
+# initContainer "generate" (besu image):
+#   * runs `besu operator generate-blockchain-config` -> validator keys +
+#     genesis.json with QBFT extraData computed from the validator set;
+#   * generates bootnode and RPC node keys (auto-created by `public-key export`).
+# main container "publish" (tools image with aws-cli + kubectl + jq):
+#   * PREFLIGHT: refuses to proceed if the validator key count is wrong;
+#   * writes every node key into its Secrets Manager container (idempotent —
+#     skips a key that already has a value, so re-runs never rotate keys and
+#     halt the chain);
+#   * publishes genesis.json + node-pubkeys.json (validator/bootnode/rpc public
+#     keys) as the ConfigMap the besu-node chart consumes to build enodes, the
+#     static-nodes list, and the node-local permissioning allowlist.
+#
+# ORDERING (NOT a helm hook — corrected 2026-07-06, H2/H33): this Job carries NO
+# `helm.sh/hook` annotation. Ordering is enforced by Terraform instead — the genesis
+# helm_release sets wait=true (blocks until the Job COMPLETES) and every node release
+# has depends_on=[helm_release.genesis] — so nodes only start once keys + the genesis
+# ConfigMap exist. The prior comment claiming a post-install/post-upgrade hook was
+# wrong and masked H2 (a besu_version bump could silently re-run this Job).
+#
+# RE-RUN SAFETY (H2): two guards stop a re-run from bricking a live chain —
+#   (1) helm_release.genesis has lifecycle{ ignore_changes=[values] } (main.tf), so a
+#       routine `terraform apply` never upgrades this release / re-runs the Job; and
+#   (2) the publish step below REFUSES to overwrite an existing genesis ConfigMap
+#       unless allowRegenesis=true. skipExistingKeys protects the KEYS; (2) protects
+#       the chain-defining genesis.json (re-publishing it changes the genesis hash and
+#       makes every validator refuse to start against its existing RocksDB).
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "besu-genesis.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 2
+  # Keep finished Job pods briefly for log inspection, then auto-clean.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "besu-genesis.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      restartPolicy: Never
+      # fsGroup so the besu user (uid 1000) can write the shared work dir.
+      securityContext:
+        fsGroup: 1000
+      volumes:
+        - name: work
+          emptyDir: {}
+        - name: qbft-config
+          configMap:
+            name: {{ .Release.Name }}-qbft-config
+      initContainers:
+        {{- if .Values.providedValidatorKeys }}
+        # C4 (provided validator keys): fetch the operator-supplied validator keys
+        # from Secrets Manager (written there by the secrets module when
+        # use_provided_validator_keys=true) so the generate step below can build the
+        # genesis extraData FROM THEM — otherwise generate-blockchain-config bakes
+        # extraData from freshly-generated keys that the validator pods never load,
+        # and the on-chain validator set mismatches the pods → QBFT can't reach quorum.
+        - name: fetch-provided-keys
+          image: {{ .Values.images.tools | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              REGION="{{ .Values.secrets.region }}"
+              for i in $(seq 1 {{ .Values.validatorCount }}); do
+                mkdir -p "/work/provided/validator-$i"
+                aws secretsmanager get-secret-value --region "$REGION" \
+                  --secret-id "{{ .Values.secrets.validatorPrefix }}-$i" \
+                  --query SecretString --output text > "/work/provided/validator-$i/key"
+                [ -s "/work/provided/validator-$i/key" ] && \
+                  [ "$(cat "/work/provided/validator-$i/key")" != "None" ] || {
+                    echo "FAIL: {{ .Values.secrets.validatorPrefix }}-$i has no value (use_provided_validator_keys=true but the key was not supplied)"; exit 1; }
+              done
+              echo "[fetch] pulled {{ .Values.validatorCount }} provided validator keys"
+          volumeMounts:
+            - { name: work, mountPath: /work }
+        {{- end }}
+        - name: generate
+          image: {{ .Values.images.besu | quote }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              echo "[generate] $(besu --version)"
+
+              # Validators + genesis (extraData computed from the validator set).
+              besu operator generate-blockchain-config \
+                --config-file=/config/qbftConfig.json \
+                --to=/work/networkFiles \
+                --private-key-file-name=key
+              {{- if .Values.providedValidatorKeys }}
+
+              # C4: generate-blockchain-config above produced a valid genesis structure
+              # but with FRESH validator keys + extraData. Replace the validator key set
+              # with the PROVIDED keys and recompute QBFT extraData from THEIR addresses,
+              # so the on-chain validator set matches the keys the validator pods load
+              # from Secrets Manager. Dirs are named v001.. to preserve validator-1..N
+              # ordering for node-pubkeys.json (publish step iterates keys/* in order).
+              # NB: this container is the BESU image — it has NO jq. Do the JSON work
+              # with shell + sort; genesis.json gets patched in the publish container.
+              echo "[generate] provided-keys mode: rebuilding validator set + extraData"
+              rm -rf /work/networkFiles/keys
+              mkdir -p /work/networkFiles/keys
+              : > /work/addrs.txt
+              for i in $(seq 1 {{ .Values.validatorCount }}); do
+                vd="/work/networkFiles/keys/$(printf 'v%03d' "$i")"
+                mkdir -p "$vd"
+                # normalise to raw hex (Besu nodekey format) — strip any 0x/whitespace.
+                pk="$(tr -d '[:space:]' < "/work/provided/validator-$i/key" | sed 's/^0x//')"
+                printf '%s' "$pk" > "$vd/key"
+                besu --data-path="$vd" public-key export         --to="$vd/key.pub"
+                besu --data-path="$vd" public-key export-address --to="$vd/address"
+                tr -d '[:space:]' < "$vd/address" | tr 'A-F' 'a-f' >> /work/addrs.txt
+                printf '\n' >> /work/addrs.txt
+              done
+              # Build a JSON array of validator addresses SORTED ascending (QBFT extraData
+              # convention; the validator-i<->key/pubkey mapping for enodes is independent —
+              # it follows the v001.. dir order in the publish step).
+              VJSON='['; first=1
+              for a in $(grep -v '^$' /work/addrs.txt | sort); do
+                [ "$first" = 1 ] && first=0 || VJSON="$VJSON,"
+                VJSON="$VJSON\"$a\""
+              done
+              VJSON="$VJSON]"
+              printf '%s' "$VJSON" > /work/validators.json
+              echo "[generate] provided validator set (sorted): $VJSON"
+              # besu-native extraData encoding; the publish container patches genesis.json.
+              besu rlp encode --from=/work/validators.json --type=QBFT_EXTRA_DATA --to=/work/extradata.txt
+              echo "[generate] extraData=$(tr -d '[:space:]' < /work/extradata.txt)"
+              {{- end }}
+
+              # Bootnode keys (public-key export auto-creates the node key).
+              for i in $(seq 1 {{ .Values.bootnodeCount }}); do
+                mkdir -p /work/boot-$i
+                besu --data-path=/work/boot-$i public-key export --to=/work/boot-$i/key.pub
+              done
+
+              # RPC node keys (RPC nodes need an identity for node-local perms).
+              for i in $(seq 1 {{ .Values.rpcCount }}); do
+                mkdir -p /work/rpc-$i
+                besu --data-path=/work/rpc-$i public-key export --to=/work/rpc-$i/key.pub
+              done
+
+              # Stage 8: app-rpc node keys (same as RPC nodes — they join the
+              # cluster's P2P and need an identity for node-local permissioning).
+              for i in $(seq 1 {{ .Values.appRpcCount | default 0 }}); do
+                mkdir -p /work/app-rpc-$i
+                besu --data-path=/work/app-rpc-$i public-key export --to=/work/app-rpc-$i/key.pub
+              done
+
+              # Stage 9: explorer-rpc node keys (Blockscout pool — same as RPC).
+              for i in $(seq 1 {{ .Values.explorerRpcCount | default 0 }}); do
+                mkdir -p /work/explorer-rpc-$i
+                besu --data-path=/work/explorer-rpc-$i public-key export --to=/work/explorer-rpc-$i/key.pub
+              done
+              echo "[generate] complete"
+          volumeMounts:
+            - { name: work, mountPath: /work }
+            - { name: qbft-config, mountPath: /config }
+      containers:
+        - name: publish
+          image: {{ .Values.images.tools | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              REGION="{{ .Values.secrets.region }}"
+              SKIP="{{ .Values.skipExistingKeys }}"
+
+              echo "[publish] preflight"
+              VCOUNT=$(ls -1d /work/networkFiles/keys/*/ | wc -l | tr -d ' ')
+              [ "$VCOUNT" = "{{ .Values.validatorCount }}" ] || {
+                echo "PREFLIGHT FAIL: expected {{ .Values.validatorCount }} validator keys, found $VCOUNT"; exit 1; }
+              echo "[publish] preflight OK"
+
+              put_key() { # $1=secret name  $2=key file
+                name="$1"; val=$(cat "$2")
+                if [ "$SKIP" = "true" ]; then
+                  existing=$(aws secretsmanager get-secret-value --region "$REGION" \
+                    --secret-id "$name" --query SecretString --output text 2>/dev/null || true)
+                  if [ -n "$existing" ] && [ "$existing" != "None" ]; then
+                    echo "[publish] $name already set; skip"; return 0
+                  fi
+                fi
+                aws secretsmanager put-secret-value --region "$REGION" \
+                  --secret-id "$name" --secret-string "$val" >/dev/null
+                echo "[publish] wrote $name"
+              }
+
+              VAL_PUBS=""; i=1
+              for d in /work/networkFiles/keys/*/; do
+                put_key "{{ .Values.secrets.validatorPrefix }}-$i" "${d}key"
+                VAL_PUBS="$VAL_PUBS $(sed 's/^0x//' "${d}key.pub")"
+                i=$((i+1))
+              done
+
+              BOOT_PUBS=""
+              for i in $(seq 1 {{ .Values.bootnodeCount }}); do
+                put_key "{{ .Values.secrets.bootnodePrefix }}-$i" "/work/boot-$i/key"
+                BOOT_PUBS="$BOOT_PUBS $(sed 's/^0x//' /work/boot-$i/key.pub)"
+              done
+
+              RPC_PUBS=""
+              for i in $(seq 1 {{ .Values.rpcCount }}); do
+                put_key "{{ .Values.secrets.rpcPrefix }}-$i" "/work/rpc-$i/key"
+                RPC_PUBS="$RPC_PUBS $(sed 's/^0x//' /work/rpc-$i/key.pub)"
+              done
+
+              # Stage 8: app-rpc node keys + pubkeys.
+              APP_RPC_PUBS=""
+              for i in $(seq 1 {{ .Values.appRpcCount | default 0 }}); do
+                put_key "{{ .Values.secrets.appRpcPrefix }}-$i" "/work/app-rpc-$i/key"
+                APP_RPC_PUBS="$APP_RPC_PUBS $(sed 's/^0x//' /work/app-rpc-$i/key.pub)"
+              done
+
+              # Stage 9: explorer-rpc node keys + pubkeys.
+              EXPLORER_RPC_PUBS=""
+              for i in $(seq 1 {{ .Values.explorerRpcCount | default 0 }}); do
+                put_key "{{ .Values.secrets.explorerRpcPrefix }}-$i" "/work/explorer-rpc-$i/key"
+                EXPLORER_RPC_PUBS="$EXPLORER_RPC_PUBS $(sed 's/^0x//' /work/explorer-rpc-$i/key.pub)"
+              done
+
+              mkdir -p /work/out
+              jq -n --arg v "$VAL_PUBS" --arg b "$BOOT_PUBS" --arg r "$RPC_PUBS" --arg a "$APP_RPC_PUBS" --arg e "$EXPLORER_RPC_PUBS" \
+                '{validators:($v|split(" ")|map(select(length>0))),
+                  bootnodes:($b|split(" ")|map(select(length>0))),
+                  rpc:($r|split(" ")|map(select(length>0))),
+                  appRpc:($a|split(" ")|map(select(length>0))),
+                  explorerRpc:($e|split(" ")|map(select(length>0)))}' \
+                > /work/out/node-pubkeys.json
+              cp /work/networkFiles/genesis.json /work/out/genesis.json
+              {{- if .Values.providedValidatorKeys }}
+              # C4: patch the genesis extraData computed (besu rlp encode) in the generate
+              # container from the PROVIDED validator keys. Done here because this (tools)
+              # image has jq; the besu generate image does not.
+              ED="$(tr -d '[:space:]' < /work/extradata.txt)"
+              jq --arg ed "$ED" '.extraData = $ed' /work/out/genesis.json > /work/out/genesis.json.tmp
+              mv /work/out/genesis.json.tmp /work/out/genesis.json
+              echo "[publish] patched genesis extraData from provided keys: $ED"
+              {{- end }}
+
+              # H2 (re-genesis guard): NEVER overwrite an existing genesis ConfigMap
+              # unless an operator explicitly opted into a destructive re-genesis.
+              # Re-publishing genesis.json on a live chain changes the genesis hash and
+              # BRICKS every validator (RocksDB no longer matches). skipExistingKeys
+              # already protects the KEYS; this protects the chain-defining genesis.
+              # Intentional re-genesis: wipe node-key secrets + validator PVCs, then set
+              # allowRegenesis=true (root var allow_regenesis).
+              ALLOW_REGENESIS="{{ .Values.allowRegenesis | default false }}"
+              if kubectl get configmap {{ .Values.genesisConfigMapName }} -n {{ .Release.Namespace }} >/dev/null 2>&1; then
+                if [ "$ALLOW_REGENESIS" != "true" ]; then
+                  echo "[publish] GUARD: ConfigMap {{ .Values.genesisConfigMapName }} already exists and allowRegenesis!=true —"
+                  echo "[publish]        refusing to republish genesis (would brick a live chain). No-op."
+                  echo "[publish] complete (guarded no-op)"
+                  exit 0
+                fi
+                echo "[publish] WARNING: allowRegenesis=true — OVERWRITING existing genesis ConfigMap (DESTRUCTIVE re-genesis)"
+              fi
+
+              echo "[publish] writing ConfigMap {{ .Values.genesisConfigMapName }}"
+              kubectl create configmap {{ .Values.genesisConfigMapName }} \
+                --namespace {{ .Release.Namespace }} \
+                --from-file=genesis.json=/work/out/genesis.json \
+                --from-file=node-pubkeys.json=/work/out/node-pubkeys.json \
+                --dry-run=client -o yaml | kubectl apply -f -
+              echo "[publish] complete"
+          volumeMounts:
+            - { name: work, mountPath: /work }

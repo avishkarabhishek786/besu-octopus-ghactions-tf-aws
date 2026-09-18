@@ -1,0 +1,83 @@
+{{- if .Values.networkPolicy.enabled }}
+# =============================================================================
+# NetworkPolicy (H6) — per-release pod-network ingress lockdown.
+# -----------------------------------------------------------------------------
+# Once a pod is selected by a NetworkPolicy with an Ingress rule, ALL ingress not
+# explicitly allowed here is denied. We always allow P2P (peering) + metrics
+# (Prometheus scrape), then add the role-appropriate RPC source. The privileged
+# validator ops listener gets NO RPC rule → reachable only via `kubectl
+# port-forward` (API-server-mediated, not pod-network, so unaffected).
+#
+# ENFORCEMENT: only takes effect when the AWS VPC CNI NetworkPolicy agent is
+# enabled (Terraform enable_network_policy). Kubelet health probes (host→pod) are
+# allowed by the VPC CNI independent of this policy.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "besu-node.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "besu-node.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "besu-node.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # P2P (discovery + consensus) from other besu nodes in this namespace.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: besu
+      ports:
+        - { protocol: TCP, port: {{ .Values.p2pPort }} }
+        - { protocol: UDP, port: {{ .Values.p2pPort }} }
+    # Metrics scrape from the monitoring namespace (Prometheus).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.monitoringNamespace }}
+      ports:
+        - { protocol: TCP, port: {{ .Values.metricsPort }} }
+    {{- if eq .Values.role "rpc" }}
+    # SWIFT RPC from the NLB client CIDRs (TLS passthrough → the pod sees the SWIFT client IP).
+    {{- if .Values.networkPolicy.rpcClientCidrs }}
+    - from:
+        {{- range .Values.networkPolicy.rpcClientCidrs }}
+        - ipBlock: { cidr: {{ . | quote }} }
+        {{- end }}
+      ports:
+        - { protocol: TCP, port: {{ .Values.rpcHttpPort }} }
+    {{- end }}
+    {{- else if eq .Values.role "app-rpc" }}
+    # App RPC (HTTP + optional WS) from the app NLB client CIDRs.
+    {{- if .Values.networkPolicy.appRpcClientCidrs }}
+    - from:
+        {{- range .Values.networkPolicy.appRpcClientCidrs }}
+        - ipBlock: { cidr: {{ . | quote }} }
+        {{- end }}
+      ports:
+        - { protocol: TCP, port: {{ .Values.rpcHttpPort }} }
+        {{- if .Values.appRpc.ws.enabled }}
+        - { protocol: TCP, port: {{ .Values.rpcWsPort }} }
+        {{- end }}
+    {{- end }}
+    {{- else if eq .Values.role "explorer-rpc" }}
+    # Explorer RPC (HTTP + optional WS) from the Blockscout client pods only.
+    {{- if .Values.networkPolicy.explorerClient }}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.explorerClient | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: {{ .Values.rpcHttpPort }} }
+        {{- if .Values.explorerRpc.ws.enabled }}
+        - { protocol: TCP, port: {{ .Values.rpcWsPort }} }
+        {{- end }}
+    {{- end }}
+    {{- end }}
+    # role=validator (ops listener) / role=bootnode: NO RPC ingress rule — nothing
+    # on the pod network may reach the privileged/ops RPC port.
+{{- end }}

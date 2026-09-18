@@ -1,0 +1,57 @@
+# =============================================================================
+# common.tfvars — values EVERY root shares  (UAT)
+# -----------------------------------------------------------------------------
+# Pass this to every root, in addition to that root's own file:
+#
+#   cd terraform/shared && terraform plan -var-file=../environments/uat/common.tfvars
+#   cd terraform/chain  && terraform plan -var-file=../environments/uat/common.tfvars \
+#                                         -var-file=../environments/uat/chain.tfvars
+#
+# WHY THESE LIVE IN ONE FILE
+#   They are defined ONCE so the roots cannot disagree. deletion_group is the
+#   reason this matters most: scripts/maintenance/full-delete.sh finds resources
+#   by that tag, so if `shared` and `chain` were given different values the
+#   teardown would silently leave a whole root's resources running -- and
+#   interface endpoints bill about $11/day. primary_region drifting would put two
+#   roots in different regions (each root's gate 8 catches that against the
+#   network, but only after a confusing failure).
+#
+# THREE ENVIRONMENTS (2026-09-09): sit | uat | prod. Each has its OWN CIDR
+# allocation and therefore its own network-handover.auto.tfvars. The files are
+# NOT interchangeable -- pairing this one with another environment's hand-over
+# points the cluster at another environment's subnets, and the network-contract
+# gate will not catch it because both are internally consistent.
+# =============================================================================
+
+environment    = "uat"
+project_name   = "sbsa-besu"
+deletion_group = "sbsa-uat-2026-09-09" # UNIQUE per deployment
+owner          = "asinha1990s@gmail.com"
+cost_center    = "CC-4477"
+primary_region = "af-south-1" # af-south-1 for ALL THREE environments. OPT-IN region:
+#                               confirmed enabled on the target account 2026-09-09.
+
+# -----------------------------------------------------------------------------
+# CIDR FOR THIS ENVIRONMENT (UAT) -- REQUESTED /20, NOT YET CONFIRMED
+# -----------------------------------------------------------------------------
+# The authoritative values arrive from the cloud team in
+# network-handover.auto.tfvars, and the network-contract module asserts the two
+# agree. Recorded here for review only.
+#
+# STATUS 2026-09-09: the offered allocation is 10.103.0.0/21 (2,048 addresses).
+# We have REQUESTED a /20 (4,096) for every environment -- see
+# docs/CIDR_ALLOCATION_REVIEW.md. Do not cut subnets against the offered value.
+#
+#   The design's subnet plan allocates 2,880 across 15 subnets and is derived for
+#   a /20, leaving a 30% reserve. The reserve is the point: a VPC's primary CIDR
+#   is IMMUTABLE after creation, and a node-group upgrade alone runs old and new
+#   nodes side by side -- doubling node address consumption for its duration.
+#
+#   Floor if /20 is refused: /21, with the plan re-derived (ledger stays 3x/24,
+#   app drops to 3x/25, the small subnets to /27). Below that we would need VPC
+#   CNI custom networking with pods on 100.64.0.0/10 -- documented in Appendix A
+#   of the review, and deliberately NOT the plan.
+#
+#   Whatever size is agreed, ALL THREE environments must get the SAME size. SIT
+#   and UAT exist to de-risk PROD and only do that if they are the same shape.
+# -----------------------------------------------------------------------------

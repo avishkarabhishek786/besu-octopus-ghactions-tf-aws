@@ -1,0 +1,36 @@
+# Grafana dashboard for Besu. The kube-prometheus-stack Grafana sidecar imports
+# any ConfigMap labelled grafana_dashboard=1 in its watched namespace.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: besu-dashboard
+  namespace: {{ .Values.monitoringNamespace }}
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: besu
+data:
+  besu-overview.json: |
+    {
+      "title": "Besu Overview",
+      "uid": "besu-overview",
+      "schemaVersion": 39,
+      "timezone": "utc",
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "type": "timeseries", "title": "Chain height", "id": 1,
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "targets": [ { "expr": "ethereum_blockchain_height", "legendFormat": "{{`{{pod}}`}}" } ]
+        },
+        {
+          "type": "timeseries", "title": "Peers", "id": 2,
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "targets": [ { "expr": "ethereum_peer_count", "legendFormat": "{{`{{pod}}`}}" } ]
+        },
+        {
+          "type": "timeseries", "title": "Up targets", "id": 3,
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+          "targets": [ { "expr": "up{container=\"besu\"}", "legendFormat": "{{`{{pod}}`}}" } ]
+        }
+      ]
+    }

@@ -1,0 +1,35 @@
+# Shared Service selecting every rpc-role Besu pod (across per-node releases).
+apiVersion: v1
+kind: Service
+metadata:
+  name: besu-rpc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: besu
+    besu.role: rpc
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: besu-node
+    besu.role: rpc
+  ports:
+    - name: rpc-http
+      port: {{ .Values.rpcPort }}
+      targetPort: {{ .Values.rpcPort }}
+      protocol: TCP
+---
+# Registers the Service's pod IPs into the Terraform-created NLB target group.
+# The AWS Load Balancer Controller reconciles this CRD.
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: besu-rpc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: besu
+spec:
+  targetGroupARN: {{ required "targetGroupArn is required" .Values.targetGroupArn | quote }}
+  targetType: ip
+  serviceRef:
+    name: besu-rpc
+    port: {{ .Values.rpcPort }}

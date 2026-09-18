@@ -1,0 +1,130 @@
+# =============================================================================
+# besu-blockscout — values
+# -----------------------------------------------------------------------------
+# Fully-private Blockscout explorer. Modern Blockscout is SPLIT: the BACKEND
+# (blockscout/blockscout — indexer + JSON API) and a SEPARATE FRONTEND
+# (blockscout/frontend — the Next.js UI). An in-cluster nginx "single-origin"
+# PROXY fronts both on ONE port (/ -> frontend, /api,/socket -> backend) so the
+# explorer is reachable through ONE `kubectl port-forward` without the frontend's
+# NEXT_PUBLIC_API_HOST origin/CORS pain. All services are ClusterIP; the human
+# reaches the UI via port-forward (from the in-VPC runner) or SSM. No Ingress, no
+# public LB, ALL external egress disabled — consistent with "nothing public".
+# =============================================================================
+
+namespace: besu
+nameOverride: blockscout
+
+# --- Chain / RPC (Terraform fills these from the explorer-rpc pool outputs) ---
+chain:
+  id: 1337
+  # In-cluster explorer-rpc endpoints (ClusterIP). HTTP carries eth + debug/trace;
+  # WS carries eth_subscribe. NO TLS/JWT — in-cluster plaintext (see explorer-rpc).
+  rpcHttpUrl: "http://besu-explorer-rpc-1-rpc.besu.svc.cluster.local:8545"
+  rpcTraceUrl: "http://besu-explorer-rpc-1-rpc.besu.svc.cluster.local:8545"
+  rpcWsUrl: "ws://besu-explorer-rpc-1-rpc.besu.svc.cluster.local:8546"
+  # Besu speaks the trace_/debug_ namespaces — Blockscout's "besu" variant.
+  jsonrpcVariant: "besu"
+  coin: "ETH"
+  networkName: "Besu (private)"
+  subnetwork: "non-prod"
+
+# --- Blockscout BACKEND (indexer + JSON API; v6 dropped the embedded UI) ------
+blockscout:
+  # PIN: ghcr.io/blockscout/blockscout:9.0.2 (verified live in the 2026-06-26
+  # non-prod deploy-test; == :latest at that date). LESSON: the GitHub *repo*
+  # release tags (e.g. 11.2.x) are NOT published image tags — Docker Hub
+  # `blockscout/blockscout` is stale (~7.0.2 max); the real images live on
+  # ghcr.io and top out at 9.0.x. Always resolve the tag from the ghcr registry
+  # (`/v2/blockscout/blockscout/tags/list`), never from the repo release page.
+  # The migrate eval task `Explorer.ReleaseTasks.create_and_migrate()` is
+  # confirmed valid on 9.0.2. API-only: the UI is the separate `frontend` below.
+  image: ghcr.io/blockscout/blockscout:9.0.2
+  port: 4000
+  replicas: 1
+  resources:
+    requests: { cpu: "250m", memory: "1Gi" }
+    limits: { memory: "2Gi" }
+  # Disable EVERY external call (fully private / no egress).
+  disableExternal: true
+
+# --- Blockscout FRONTEND (the Next.js UI; separate container) -----------------
+frontend:
+  # PIN: ghcr.io/blockscout/frontend:v2.3.5 (verified live 2026-06-26; == :latest
+  # at that date). Same LESSON as the backend: the frontend *repo* release tags
+  # (e.g. v2.8.x) are NOT image tags — ghcr `frontend` tops out at v2.3.x. Resolve
+  # from `/v2/blockscout/frontend/tags/list`. Independent version track from the
+  # backend. Runtime-configured (NEXT_PUBLIC_* read at startup).
+  image: ghcr.io/blockscout/frontend:v2.3.5
+  port: 3000
+  replicas: 1
+  # The host:port the BROWSER uses to reach the explorer — i.e. the local end of
+  # the port-forward to the proxy. NEXT_PUBLIC_API_HOST/APP_HOST are baked from
+  # this so the frontend's client-side API calls hit the SAME origin (the proxy),
+  # avoiding CORS. MUST match the port-forward: `port-forward svc/<proxy> 4000:80`
+  # -> accessHost "localhost:4000". Change both together.
+  accessHost: "localhost:4000"
+  accessProtocol: "http"
+  wsProtocol: "ws"
+  # Browser-facing origins for the optional microservices (each reached by its
+  # OWN port-forward). Empty disables the corresponding NEXT_PUBLIC_* (feature
+  # off in the UI). Match these to the port-forward local ports you open.
+  statsApiHost: "http://localhost:4001"      # -> svc blockscout-stats:8050
+  visualizeApiHost: "http://localhost:4002"  # -> svc blockscout-visualizer:8050
+  resources:
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits: { memory: "512Mi" }
+
+# --- nginx single-origin PROXY (the one entry point) --------------------------
+# Routes /api, /socket, etc. -> backend:4000 and everything else -> frontend:3000,
+# so frontend + API are same-origin. This is the service you port-forward.
+proxy:
+  image: nginx:1.27-alpine
+  port: 80
+  replicas: 1
+  resources:
+    requests: { cpu: "50m", memory: "64Mi" }
+    limits: { memory: "128Mi" }
+
+# --- Stats microservice (optional; homepage + Stats-page charts) -------------
+# Reads the indexed data from the SAME Postgres (separate `stats` database it
+# creates) and the backend API; serves chart JSON on :8050. ClusterIP; reached
+# by its own port-forward. ghcr.io tag (repo tags != image tags — see backend).
+stats:
+  enabled: true
+  image: ghcr.io/blockscout/stats:v2.16.0
+  port: 8050
+  database: stats # created in the bundled Postgres (STATS__CREATE_DATABASE)
+  resources:
+    requests: { cpu: "50m", memory: "128Mi" }
+    limits: { memory: "512Mi" }
+
+# --- Visualizer microservice (optional; contract Sol2UML diagram) ------------
+# Stateless; parses verified Solidity source into a UML SVG on :8050. No DB, no
+# external egress. ClusterIP; reached by its own port-forward.
+visualizer:
+  enabled: true
+  image: ghcr.io/blockscout/visualizer:v0.2.1
+  port: 8050
+  resources:
+    requests: { cpu: "50m", memory: "128Mi" }
+    limits: { memory: "512Mi" }
+
+# --- PostgreSQL (bundled, in-cluster, gp3 PVC) -------------------------------
+postgres:
+  image: postgres:16-alpine
+  storageClassName: besu-gp3
+  storageSize: 10Gi
+  database: blockscout
+  username: blockscout
+  port: 5432
+  # Headroom above the default 100 so the backend pool + stats microservice both
+  # fit. Sized with the 2Gi memory limit below (~5-10 MB/connection).
+  maxConnections: 200
+  resources:
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits: { memory: "2Gi" }
+
+# Secret names are created by this chart from Terraform-provided values (random
+# DB password + SECRET_KEY_BASE), passed in at install time.
+secret:
+  name: blockscout-secrets

@@ -1,0 +1,72 @@
+# Bundled PostgreSQL — in-cluster, gp3 PVC. ClusterIP-only (headless). Data is
+# rebuildable by re-indexing the chain, so this is a single replica (non-HA);
+# prod can raise resources/size via tfvars (mirror rule: same component).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "blockscout.name" . }}-postgres
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockscout.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: {{ include "blockscout.name" . }}-postgres
+  ports:
+    - { name: postgres, port: {{ .Values.postgres.port }}, targetPort: {{ .Values.postgres.port }} }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "blockscout.name" . }}-postgres
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockscout.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "blockscout.name" . }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "blockscout.name" . }}-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "blockscout.name" . }}-postgres
+        {{- include "blockscout.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image | quote }}
+          # Raise max_connections: the Blockscout backend pool alone can exhaust
+          # the default 100, leaving none for the stats microservice ("too many
+          # clients already"). First arg MUST be "postgres" so the image
+          # entrypoint still runs its init logic.
+          args: ["postgres", "-c", "max_connections={{ .Values.postgres.maxConnections }}", "-c", "shared_buffers=128MB"]
+          ports:
+            - { name: postgres, containerPort: {{ .Values.postgres.port }} }
+          env:
+            - { name: POSTGRES_DB, value: {{ .Values.postgres.database | quote }} }
+            - { name: POSTGRES_USER, value: {{ .Values.postgres.username | quote }} }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secret.name }}, key: DB_PASSWORD }
+            # Keep PG data in a subdir so the PVC root (lost+found) doesn't clash.
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          readinessProbe:
+            exec: { command: ["sh", "-c", "pg_isready -U {{ .Values.postgres.username }} -d {{ .Values.postgres.database }}"] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.postgres.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storageSize }}

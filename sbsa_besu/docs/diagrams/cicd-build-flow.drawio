@@ -1,0 +1,426 @@
+<mxfile host="app.diagrams.net" agent="claude-code" version="24.7.17" type="device">
+  <diagram id="page-ownership" name="1 · Cloud team ⇄ us">
+    <mxGraphModel dx="1600" dy="960" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1650" pageHeight="980" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="p1t" value="&lt;b&gt;Building the Besu platform — who does what&lt;/b&gt;&lt;br&gt;GitHub Actions builds. Octopus deploys. The cloud team owns the ground it all runs on." style="text;html=1;align=left;verticalAlign=middle;fontSize=15;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="12" width="1000" height="48" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1L1" value="OUR TEAM" style="swimlane;horizontal=0;startSize=30;fillColor=none;strokeColor=#9e9e9e;fontStyle=1;fontColor=#555555;swimlaneFillColor=#fcfcfc;html=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="1560" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="p1L2" value="CLOUD TEAM (shared platform services)" style="swimlane;horizontal=0;startSize=30;fillColor=none;strokeColor=#9e9e9e;fontStyle=1;fontColor=#555555;swimlaneFillColor=#fbf8fd;html=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="250" width="1560" height="290" as="geometry" />
+        </mxCell>
+        <mxCell id="p1L3" value="TARGET AWS ENVIRONMENT — NO INTERNET EGRESS" style="swimlane;horizontal=0;startSize=30;fillColor=none;strokeColor=#9e9e9e;fontStyle=1;fontColor=#555555;swimlaneFillColor=#f9fbf9;html=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="550" width="1560" height="390" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1a1" value="&lt;b&gt;sbsa_besu repo (GitHub)&lt;/b&gt;&lt;br&gt;terraform/ · helm/ · scripts/&lt;br&gt;pinned version manifest" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="100" y="105" width="260" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p1a2" value="&lt;b&gt;We author and own&lt;/b&gt;&lt;div style=&quot;text-align:left&quot;&gt;• the Terraform that builds the &lt;b&gt;infrastructure layer&lt;/b&gt;&lt;br&gt;• the Helm charts that build the &lt;b&gt;blockchain layer&lt;/b&gt;&lt;br&gt;• which image and chart versions are pinned&lt;/div&gt;" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="400" y="105" width="340" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p1a3" value="&lt;b&gt;We also own the operating decisions&lt;/b&gt;&lt;div style=&quot;text-align:left&quot;&gt;• when a release is cut&lt;br&gt;• requesting the UAT / PROD approvals&lt;br&gt;• driving validator upgrades, one node at a time&lt;/div&gt;" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="790" y="105" width="340" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1b1" value="&lt;b&gt;GitHub Actions&lt;/b&gt;&lt;br&gt;&lt;i&gt;cloud team's self-hosted runners — these have internet&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="100" y="290" width="340" height="225" as="geometry" />
+        </mxCell>
+        <mxCell id="p1b1a" value="&lt;b&gt;supply-chain.yml&lt;/b&gt;&lt;br&gt;mirror 23 images + 5 charts into ECR, by digest" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="118" y="358" width="304" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p1b1b" value="&lt;b&gt;release.yml&lt;/b&gt;&lt;br&gt;validate, safety-gate, package, create a release" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="118" y="436" width="304" height="66" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1b2" value="&lt;b&gt;Private ECR&lt;/b&gt;&lt;br&gt;cloud team's central shared-services account&lt;br&gt;af-south-1 · immutable tags" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="495" y="335" width="245" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1b3" value="&lt;b&gt;Octopus Deploy (Cloud / SaaS)&lt;/b&gt;&lt;br&gt;&lt;i&gt;cloud team instance · our own Space&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="790" y="290" width="340" height="225" as="geometry" />
+        </mxCell>
+        <mxCell id="p1b3a" value="besu-infra — the infrastructure layer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="806" y="350" width="308" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="p1b3b" value="besu-workloads — the blockchain layer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="806" y="404" width="308" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="p1b3c" value="besu-validators — one node at a time" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="806" y="458" width="308" height="46" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1b4" value="&lt;b&gt;What we depend on the cloud team for&lt;/b&gt;&lt;div style=&quot;text-align:left&quot;&gt;• runner estate, with internet egress ✓&lt;br&gt;• ECR repositories + cross-account pull ✓&lt;br&gt;• the VPC, subnets and 16 VPC endpoints&lt;br&gt;• a /20 CIDR per environment — open&lt;br&gt;• &lt;b&gt;R-9&lt;/b&gt;: reach octopus.app from the VPC? ✓ shared egress (2026-09-14) — R-10 ticket pending&lt;/div&gt;" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1190" y="290" width="380" height="225" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1c1" value="&lt;b&gt;① INFRASTRUCTURE LAYER&lt;/b&gt;   VPC endpoints · EKS cluster · node groups · IAM/IRSA · KMS · Secrets Manager · load balancers" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="100" y="600" width="1000" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c2" value="&lt;b&gt;② BLOCKCHAIN LAYER&lt;/b&gt;   storage class + CSI · bootnodes · RPC · explorer RPC · Blockscout · monitoring · &lt;b&gt;then the validators&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="100" y="674" width="1000" height="56" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1c3" value="&lt;b&gt;in-VPC admin host (EC2)&lt;/b&gt;&lt;br&gt;reachable only through SSM Session Manager.&lt;br&gt;The &lt;b&gt;only&lt;/b&gt; thing that can talk to the private EKS API endpoint." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1190" y="600" width="380" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1c4" value="&lt;b&gt;SIT&lt;/b&gt;&lt;br&gt;own CIDR · own state&lt;br&gt;deploys automatically on merge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="100" y="790" width="300" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c5" value="&lt;b&gt;UAT&lt;/b&gt;&lt;br&gt;own CIDR · own state&lt;br&gt;approval required" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="450" y="790" width="300" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c6" value="&lt;b&gt;PROD&lt;/b&gt;&lt;br&gt;own CIDR · own state&lt;br&gt;approval required" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="800" y="790" width="300" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1c7" value="&lt;b&gt;Push is public, pull is private.&lt;/b&gt; The build host pushes to ECR from outside the VPC, over ECR's public endpoint. The cluster pulls back through the ecr.api / ecr.dkr interface endpoints. Nothing inside the VPC ever contacts a public registry — so this needs no NAT and no proxy." style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1190" y="760" width="380" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#6c8ebf;" edge="1" parent="1" source="p1a1" target="p1b1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1e1l" value="merge to main" style="edgeLabel;html=1;resizable=0;align=center;fontSize=10;" vertex="1" connectable="0" parent="p1e1">
+          <mxGeometry x="0" relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1e2" value="crane copy, digest-preserving" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.35;fontSize=10;strokeColor=#82b366;" edge="1" parent="1" source="p1b1a" target="p1b2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1e3" value="push package, create release" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.8;fontSize=10;strokeColor=#82b366;" edge="1" parent="1" source="p1b1b" target="p1b3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1e4" value="&lt;b&gt;besu-infra&lt;/b&gt;: Terraform from an Octopus hosted worker&lt;br&gt;(AWS APIs are public — no cluster access needed)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.25;exitY=1;entryX=0.85;entryY=0;fontSize=10;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="p1b3" target="p1c1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1e5" value="creates this host" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.3;fontSize=10;strokeColor=#82b366;" edge="1" parent="1" source="p1c1" target="p1c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1e6" value="helm / kubectl / Terraform,&lt;br&gt;from inside the VPC" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0;exitY=0.8;entryX=1;entryY=0.5;fontSize=10;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="p1c3" target="p1c2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1e7" value="&lt;b&gt;R-9 — CLOSED, option 1 (CD-55).&lt;/b&gt; Octopus drives this host through the bank&#39;s shared egress&lt;br&gt;(polling Tentacle worker, two octopus.app hostnames, :443, no TLS decryption)." style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.75;entryX=0.5;entryY=0;fontSize=10;strokeColor=#b85450;strokeWidth=2;" edge="1" parent="1" source="p1b3" target="p1c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1e8" value="every image and chart is pulled from here" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.45;entryY=0;fontSize=10;strokeColor=#9673a6;dashed=1;" edge="1" parent="1" source="p1b2" target="p1c1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1e9" value="the same two layers, three times" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.15;exitY=1;entryX=0.5;entryY=0;fontSize=10;strokeColor=#666666;" edge="1" parent="1" source="p1c2" target="p1c4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1e10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#666666;" edge="1" parent="1" source="p1c2" target="p1c5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1e11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.85;exitY=1;entryX=0.5;entryY=0;strokeColor=#666666;" edge="1" parent="1" source="p1c2" target="p1c6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1leg" value="&lt;b&gt;Legend&lt;/b&gt;  &lt;span style=&quot;background:#dae8fc&quot;&gt;&amp;nbsp;ours&amp;nbsp;&lt;/span&gt;  &lt;span style=&quot;background:#e1d5e7&quot;&gt;&amp;nbsp;cloud team's&amp;nbsp;&lt;/span&gt;  &lt;span style=&quot;background:#d5e8d4&quot;&gt;&amp;nbsp;CI (Actions)&amp;nbsp;&lt;/span&gt;  &lt;span style=&quot;background:#ffe6cc&quot;&gt;&amp;nbsp;CD (Octopus)&amp;nbsp;&lt;/span&gt;  &lt;span style=&quot;background:#f8cecc&quot;&gt;&amp;nbsp;safety-critical&amp;nbsp;&lt;/span&gt;  — — — dashed = not yet decided" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="40" y="945" width="1200" height="26" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="page-engineering" name="2 · Engineering detail">
+    <mxGraphModel dx="1700" dy="1100" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1180" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="p2t" value="&lt;b&gt;CI/CD pipeline — infrastructure layer and blockchain layer&lt;/b&gt;&lt;br&gt;Two workflows produce two artefacts. Three Octopus projects consume them, in a fixed order, per environment." style="text;html=1;align=left;verticalAlign=middle;fontSize=15;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="12" width="1100" height="48" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2L1" value="CI — GITHUB ACTIONS   (builds, mirrors, packages — never deploys)" style="swimlane;horizontal=0;startSize=30;fillColor=none;strokeColor=#9e9e9e;fontStyle=1;fontColor=#555555;swimlaneFillColor=#f9fbf9;html=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="1620" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="p2L2" value="CD — OCTOPUS DEPLOY   (deploys, gates, keeps the record)" style="swimlane;horizontal=0;startSize=30;fillColor=none;strokeColor=#9e9e9e;fontStyle=1;fontColor=#555555;swimlaneFillColor=#fffdf8;html=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="390" width="1620" height="750" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2r" value="&lt;b&gt;sbsa_besu @ main&lt;/b&gt;&lt;br&gt;terraform/ · helm/ · scripts/&lt;br&gt;scripts/supply-chain/&lt;br&gt;mirror.manifest" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="105" y="175" width="200" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2w1" value="&lt;b&gt;supply-chain.yml&lt;/b&gt;&lt;br&gt;&lt;i&gt;trigger: dispatch, or manifest change&lt;/i&gt;&lt;div style=&quot;text-align:left&quot;&gt;1 mirror.sh --check-drift&lt;br&gt;2 crane copy, by digest&lt;br&gt;3 helm pull → helm push (OCI)&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="355" y="100" width="290" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="p2w2" value="&lt;b&gt;release.yml&lt;/b&gt;&lt;br&gt;&lt;i&gt;trigger: merge to main&lt;/i&gt;&lt;div style=&quot;text-align:left&quot;&gt;1 fmt · validate · helm lint · shellcheck&lt;br&gt;2 &lt;b&gt;H1 plan-safety gate&lt;/b&gt; (fails if a plan would touch &amp;gt;1 validator)&lt;br&gt;3 package, push, create release&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="355" y="245" width="290" height="115" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2a1" value="&lt;b&gt;ECR&lt;/b&gt; — central account, af-south-1&lt;br&gt;23 images + 5 OCI charts&lt;br&gt;immutable tags, pinned digests" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="700" y="100" width="250" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="p2a2" value="&lt;b&gt;Octopus package feed&lt;/b&gt;&lt;br&gt;besu-platform.YYYY.MM.DD.run&lt;br&gt;terraform/ + helm/ + scripts/&lt;br&gt;&lt;i&gt;references images by digest —&lt;br&gt;carries none of them&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="700" y="245" width="250" height="115" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2n1" value="&lt;b&gt;Two artefacts, not one.&lt;/b&gt; Re-mirroring does not produce a release; cutting a release does not re-mirror. Different triggers, different blast radius." style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="100" width="290" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="p2n2" value="&lt;b&gt;A release is a snapshot, not a deployment.&lt;/b&gt; It freezes the process AND the variables. Fixing the process does not fix an existing release — cut a new one." style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="245" width="290" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="p2n3" value="&lt;b&gt;The boundary IS the control.&lt;/b&gt;&lt;br&gt;&lt;br&gt;The build runner has internet; the VPC does not. A runner that could deploy would have to sit inside the VPC — which would put an internet-connected agent inside the air gap.&lt;br&gt;&lt;br&gt;So Actions stops at the artefact." style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#f8cecc;strokeColor=#b85450;verticalAlign=top;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="100" width="290" height="260" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.25;entryX=0;entryY=0.5;strokeColor=#6c8ebf;" edge="1" parent="1" source="p2r" target="p2w1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.75;entryX=0;entryY=0.5;strokeColor=#6c8ebf;" edge="1" parent="1" source="p2r" target="p2w2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#82b366;" edge="1" parent="1" source="p2w1" target="p2a1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#82b366;" edge="1" parent="1" source="p2w2" target="p2a2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2hA" value="&lt;b&gt;① INFRASTRUCTURE LAYER&lt;/b&gt;&lt;br&gt;project &lt;b&gt;besu-infra&lt;/b&gt;&lt;br&gt;Terraform roots, in order:&lt;br&gt;shared → runner → chain &lt;i&gt;(AWS resources only)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="410" y="430" width="340" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p2hB" value="&lt;b&gt;② BLOCKCHAIN LAYER&lt;/b&gt;&lt;br&gt;project &lt;b&gt;besu-workloads&lt;/b&gt;&lt;br&gt;StorageClass, Secrets Store CSI, bootnodes, RPC, explorer RPC, Blockscout, monitoring, PDBs&lt;br&gt;&lt;i&gt;never the validator release&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="770" y="430" width="340" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p2hC" value="&lt;b&gt;② BLOCKCHAIN LAYER — VALIDATORS&lt;/b&gt;&lt;br&gt;project &lt;b&gt;besu-validators&lt;/b&gt;&lt;br&gt;manual intervention, then&lt;br&gt;rolling-besu-apply.sh — &lt;b&gt;ONE pod at a time&lt;/b&gt;&lt;br&gt;&lt;i&gt;4 validators, quorum 3: two down halts the chain&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="430" width="340" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p2hD" value="&lt;b&gt;VERIFY&lt;/b&gt;&lt;br&gt;H35 chain-integrity check" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="1490" y="430" width="150" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2x0" value="&lt;b&gt;Runs today, with nothing new from anyone.&lt;/b&gt;&lt;br&gt;AWS API endpoints are public, so an Octopus Cloud hosted worker can apply this layer.&lt;br&gt;&lt;i&gt;Execution container: pinned hashicorp/terraform, pulled from the ECR Docker feed.&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eef7ec;strokeColor=#82b366;align=left;spacingLeft=8;verticalAlign=middle;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="410" y="548" width="340" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="p2x1" value="&lt;b&gt;Both of these need a host INSIDE the VPC&lt;/b&gt; — the EKS API endpoint is private, so an outside host times out on every Kubernetes call." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f4f8fd;strokeColor=#6c8ebf;align=left;spacingLeft=8;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="770" y="548" width="700" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="p2x2" value="&lt;b&gt;FALLBACK (CD-34, superseded):&lt;/b&gt; in-VPC EC2 admin host, driven by an operator over SSM. Prod-verified; stays as break-glass (CD-53). Validator gate = discipline plus the H1 CI check." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=8;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="770" y="596" width="340" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="p2x3" value="&lt;b&gt;DECIDED 2026-09-14 (CD-36/CD-57):&lt;/b&gt; Octopus polling Tentacle worker on that same host, through the bank&#39;s shared egress proxy. Buys a gate nobody can click past." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;align=left;spacingLeft=8;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="596" width="340" height="44" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2sit" value="&lt;b&gt;SIT&lt;/b&gt;&lt;br&gt;auto-deploys on merge&lt;br&gt;state besu/sit/*.tfstate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="90" y="680" width="290" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p2uat" value="&lt;b&gt;UAT&lt;/b&gt;&lt;br&gt;⛔ approval required&lt;br&gt;state besu/uat/*.tfstate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="90" y="830" width="290" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p2prd" value="&lt;b&gt;PROD&lt;/b&gt;&lt;br&gt;⛔ approval required&lt;br&gt;state besu/prod/*.tfstate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="90" y="980" width="290" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2s1" value="apply shared → runner → chain (AWS)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="410" y="695" width="340" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p2s2" value="helm upgrade — every non-validator release" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="770" y="695" width="340" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p2s3" value="gate → roll validator 1 → verify → 2 → verify → 3 → 4" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="695" width="340" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p2s4" value="height advancing · 4/4 in the validator set · no fork" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1490" y="695" width="150" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2u1" value="apply shared → runner → chain (AWS)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="410" y="845" width="340" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p2u2" value="helm upgrade — every non-validator release" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="770" y="845" width="340" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p2u3" value="gate → roll validator 1 → verify → 2 → verify → 3 → 4" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="845" width="340" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p2u4" value="height advancing · 4/4 in the validator set · no fork" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1490" y="845" width="150" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2p1" value="apply shared → runner → chain (AWS)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="410" y="995" width="340" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p2p2" value="helm upgrade — every non-validator release" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="770" y="995" width="340" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p2p3" value="gate → roll validator 1 → verify → 2 → verify → 3 → 4" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="995" width="340" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p2p4" value="height advancing · 4/4 in the validator set · no fork" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1490" y="995" width="150" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2f1" value="release created" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=10;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="p2a2" target="p2sit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2g1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;" edge="1" parent="1" source="p2sit" target="p2s1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2g2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;" edge="1" parent="1" source="p2s1" target="p2s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2g3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;" edge="1" parent="1" source="p2s2" target="p2s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2g4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;" edge="1" parent="1" source="p2s3" target="p2s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2g5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;" edge="1" parent="1" source="p2uat" target="p2u1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2g6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;" edge="1" parent="1" source="p2u1" target="p2u2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2g7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;" edge="1" parent="1" source="p2u2" target="p2u3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2g8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;" edge="1" parent="1" source="p2u3" target="p2u4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2g9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;" edge="1" parent="1" source="p2prd" target="p2p1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2g10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;" edge="1" parent="1" source="p2p1" target="p2p2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2g11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;" edge="1" parent="1" source="p2p2" target="p2p3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2g12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;" edge="1" parent="1" source="p2p3" target="p2p4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2pr1" value="promote the &lt;b&gt;same&lt;/b&gt; release" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=10;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="p2sit" target="p2uat">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2pr2" value="promote the &lt;b&gt;same&lt;/b&gt; release" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=10;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="p2uat" target="p2prd">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2pull" value="the cluster pulls every image and chart from ECR, through the ecr.api / ecr.dkr interface endpoints" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=10;strokeColor=#9673a6;" edge="1" parent="1" source="p2a1" target="p2hB">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2leg" value="&lt;b&gt;Legend&lt;/b&gt;  &lt;span style=&quot;background:#d5e8d4&quot;&gt;&amp;nbsp;infrastructure layer&amp;nbsp;&lt;/span&gt;  &lt;span style=&quot;background:#dae8fc&quot;&gt;&amp;nbsp;blockchain layer&amp;nbsp;&lt;/span&gt;  &lt;span style=&quot;background:#f8cecc&quot;&gt;&amp;nbsp;safety-critical&amp;nbsp;&lt;/span&gt;  &lt;span style=&quot;background:#e1d5e7&quot;&gt;&amp;nbsp;registry&amp;nbsp;&lt;/span&gt;  &lt;span style=&quot;background:#ffe6cc&quot;&gt;&amp;nbsp;Octopus&amp;nbsp;&lt;/span&gt;   — — — dashed = image / chart pull (data flow)" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1148" width="1300" height="26" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="page-management" name="3 · Management view">
+    <mxGraphModel dx="1400" dy="900" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="880" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="p3t" value="&lt;b&gt;How the blockchain platform is built and released&lt;/b&gt;&lt;br&gt;Seven steps. One team builds the definition, an automated pipeline proves it, a controlled tool deploys it." style="text;html=1;align=left;verticalAlign=middle;fontSize=15;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="14" width="1000" height="48" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p3h1" value="BUILD — automated, touches no environment" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontStyle=1;fontColor=#5a7a4a;" vertex="1" parent="1">
+          <mxGeometry x="60" y="90" width="600" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p3s1" value="&lt;b&gt;1 · Define&lt;/b&gt;&lt;br&gt;&lt;br&gt;Our team writes and peer-reviews the definition of the whole platform, as code." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="125" width="290" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p3s2" value="&lt;b&gt;2 · Stock the private registry&lt;/b&gt;&lt;br&gt;&lt;br&gt;Every third-party component is copied into the bank's private registry first. The environment itself never reaches the internet." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="400" y="125" width="290" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p3s3" value="&lt;b&gt;3 · Prove it and package it&lt;/b&gt;&lt;br&gt;&lt;br&gt;Automated checks run. Only if they pass is a versioned, immutable release created and recorded." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="740" y="125" width="290" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p3n1" value="&lt;b&gt;The build pipeline can never deploy.&lt;/b&gt;&lt;br&gt;&lt;br&gt;It has internet access; the production environment deliberately does not. Keeping them apart is the control, not an inconvenience." style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="125" width="330" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p3h2" value="DEPLOY — gated, approved, recorded" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontStyle=1;fontColor=#9a6b00;" vertex="1" parent="1">
+          <mxGeometry x="60" y="300" width="600" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p3s4" value="&lt;b&gt;4 · Approve&lt;/b&gt;&lt;br&gt;&lt;br&gt;A named person signs off before anything reaches UAT or production." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="335" width="290" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p3s5" value="&lt;b&gt;5 · Infrastructure layer&lt;/b&gt;&lt;br&gt;&lt;br&gt;Network, cluster, encryption keys, secrets and load balancers are built to the approved definition." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="400" y="335" width="290" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p3s6" value="&lt;b&gt;6 · Blockchain layer&lt;/b&gt;&lt;br&gt;&lt;br&gt;Storage, the network's nodes, the block explorer and monitoring are deployed onto it." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="740" y="335" width="290" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p3s7" value="&lt;b&gt;7 · Validators, one at a time — then verify&lt;/b&gt;&lt;br&gt;&lt;br&gt;The block-signing nodes are changed individually, checking the ledger is still producing blocks between each one." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="335" width="330" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p3h3" value="PROMOTION — the same release moves forward, unchanged" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontStyle=1;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="60" y="520" width="700" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p3sit" value="&lt;b&gt;SIT&lt;/b&gt;&lt;br&gt;integration testing&lt;br&gt;&lt;br&gt;deploys automatically" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="60" y="555" width="290" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p3uat" value="&lt;b&gt;UAT&lt;/b&gt;&lt;br&gt;business sign-off&lt;br&gt;&lt;br&gt;⛔ approval required" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="400" y="555" width="290" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p3prd" value="&lt;b&gt;PRODUCTION&lt;/b&gt;&lt;br&gt;the live ledger&lt;br&gt;&lt;br&gt;⛔ approval required" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="740" y="555" width="290" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p3n2" value="&lt;b&gt;Who does what&lt;/b&gt;&lt;div style=&quot;text-align:left&quot;&gt;&lt;br&gt;&lt;b&gt;Our team&lt;/b&gt; — defines the platform, cuts releases, runs the validator upgrades.&lt;br&gt;&lt;br&gt;&lt;b&gt;The cloud team&lt;/b&gt; — provides the build machines, the private registry, the network and the deployment tool.&lt;br&gt;&lt;br&gt;&lt;b&gt;The deployment tool&lt;/b&gt; — is the only thing that changes an environment, and it records every change.&lt;/div&gt;" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="520" width="330" height="230" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p3e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;strokeWidth=2;" edge="1" parent="1" source="p3s1" target="p3s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;strokeWidth=2;" edge="1" parent="1" source="p3s2" target="p3s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3e3" value="a release is ready — nothing is deployed yet" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=10;strokeColor=#666666;strokeWidth=2;" edge="1" parent="1" source="p3s3" target="p3s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;strokeWidth=2;" edge="1" parent="1" source="p3s4" target="p3s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;strokeWidth=2;" edge="1" parent="1" source="p3s5" target="p3s6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3e6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#666666;strokeWidth=2;" edge="1" parent="1" source="p3s6" target="p3s7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3e7" value="steps 4 – 7 repeat, unchanged, in each environment" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=10;strokeColor=#666666;strokeWidth=2;" edge="1" parent="1" source="p3s4" target="p3sit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3e8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="p3sit" target="p3uat">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3e9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="p3uat" target="p3prd">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

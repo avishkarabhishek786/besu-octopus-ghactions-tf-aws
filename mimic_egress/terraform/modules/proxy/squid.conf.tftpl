@@ -1,0 +1,37 @@
+# =============================================================================
+# squid.conf — RENDERED BY TERRAFORM (mimic_egress/modules/proxy). Do not edit
+# on the host; change the variables and re-apply.
+# -----------------------------------------------------------------------------
+# This is the bank's egress allowlist, as we assume it (CD-56..CD-60):
+#   * explicit forward proxy — clients CONNECT to us, nothing is transparent
+#   * ONE source: the platform runner's /32
+#   * TWO destinations: the Octopus instance's REST and polling hostnames
+#   * CONNECT to 443 only — no 10943, no plain HTTP, no caching, no rewriting
+#   * NO TLS interception: no ssl_bump, no CA. Octopus's protocol rejects an
+#     interrupted tunnel (CD-58) — an inspecting mimic would be useless.
+# Rules are evaluated in order; the first match wins.
+# =============================================================================
+http_port ${proxy_port}
+visible_hostname ${visible_hostname}
+
+acl runner   src       ${allowed_source_cidr}
+%{ for d in allowed_destinations ~}
+acl octopus  dstdomain ${d}
+%{ endfor ~}
+acl SSL_ports port     443
+acl CONNECT  method    CONNECT
+
+http_access deny  CONNECT !SSL_ports
+http_access deny  !CONNECT
+http_access allow runner octopus
+http_access deny  all
+
+# Tunnels only. Nothing cached, nothing added to what the client sends.
+cache deny all
+via off
+forwarded_for delete
+
+access_log daemon:/var/log/squid/access.log squid
+cache_log  /var/log/squid/cache.log
+coredump_dir /var/spool/squid
+shutdown_lifetime 3 seconds

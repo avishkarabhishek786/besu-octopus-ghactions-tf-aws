@@ -1,0 +1,20 @@
+Blockscout (private) deployed in namespace {{ .Values.namespace }}.
+  backend  : {{ .Values.blockscout.image }}   (indexer + API, ClusterIP :{{ .Values.blockscout.port }})
+  frontend : {{ .Values.frontend.image }}   (Next.js UI, ClusterIP :{{ .Values.frontend.port }})
+  proxy    : nginx single-origin (UI + API on one port :{{ .Values.proxy.port }})
+
+Fully private — no Ingress, no public LB, no external egress. Reach the WHOLE
+explorer (UI + API) through ONE port-forward to the PROXY, from the in-VPC runner
+(or via SSM). The local port MUST match frontend.accessHost ({{ .Values.frontend.accessHost }}):
+
+  kubectl -n {{ .Values.namespace }} port-forward svc/{{ include "blockscout.proxyName" . }} 4000:{{ .Values.proxy.port }}
+  # then open http://{{ .Values.frontend.accessHost }}   (UI; API at /api/v2/...)
+
+(If you port-forward a different local port, set frontend.accessHost to match it
+and redeploy — NEXT_PUBLIC_API_HOST is baked from it so the browser hits the same
+origin as the UI.)
+
+Indexing source (explorer-rpc, ClusterIP, eth+debug/trace):
+  HTTP : {{ .Values.chain.rpcHttpUrl }}
+  WS   : {{ .Values.chain.rpcWsUrl }}
+  chainId {{ .Values.chain.id }} | variant {{ .Values.chain.jsonrpcVariant }}

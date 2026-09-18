@@ -1,0 +1,73 @@
+# =============================================================================
+# qbftConfig.json — the input to `besu operator generate-blockchain-config`.
+# -----------------------------------------------------------------------------
+# The operator tool reads this, generates `validatorCount` secp256k1 node keys,
+# computes the QBFT extraData (RLP of the validator address list), and writes a
+# complete genesis.json. We supply everything EXCEPT extraData (Besu fills it).
+#
+# Key fields:
+#   * qbft.mixHash is the fixed QBFT magic value (required, identifies QBFT).
+#   * zeroBaseFee + large gasLimit = free-gas private chain.
+#   * londonBlock 0 + shanghaiTime 0 = a modern EVM with no legacy fork gaps.
+#   * alloc funds the admin / initial-allowlist / funded accounts with a balance
+#     (F20: a zero-balance account cannot originate a tx even on the zero-gas
+#     chain). The on-chain AccountAllowlist predeploy was REMOVED (C8) — Besu
+#     dropped smart-contract permissioning in 25.6.0 (F17).
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-qbft-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "besu-genesis.labels" . | nindent 4 }}
+data:
+  qbftConfig.json: |
+    {
+      "genesis": {
+        "config": {
+          "chainId": {{ .Values.chainId }},
+          "londonBlock": 0,
+          "shanghaiTime": 0,
+          "zeroBaseFee": {{ .Values.zeroBaseFee }},
+          "qbft": {
+            "blockperiodseconds": {{ .Values.blockPeriodSeconds }},
+            "epochlength": {{ .Values.epochLength }},
+            "requesttimeoutseconds": {{ mul .Values.blockPeriodSeconds 2 }}
+          }
+        },
+        "nonce": "0x0",
+        "timestamp": "0x0",
+        "gasLimit": "{{ .Values.gasLimit }}",
+        "difficulty": "0x1",
+        "mixHash": "0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365",
+        "coinbase": "0x0000000000000000000000000000000000000000",
+        "alloc": {
+          {{- $accounts := list }}
+          {{- if .Values.permissioning.adminAccount }}
+          {{- $accounts = append $accounts .Values.permissioning.adminAccount }}
+          {{- end }}
+          {{- range .Values.permissioning.initialAccountAllowlist }}
+          {{- $accounts = append $accounts . }}
+          {{- end }}
+          {{- /* F20: accounts funded purely for transacting on the zero-gas chain
+                 (e.g. the app signer EOA), independent of account permissioning. A
+                 zero-balance account cannot originate a tx even at gasPrice 0, so any
+                 tx originator MUST be alloc'd a balance here. */}}
+          {{- range .Values.fundedAccounts }}
+          {{- $accounts = append $accounts . }}
+          {{- end }}
+          {{- $accounts = $accounts | uniq }}{{- /* avoid duplicate alloc keys if an addr appears twice */}}
+          {{- $n := len $accounts }}
+          {{- range $i, $acct := $accounts }}
+          {{ $acct | trimPrefix "0x" | quote }}: { "balance": "0x200000000000000000000000000000000000000000000000000000000000000" }{{ if lt (add $i 1) $n }},{{ end }}
+          {{- end }}
+        }
+      },
+      "blockchain": {
+        "nodes": {
+          "generate": true,
+          "count": {{ .Values.validatorCount }}
+        }
+      }
+    }

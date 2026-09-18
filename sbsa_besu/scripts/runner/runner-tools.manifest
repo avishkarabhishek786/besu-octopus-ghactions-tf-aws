@@ -1,0 +1,49 @@
+# =============================================================================
+# scripts/runner/runner-tools.manifest
+# -----------------------------------------------------------------------------
+# The toolchain the in-VPC runner needs, as DATA. One place, referenced once
+# (no-hardcoding rule) -- scripts/runner/push-runner-bundle.sh reads this and
+# nothing else restates a version.
+#
+# WHY THIS FILE EXISTS
+#   The runner lives in a VPC with NO egress. It cannot dnf-install, cannot curl
+#   dl.k8s.io, and cannot clone GitHub. Every one of those HANGS until timeout
+#   rather than failing (D-21). So the toolchain is downloaded ONCE on a machine
+#   that has internet (your laptop / a CI runner), packaged, and delivered
+#   through the S3 gateway endpoint the VPC already has.
+#
+# FORMAT   name<TAB>version<TAB>url<TAB>sha256
+#   sha256 "-" means UNPINNED. Run `push-runner-bundle.sh --record` once to
+#   resolve and write the real digests back into this file, then commit them.
+#   After that every push verifies the download against the pin and REFUSES to
+#   ship a mismatch -- the same resolve-then-PIN discipline as container image
+#   digests (H38), for the same reason: a URL is a mutable pointer, and this
+#   toolchain runs `terraform apply` against a payment ledger.
+#
+# VERSIONS  Resolved 2026-09-07 from the authoritative source, not from memory:
+#   kubectl    dl.k8s.io/release/stable-1.35.txt  -> matches kubernetes_version
+#   helm       the Helm 3 line. Helm 4 exists (v4.2.4) and is deliberately NOT
+#              taken: the charts and the hashicorp/helm ~> 2.14 provider target
+#              Helm 3, and a major-version jump is its own reviewed change.
+#   terraform  latest stable; satisfies the roots' required_version >= 1.5.0
+#   corretto   JRE for `keytool`. NOT optional: scripts/pki/issue-server-cert.sh
+#              builds the RPC truststore as a Java trustedCertEntry, because an
+#              openssl-built PKCS12 makes Besu throw a TLS internal error during
+#              client-cert validation.
+#   tentacle   Octopus Linux Tentacle (CD-36/CD-57/CD-59): the runner is an
+#              Octopus polling WORKER. Resolved 2026-09-14 by following
+#              octopus.com/downloads/latest/Linux_x64TarGz/OctopusTentacle to
+#              its VERSIONED URL — the `latest` URL is a mutable pointer and is
+#              never what gets pinned. Must be >= 6.3.417 (polling over 443 at
+#              polling.<instance>.octopus.app). It ships in the bundle so that
+#              download.octopusdeploy.com never needs to be on the egress
+#              allowlist — the allowlist stays at Octopus's two hostnames.
+#              Unpacks to tools/tentacle/Tentacle (self-contained .NET; needs
+#              libicu or DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1, which
+#              install-tentacle.sh sets when libicu is absent).
+# =============================================================================
+kubectl	v1.35.8	https://dl.k8s.io/release/v1.35.8/bin/linux/amd64/kubectl	874d5e72dbb819f43cff16bcd1e4f8bac5b7f2361fe1e55049b0a6c676fb0cbf
+helm	v3.21.4	https://get.helm.sh/helm-v3.21.4-linux-amd64.tar.gz	61f88ab166748cb19604d7884cb100ae9ccb13804ddeb98e08af167eacbb6a14
+terraform	1.16.1	https://releases.hashicorp.com/terraform/1.16.1/terraform_1.16.1_linux_amd64.zip	745d33b4b02b7980c62a38ec1beea24ee084ea8caf3f503c200554bd9a0cbe49
+corretto	17.0.20.10.1	https://corretto.aws/downloads/resources/17.0.20.10.1/amazon-corretto-17.0.20.10.1-linux-x64.tar.gz	74ff458657da91ca222681993e3c6b9a8e3629ca8e61c0d8cd90527280da9aa5
+tentacle	11.0.4398	https://download.octopusdeploy.com/linux-tentacle/tentacle-11.0.4398-linux_x64.tar.gz	e0b0c1a94120107c49cc7a32ef350118eb9903196aa65e8f064ed375fff8e68c

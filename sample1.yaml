@@ -1,0 +1,298 @@
+name: Helm Chart Pipeline - Pull from Quay and Push to ECR
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      deploy_to_uat:
+        description: "Deploy directly to UAT."
+        required: false
+        default: "false"
+        type: boolean
+env:
+  OCTOPUS_PROJECT_NAME: intix-search-archive-application
+  OCTOPUS_SPACE: "CIB Ops"
+  AWS_REGION: af-south-1
+  ECR_REGISTRY_URI: 112346747658.dkr.ecr.af-south-1.amazonaws.com
+  ECR_REPOSITORY_NAME: xxx/yyy-zzz-archive
+  CHART_NAME: za-sb-amh
+  CHART_VERSION: 3.0.9
+  QUAY_REGISTRY: quay.io/intix/helm
+  QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+  QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+  SONARQUBE_SCAN_ENABLED: True
+  CHECKMARX_SCAN_ENABLED: True
+jobs:
+  helm-chart-sync:
+    name: Pull Chart and Package with Values
+    runs-on: [self-hosted, kubernetes]
+    # ── Expose PACKAGE_VERSION so downstream jobs use the exact same value ──
+    outputs:
+      package_version: ${{ steps.set-version.outputs.PACKAGE_VERSION }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Set Version
+        id: set-version
+        run: |
+          VERSION="$(date +'%Y.%m.%d').${GITHUB_RUN_NUMBER}"
+          echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version set to: $VERSION"
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.13.0
+      - name: Login to Quay.io Helm Registry
+        run: |
+          echo ${{ secrets.QUAY_PASSWORD }} | helm registry login quay.io -u ${{ secrets.QUAY_USERNAME }} --password-stdin
+          echo "✅ Logged in to Quay.io Helm registry"
+      - name: Pull Helm Chart from Quay.io
+        run: |
+          echo "Pulling Helm chart: ${{ env.CHART_NAME }} version ${{ env.CHART_VERSION }}"
+          mkdir -p helm/charts
+          helm pull oci://${{ env.QUAY_REGISTRY }}/${{ env.CHART_NAME }} \
+            --version ${{ env.CHART_VERSION }} \
+            --destination helm/charts
+          echo "✅ Chart downloaded successfully"
+          ls -lah helm/charts/
+      - name: Extract Chart
+        run: |
+          cd helm/charts
+          tar -xzf ${{ env.CHART_NAME }}-${{ env.CHART_VERSION }}.tgz
+          echo "✅ Chart extracted"
+          ls -lah
+      - name: Validate Values Files
+        run: |
+          echo "Validating all values files..."
+          if [ -d "helm/values" ]; then
+            for values_file in helm/values/*.yaml helm/values/*.yml; do
+              if [ -f "$values_file" ]; then
+                echo "Checking $(basename $values_file)"
+                helm lint helm/charts/${{ env.CHART_NAME }} -f "$values_file" || echo "⚠️  Warning: lint issue for $values_file"
+              fi
+            done
+            echo "✅ Validation complete"
+          else
+            echo "ℹ️  No values directory found, skipping validation"
+          fi
+      - name: Create Package with Values Files
+        run: |
+          echo "Creating deployment package..."
+          mkdir -p deployment-package/values
+          cp helm/charts/${{ env.CHART_NAME }}-${{ env.CHART_VERSION }}.tgz deployment-package/
+          if [ -d "helm/values" ]; then
+            cp -r helm/values/* deployment-package/values/ 2>/dev/null || true
+            echo "✅ Values files copied"
+          fi
+          cd deployment-package
+          tar -czf ../helm-chart-package.${{ env.PACKAGE_VERSION }}.tar.gz .
+          cd ..
+          echo "✅ Package created: helm-chart-package.${{ env.PACKAGE_VERSION }}.tar.gz"
+          echo ""
+          echo "Package contents:"
+          tar -tzf helm-chart-package.${{ env.PACKAGE_VERSION }}.tar.gz
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.DAYONE_DEV_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DAYONE_DEV_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Install AWS CLI
+        run: |
+          if ! command -v aws &> /dev/null; then
+            echo "Installing AWS CLI..."
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip -q awscliv2.zip
+            sudo ./aws/install --update
+          fi
+          aws --version
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Create ECR Repository if Not Exists
+        run: |
+          echo "Checking ECR repository: ${{ env.ECR_REPOSITORY_NAME }}"
+          if aws ecr describe-repositories \
+            --repository-names ${{ env.ECR_REPOSITORY_NAME }} \
+            --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "✅ Repository exists"
+          else
+            echo "Creating ECR repository..."
+            aws ecr create-repository \
+              --repository-name ${{ env.ECR_REPOSITORY_NAME }} \
+              --region ${{ env.AWS_REGION }} \
+              --image-scanning-configuration scanOnPush=true \
+              --encryption-configuration encryptionType=AES256
+            echo "✅ Repository created"
+          fi
+      - name: Create Dockerfile for Package
+        run: |
+          cat > Dockerfile << 'EOF'
+          FROM scratch
+          COPY helm-chart-package.${{ env.PACKAGE_VERSION }}.tar.gz /package/
+          EOF
+          echo "✅ Dockerfile created"
+      - name: Build and Push Package as Docker Image to ECR
+        run: |
+          IMAGE_TAG="${{ env.PACKAGE_VERSION }}"
+          ECR_IMAGE="${{ env.ECR_REGISTRY_URI }}/${{ env.ECR_REPOSITORY_NAME }}"
+          echo "Building Docker image with deployment package..."
+          docker build -t "${ECR_IMAGE}:${IMAGE_TAG}" .
+          docker tag "${ECR_IMAGE}:${IMAGE_TAG}" "${ECR_IMAGE}:latest"
+          echo "Pushing to ECR..."
+          docker push "${ECR_IMAGE}:${IMAGE_TAG}"
+          docker push "${ECR_IMAGE}:latest"
+          echo "✅ Deployment package pushed to ECR successfully!"
+          echo "  - ${ECR_IMAGE}:${IMAGE_TAG}"
+          echo "  - ${ECR_IMAGE}:latest"
+      - name: Upload Deployment Package as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-deployment-package
+          path: helm-chart-package.${{ env.PACKAGE_VERSION }}.tar.gz
+          retention-days: 30
+      - name: Generate Job Summary
+        run: |
+          echo "## 🚀 Deployment Package Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Package Information" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package:** \`helm-chart-package.${{ env.PACKAGE_VERSION }}.tar.gz\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** \`${{ env.PACKAGE_VERSION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Helm Chart:** \`${{ env.CHART_NAME }}:${{ env.CHART_VERSION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ECR Location" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repository:** \`${{ env.ECR_REGISTRY_URI }}/${{ env.ECR_REPOSITORY_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags:** \`${{ env.PACKAGE_VERSION }}\`, \`latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Package available in ECR and GitHub Artifacts" >> $GITHUB_STEP_SUMMARY
+
+  generate-release-notes:
+    name: Generate Release Notes
+    needs: [helm-chart-sync]
+    runs-on: [self-hosted, kubernetes]
+    # ── Inherit PACKAGE_VERSION from helm-chart-sync ──
+    env:
+      PACKAGE_VERSION: ${{ needs.helm-chart-sync.outputs.package_version }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build release notes
+        id: release-notes
+        continue-on-error: true
+        uses: xxx/release-note-action@main
+        with:
+          access-token: ${{ secrets.GITHUB_TOKEN }}
+          target_branch: ${{ github.ref_name }}
+          workflow_file: ci.yml
+      - name: Create fallback release notes
+        if: steps.release-notes.outcome == 'failure'
+        run: |
+          cat > ${{ github.workspace }}/auto-release-notes.md << EOF
+          # Release Notes
+          ## Version: ${{ env.CHART_VERSION }}-${{ github.run_number }}
+          **Date:** $(date +'%Y-%m-%d %H:%M:%S')
+          **Package Version:** ${{ env.PACKAGE_VERSION }}
+          ### Changes
+          - Helm chart: ${{ env.CHART_NAME }} v${{ env.CHART_VERSION }}
+          - Deployment package: helm-chart-package.${{ env.PACKAGE_VERSION }}.tar.gz
+          - Pushed to ECR: ${{ env.ECR_REGISTRY_URI }}/${{ env.ECR_REPOSITORY_NAME }}:${{ env.PACKAGE_VERSION }}
+          ### Recent Commits
+          EOF
+          git log --oneline -5 >> ${{ github.workspace }}/auto-release-notes.md
+      - name: Add Security Checks to Release Notes
+        run: |
+          cat >> ${{ github.workspace }}/auto-release-notes.md << 'EOF'
+          # Security Checks
+          - SonarQube Enabled: ${{ env.SONARQUBE_SCAN_ENABLED }}
+          - Checkmarx Enabled: ${{ env.CHECKMARX_SCAN_ENABLED }}
+          EOF
+      - name: Print release notes
+        run: |
+          echo "=== Release Notes ==="
+          cat ${{ github.workspace }}/auto-release-notes.md
+      - name: Write release notes to Job Summary
+        run: cat ${{ github.workspace }}/auto-release-notes.md >> $GITHUB_STEP_SUMMARY
+      - name: Upload release-notes as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: ${{ github.workspace }}/auto-release-notes.md
+          retention-days: 90
+
+  push-to-octopus:
+    name: Push to Octopus Deploy
+    runs-on: [self-hosted, kubernetes]
+    needs: [helm-chart-sync, generate-release-notes]
+
+    env:
+      PACKAGE_VERSION: ${{ needs.helm-chart-sync.outputs.package_version }}
+    steps:
+      - name: Download deployment package
+        uses: actions/download-artifact@v4
+        with:
+          name: helm-deployment-package
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+      - name: Verify Downloaded Artifacts
+        run: |
+          echo "=== Downloaded Artifacts ==="
+          ls -lah
+          echo ""
+          echo "=== Package Contents ==="
+          tar -tzf helm-chart-package.${{ env.PACKAGE_VERSION }}.tar.gz
+      - name: Push Package to Octopus
+        uses: OctopusDeploy/push-package-action@v3
+        with:
+          api_key: ${{ secrets.OCTOPUS_SERVER_API_KEY }}
+          server: ${{ secrets.OCTOPUS_SERVER_URL }}
+          packages: helm-chart-package.${{ env.PACKAGE_VERSION }}.tar.gz
+          space: ${{ env.OCTOPUS_SPACE }}
+          overwrite_mode: OverwriteExisting
+      - name: Create Release in Octopus
+        uses: OctopusDeploy/create-release-action@v3
+        with:
+          api_key: ${{ secrets.OCTOPUS_SERVER_API_KEY }}
+          server: ${{ secrets.OCTOPUS_SERVER_URL }}
+          space: ${{ env.OCTOPUS_SPACE }}
+          project: ${{ env.OCTOPUS_PROJECT_NAME }}
+          release_number: ${{ env.CHART_VERSION }}-${{ github.run_number }}
+          release_notes_file: auto-release-notes.md
+          package_version: ${{ env.PACKAGE_VERSION }}
+      - name: Deploy to UAT
+        if: ${{ github.event.inputs.deploy_to_uat == 'true' }}
+        uses: OctopusDeploy/deploy-release-action@v3
+        with:
+          api_key: ${{ secrets.OCTOPUS_SERVER_API_KEY }}
+          server: ${{ secrets.OCTOPUS_SERVER_URL }}
+          space: ${{ env.OCTOPUS_SPACE }}
+          project: ${{ env.OCTOPUS_PROJECT_NAME }}
+          release_number: ${{ env.CHART_VERSION }}-${{ github.run_number }}
+          environments: "UAT"
+      - name: Final Summary
+        run: |
+          echo "## ✅ Pipeline Completed Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Release Information" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release:** \`${{ env.CHART_VERSION }}-${{ github.run_number }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package:** \`helm-chart-package.${{ env.PACKAGE_VERSION }}.tar.gz\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **ECR Image:** \`${{ env.ECR_REGISTRY_URI }}/${{ env.ECR_REPOSITORY_NAME }}:${{ env.PACKAGE_VERSION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Pushed to ECR" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Pushed to Octopus Deploy" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Release created in Octopus" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.deploy_to_uat }}" == "true" ]; then
+            echo "- ✅ Deployed to UAT" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⏭️  UAT deployment skipped" >> $GITHUB_STEP_SUMMARY
+          fi

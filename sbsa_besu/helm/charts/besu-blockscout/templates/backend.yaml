@@ -1,0 +1,104 @@
+# Blockscout BACKEND (indexer + JSON API; v6+ has NO embedded UI — the UI is the
+# separate `frontend` + nginx `proxy`). Indexes the explorer-rpc pool's
+# eth/debug/trace, stores in Postgres, serves the API on :4000. ClusterIP only —
+# fronted in-cluster by the nginx proxy. NO Ingress, NO public LB, NO external egress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "blockscout.name" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockscout.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "blockscout.name" . }}
+  ports:
+    - { name: http, port: {{ .Values.blockscout.port }}, targetPort: {{ .Values.blockscout.port }} }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "blockscout.name" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockscout.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.blockscout.replicas }}
+  # Recreate (not RollingUpdate): the backend runs `create_and_migrate` against the
+  # shared Postgres at start. A rolling update briefly runs TWO backend pods that
+  # BOTH touch the same DB → migration lock conflict → the new pod CrashLoopBackOff
+  # (observed 2026-06-26). Recreate tears the old pod down before starting the new
+  # one, so a single pod always owns the migration. (Single-replica anyway.)
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "blockscout.name" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "blockscout.name" . }}
+        {{- include "blockscout.labels" . | nindent 8 }}
+    spec:
+      # Wait for Postgres before running migrations.
+      initContainers:
+        - name: wait-postgres
+          image: {{ .Values.postgres.image | quote }}
+          command: ["sh", "-c", "until pg_isready -h {{ include "blockscout.pgHost" . }} -p {{ .Values.postgres.port }} -U {{ .Values.postgres.username }}; do echo waiting-for-postgres; sleep 3; done"]
+      containers:
+        - name: blockscout
+          image: {{ .Values.blockscout.image | quote }}
+          # Run DB create+migrate, then start the server. The eval task
+          # `Explorer.ReleaseTasks.create_and_migrate()` is confirmed valid on the
+          # pinned 9.0.2 image (verified 2026-06-26); re-verify if the pin changes.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              bin/blockscout eval "Elixir.Explorer.ReleaseTasks.create_and_migrate()" && \
+              exec bin/blockscout start
+          ports:
+            - { name: http, containerPort: {{ .Values.blockscout.port }} }
+          env:
+            # --- DB ---
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secret.name }}, key: DB_PASSWORD }
+            - { name: DATABASE_URL, value: {{ include "blockscout.databaseUrl" . | quote }} }
+            - { name: ECTO_USE_SSL, value: "false" }
+            # --- Phoenix ---
+            - name: SECRET_KEY_BASE
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secret.name }}, key: SECRET_KEY_BASE }
+            - { name: PORT, value: {{ .Values.blockscout.port | quote }} }
+            # --- Chain / RPC (explorer-rpc pool; eth + debug/trace + ws) ---
+            - { name: ETHEREUM_JSONRPC_VARIANT, value: {{ .Values.chain.jsonrpcVariant | quote }} }
+            - { name: ETHEREUM_JSONRPC_HTTP_URL, value: {{ .Values.chain.rpcHttpUrl | quote }} }
+            - { name: ETHEREUM_JSONRPC_TRACE_URL, value: {{ .Values.chain.rpcTraceUrl | quote }} }
+            - { name: ETHEREUM_JSONRPC_WS_URL, value: {{ .Values.chain.rpcWsUrl | quote }} }
+            - { name: CHAIN_ID, value: {{ .Values.chain.id | quote }} }
+            - { name: COIN, value: {{ .Values.chain.coin | quote }} }
+            - { name: NETWORK, value: {{ .Values.chain.networkName | quote }} }
+            - { name: SUBNETWORK, value: {{ .Values.chain.subnetwork | quote }} }
+            {{- if .Values.blockscout.disableExternal }}
+            # --- Fully private: NO external egress (price feeds, token lists, etc.) ---
+            - { name: DISABLE_EXCHANGE_RATES, value: "true" }
+            - { name: DISABLE_KNOWN_TOKENS, value: "true" }
+            - { name: SHOW_PRICE_CHART, value: "false" }
+            - { name: SHOW_TXS_CHART, value: "true" }
+            - { name: SUPPORTED_CHAINS, value: "[]" }
+            - { name: SOURCIFY_INTEGRATION_ENABLED, value: "false" }
+            - { name: DISABLE_BRIDGE_MARKET_CAP_UPDATER, value: "true" }
+            {{- end }}
+          # Readiness via TCP, NOT httpGet. On 9.0.2 the old `/api/v1/health` path
+          # returns HTTP 400 (the health endpoint moved/changed across majors), so
+          # an httpGet probe never passes and the pod stays 0/1 even though the API
+          # serves fine (observed 2026-06-26). A TCP check on :4000 is version-stable
+          # — the backend opens the port only once Phoenix is up and serving.
+          readinessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 30
+          resources:
+            {{- toYaml .Values.blockscout.resources | nindent 12 }}

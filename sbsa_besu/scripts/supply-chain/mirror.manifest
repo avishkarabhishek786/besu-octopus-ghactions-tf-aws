@@ -1,0 +1,71 @@
+# =============================================================================
+# mirror.manifest — every third-party artefact this platform pulls.
+# -----------------------------------------------------------------------------
+# THE SINGLE SOURCE OF TRUTH for the mirror (CD-12). Read by
+# scripts/supply-chain/mirror.sh and by .github/workflows/supply-chain.yml.
+# Versions are NEVER restated in workflow `env:` — a second place to write a
+# version is a second place for it to be wrong.
+#
+# FORMAT: tab-separated. kind <TAB> name <TAB> source <TAB> path <TAB> version <TAB> digest
+#
+#   kind     image | chart
+#   name     our key for it. For the 8 platform images this MUST match the key in
+#            var.container_images (terraform/chain/variables.tf) -- mirror.sh
+#            --check-drift asserts it.
+#   source   image: the upstream registry host.  chart: the Helm repo URL.
+#   path     image: the repository path.         chart: the chart name.
+#   version  the tag (images) or chart version. PINNED, never a range.
+#   digest   sha256:... once resolved, or `-`. Informational here: the mirror
+#            copies BY DIGEST when one is present, which is what makes a re-run
+#            provably identical.
+#
+# TWO LISTS, ONE FILE, AND THEY BEHAVE DIFFERENTLY (../CHART_IMAGES.md):
+#   - The 8 PLATFORM images flow through local.image_ref in Terraform. Set
+#     registry_host and they are rewritten to ECR automatically.
+#   - The 15 CHART-CARRIED images are hardcoded inside the upstream charts under
+#     each chart's own values key. Mirroring them is necessary but NOT
+#     sufficient: each chart also needs a values override pointing at ECR, or
+#     the chart pulls upstream and hangs. verify-images.sh covers only the 8, so
+#     it can exit 0 while all 15 are missing. That gap is PORTING item 4.
+#
+# ADDING AN IMAGE IS ONE CHANGE, NOT TWO: add the row here AND, if a chart
+# carries it, the values override in the module that installs the chart.
+# =============================================================================
+
+# --- the 8 platform images (mirror var.container_images) ---------------------
+image	besu	docker.io	hyperledger/besu	26.6.1	-
+image	tools	docker.io	alpine/k8s	1.30.13	-
+image	blockscout	ghcr.io	blockscout/blockscout	9.0.2	-
+image	frontend	ghcr.io	blockscout/frontend	v2.3.5	-
+image	stats	ghcr.io	blockscout/stats	v2.16.0	-
+image	visualizer	ghcr.io	blockscout/visualizer	v0.2.1	-
+image	proxy	docker.io	nginx	1.27-alpine	-
+image	postgres	docker.io	postgres	16-alpine	-
+
+# --- the 15 chart-carried images ---------------------------------------------
+# Enumerated 2026-08-30 by `helm template` at the pinned chart versions below,
+# not from memory. Reproduce with the appendix of ../CHART_IMAGES.md.
+image	csi-driver	registry.k8s.io	csi-secrets-store/driver	v1.6.0	-
+image	csi-driver-crds	registry.k8s.io	csi-secrets-store/driver-crds	v1.6.0	-
+image	csi-node-registrar	registry.k8s.io	sig-storage/csi-node-driver-registrar	v2.16.0	-
+image	csi-livenessprobe	registry.k8s.io	sig-storage/livenessprobe	v2.18.0	-
+image	csi-provider-aws	public.ecr.aws	aws-secrets-manager/secrets-store-csi-driver-provider-aws	3.1.1	-
+image	fluent-bit	public.ecr.aws	aws-observability/aws-for-fluent-bit	3.2.1	-
+image	lb-controller	public.ecr.aws	eks/aws-load-balancer-controller	v3.4.0	-
+image	prometheus	quay.io	prometheus/prometheus	v3.12.0-distroless	-
+image	alertmanager	quay.io	prometheus/alertmanager	v0.33.0	-
+image	node-exporter	quay.io	prometheus/node-exporter	v1.11.1-distroless	-
+image	prometheus-operator	quay.io	prometheus-operator/prometheus-operator	v0.91.0	-
+image	k8s-sidecar	quay.io	kiwigrid/k8s-sidecar	2.7.3	-
+image	kube-state-metrics	registry.k8s.io	kube-state-metrics/kube-state-metrics	v2.19.1	-
+image	grafana	docker.io	grafana/grafana	13.0.2	-
+image	kube-webhook-certgen	ghcr.io	jkroepke/kube-webhook-certgen	1.8.3	-
+
+# --- the 5 Helm charts -------------------------------------------------------
+# D-22: charts must reach an air-gapped cluster, so they are pushed to ECR as
+# OCI artefacts and the helm_release blocks consume oci://.
+chart	secrets-store-csi-driver	https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts	secrets-store-csi-driver	1.6.0	-
+chart	secrets-store-csi-driver-provider-aws	https://aws.github.io/secrets-store-csi-driver-provider-aws	secrets-store-csi-driver-provider-aws	3.1.1	-
+chart	aws-for-fluent-bit	https://aws.github.io/eks-charts	aws-for-fluent-bit	0.2.0	-
+chart	aws-load-balancer-controller	https://aws.github.io/eks-charts	aws-load-balancer-controller	3.4.0	-
+chart	kube-prometheus-stack	https://prometheus-community.github.io/helm-charts	kube-prometheus-stack	86.2.3	-

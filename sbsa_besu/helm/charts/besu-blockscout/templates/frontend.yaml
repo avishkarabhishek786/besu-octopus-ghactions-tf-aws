@@ -1,0 +1,76 @@
+# Blockscout FRONTEND — the Next.js UI (separate container; the backend is
+# API-only). Runtime-configured via NEXT_PUBLIC_* (read at container startup).
+# ClusterIP; reached only through the nginx proxy (same origin as the API), which
+# is the service you port-forward. NEXT_PUBLIC_API_HOST/APP_HOST = the BROWSER's
+# host:port (the local end of the port-forward) so client-side API calls hit the
+# proxy origin — no CORS. stats/visualizer hosts are intentionally omitted (those
+# services are not deployed → no external egress, features simply disabled).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "blockscout.frontendName" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockscout.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "blockscout.frontendName" . }}
+  ports:
+    - { name: http, port: {{ .Values.frontend.port }}, targetPort: {{ .Values.frontend.port }} }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "blockscout.frontendName" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockscout.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "blockscout.frontendName" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "blockscout.frontendName" . }}
+        {{- include "blockscout.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: frontend
+          image: {{ .Values.frontend.image | quote }}
+          ports:
+            - { name: http, containerPort: {{ .Values.frontend.port }} }
+          env:
+            # --- API/app origin (the proxy, via the user's port-forward) ---
+            - { name: NEXT_PUBLIC_API_HOST, value: {{ .Values.frontend.accessHost | quote }} }
+            - { name: NEXT_PUBLIC_API_PROTOCOL, value: {{ .Values.frontend.accessProtocol | quote }} }
+            - { name: NEXT_PUBLIC_API_BASE_PATH, value: "/" }
+            - { name: NEXT_PUBLIC_APP_HOST, value: {{ .Values.frontend.accessHost | quote }} }
+            - { name: NEXT_PUBLIC_APP_PROTOCOL, value: {{ .Values.frontend.accessProtocol | quote }} }
+            - { name: NEXT_PUBLIC_API_WEBSOCKET_PROTOCOL, value: {{ .Values.frontend.wsProtocol | quote }} }
+            # --- Network identity (from the chain values) ---
+            - { name: NEXT_PUBLIC_NETWORK_NAME, value: {{ .Values.chain.networkName | quote }} }
+            - { name: NEXT_PUBLIC_NETWORK_SHORT_NAME, value: {{ .Values.chain.networkName | quote }} }
+            - { name: NEXT_PUBLIC_NETWORK_ID, value: {{ .Values.chain.id | quote }} }
+            - { name: NEXT_PUBLIC_NETWORK_CURRENCY_NAME, value: "Ether" }
+            - { name: NEXT_PUBLIC_NETWORK_CURRENCY_SYMBOL, value: {{ .Values.chain.coin | quote }} }
+            - { name: NEXT_PUBLIC_NETWORK_CURRENCY_DECIMALS, value: "18" }
+            - { name: NEXT_PUBLIC_IS_TESTNET, value: "true" }
+            - { name: NEXT_PUBLIC_HOMEPAGE_CHARTS, value: "['daily_txs']" }
+            # --- Optional microservices (browser reaches each via its own
+            #     port-forward). Rendered only when the chart deploys them AND a
+            #     browser-facing host is set. ---
+            {{- if and .Values.stats.enabled .Values.frontend.statsApiHost }}
+            - { name: NEXT_PUBLIC_STATS_API_HOST, value: {{ .Values.frontend.statsApiHost | quote }} }
+            {{- end }}
+            {{- if and .Values.visualizer.enabled .Values.frontend.visualizeApiHost }}
+            - { name: NEXT_PUBLIC_VISUALIZE_API_HOST, value: {{ .Values.frontend.visualizeApiHost | quote }} }
+            {{- end }}
+          readinessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}

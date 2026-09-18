@@ -1,0 +1,8 @@
+# besu-app-rpc-edge values. Terraform (modules/besu) injects the target group ARNs.
+namespace: besu
+httpPort: 8545
+wsPort: 8546
+wsEnabled: true
+# App NLB target group ARNs from modules/rpc-access (HTTP + WS).
+httpTargetGroupArn: ""
+wsTargetGroupArn: ""

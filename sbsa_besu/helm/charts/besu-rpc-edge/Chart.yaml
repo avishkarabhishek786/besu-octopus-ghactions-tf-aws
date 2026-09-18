@@ -1,0 +1,10 @@
+apiVersion: v2
+name: besu-rpc-edge
+description: >-
+  Binds the RPC nodes to the Terraform-created internal NLB target group. One
+  shared Service selects ALL rpc-role pods (across the per-node releases), and a
+  single TargetGroupBinding (AWS Load Balancer Controller CRD) registers their
+  IPs into the target group. One TGB per target group avoids the conflict of
+  multiple bindings fighting over the same TG.
+type: application
+version: 0.1.0

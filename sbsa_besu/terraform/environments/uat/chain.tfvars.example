@@ -1,0 +1,151 @@
+# =============================================================================
+# terraform.tfvars.example  (PROD)
+# -----------------------------------------------------------------------------
+# Copy to primary.tfvars, fill in real
+# values, and KEEP THE REAL FILES OUT OF GIT (.gitignore excludes *.tfvars).
+#
+# Apply with, e.g.:
+#   terraform init \
+#     -backend-config="bucket=<state-bucket>" \
+#     -backend-config="key=besu/prod/primary.tfstate" \
+#     -backend-config="region=<state-region>" \
+#     -backend-config="dynamodb_table=<lock-table>"
+#   terraform plan  -var-file=environments/prod/primary.tfvars
+#   terraform apply -var-file=environments/prod/primary.tfvars
+#
+# Only the variables relevant to STAGE 1 must be set now; the rest have working
+# defaults and are consumed by later stages. They are listed here so you have
+# the full picture.
+# =============================================================================
+
+# --- Identity & tagging --------------------------------------------------------
+
+# --- Region --------------------------------------------------------------------
+#                              MUST equal network_region in network-handover.auto.tfvars (Gate 8).
+
+# --- Network -------------------------------------------------------------------
+
+# --- EKS -----------------------------------------------------------------------
+kubernetes_version      = "1.35"     # project standard (CLAUDE.md §6)
+worker_node_count       = 6             # 2 per AZ across 3 AZs
+worker_node_min         = 6
+worker_node_max         = 10
+validator_instance_type = "m6i.xlarge"
+node_volume_size_gib    = 100
+eks_public_access       = false         # MUST be false for a fully-private network
+
+# Whether Terraform creates resources that talk to the private EKS API (StorageClass,
+# Secrets Store CSI, Besu/monitoring Helm, RPC-edge TargetGroupBindings). MUST be false
+# for laptop (AWS-layer) applies — the private endpoint is unreachable from outside the
+# VPC, and leaving it at its `true` default makes the rpc-edge count depend on a
+# known-after-apply target-group ARN ("Invalid count argument"). The in-VPC runner
+# OVERRIDES this to true (`-var deploy_in_cluster_resources=true`) for the in-cluster apply.
+deploy_in_cluster_resources = false
+
+# --- Besu / chain (later stages) ----------------------------------------------
+besu_version                = ""        # empty = resolve latest release tag, then pin
+chain_id                    = 0         # REQUIRED: set a unique chain ID not used by any public network
+qbft_block_period_seconds   = 5
+validator_count             = 4
+bootnode_count              = 2         # redundant peer-discovery seeds
+use_provided_validator_keys = false     # true = read keys from validator_private_keys (secrets tfvars)
+
+# --- Permissioning (later stages) ---------------------------------------------
+# node=local (file-based, WORKS). account=off by default. account=local is the
+# FILE-BASED accounts-allowlist (C6): Besu reads it from the besu-account-allowlist
+# ConfigMap on every enforcing node — deny-by-default, so if you switch to "local" you
+# MUST seed the admin and/or allowlist below (an empty seed fails a render preflight).
+# "onchain" is GONE (removed in Besu 25.6.0 — F17). Onboard more accounts without
+# re-genesis via scripts/permissioning/add-account.sh. See docs 02 §2.5 / backlog C6.
+node_permissioning_mode     = "local"   # default per design (file-based node allowlist)
+account_permissioning_mode  = "off"     # off | local (file-based accounts-allowlist, C6)
+permissioning_admin_account = ""        # REQUIRED when account mode = local (first authorized sender); else unused
+initial_account_allowlist   = []        # extra authorized senders when account mode = local; also genesis-funded (F20)
+
+# F20: accounts alloc'd a genesis BALANCE so they can ORIGINATE transactions on the
+# zero-gas chain (min-gas-price=0 / zeroBaseFee). A zero-balance account's tx is NOT
+# mined even at gasPrice 0 — so any tx originator (e.g. a SWIFT signing account) MUST be
+# funded here, INDEPENDENT of permissioning. Provide the addresses in your gitignored
+# primary.tfvars; leave empty here.
+genesis_funded_accounts = []
+
+# --- mTLS / CA (stage 2 bootstraps the CA; leaf certs in stage 4) -------------
+ca_mode                 = ""            # empty = self-managed CA (near-zero cost); "aws" = AWS Private CA (~$400/mo)
+ca_common_name          = "Besu RPC mTLS Root CA"
+ca_organization         = "Your Bank Ledger Platform"
+ca_validity_days        = 3650          # 10-year private root
+server_cert_ca_override = ""            # set if SWIFT mandates a specific CA for your server cert
+rpc_auth_mode           = "tls-plus-method"
+rpc_dual_pool           = false
+
+# --- Secrets Manager ----------------------------------------------------------
+# ⚠️ Deploy-test trap (C11, 2026-07-02): with a non-zero window, `terraform destroy`
+# leaves ALL besu secrets (fixed names!) in "scheduled deletion" for that many days,
+# and any re-deploy within the window FAILS on name collisions. For deploy-tests
+# either set 0 here, or force-delete after the destroy:
+#   aws secretsmanager delete-secret --secret-id <name> --force-delete-without-recovery
+# Keep 30 for the real production deployment.
+secret_recovery_window_days = 30        # recoverable for 30 days after delete (prod safety)
+
+# --- KMS: validator/node key custody (C12, FIPS 140-2 L3 path B) ---------------
+# Encrypt the validator/bootnode/node-key secrets (+ the self-managed CA private
+# key) at rest under a CUSTOMER-managed KMS CMK (FIPS 140-3 L3 hardware, CMVP
+# #4884), under a key policy WE control + a per-decrypt CloudTrail trail. This is
+# the "at-rest custody" reading (auditor doc §9 / Option B); it does NOT change how
+# Besu signs. Recommended ON for prod. See docs/fips-140-l3-validator-key-management-analysis.md.
+enable_node_key_cmk    = true            # false = AWS-managed aws/secretsmanager key (baseline)
+enable_kms_data_events = true            # CloudTrail logs every Decrypt on the CMK (needs enable_cloudtrail)
+kms_deletion_window_days = 30            # DEPLOY-TEST: set 7 (min) so a torn-down key lingers less
+# NOTE (deploy-test): the CMK bills ~$1/mo until the deletion window elapses after destroy.
+# For strict "no long-lived private key in Terraform state", also prefer ca_mode="aws"
+# (ACM Private CA keeps the CA key in its HSM, never in tfstate) — see §CA note in the guide.
+
+# --- SWIFT / SIPN access (later stages) ---------------------------------------
+swift_sipn_allowed_cidrs = []           # from SWIFT connectivity provider
+swift_rpc_hostname       = "rpc.yournet.internal"
+swift_rpc_port           = 8545
+# swift_permitted_methods uses a safe default; override only to narrow further
+
+# --- Validator-internal ops listener ------------------------------------------
+ops_rpc_enabled = false # enable only if you need validator-internal QBFT/admin via port-forward
+
+# --- App-rpc edge (A′) — non-mTLS RPC path for an application consumer ---------
+# A SEPARATE app-facing Besu RPC pool inside the cluster + its own internal NLB +
+# dedicated PrivateLink service (server-TLS + JWT, ETH/NET/WEB3). This is the path a
+# server-side dApp signer uses (it is NOT a SWIFT mTLS client, so it cannot use the
+# SWIFT plane). Leave enable_app_rpc=false unless you are deploying an app consumer;
+# fund the app's signer EOA via genesis_funded_accounts (F20).
+# H8: rather than hand-pasting, set `app_signer_account` (the app's signer EOA) and the
+# chain root UNIONS it into initial_account_allowlist + genesis_funded_accounts — so
+# under account_permissioning_mode="local" it is authorized + funded on a fresh deploy.
+enable_app_rpc        = false            # true = build the app-rpc pool + edge + PrivateLink
+app_rpc_count         = 0                # 0 for a SWIFT-only chain. F24: the root gates this on
+#                                          enable_app_rpc (app_rpc_count_effective), so a non-zero
+#                                          count is IGNORED while enable_app_rpc=false. Set BOTH
+#                                          (enable_app_rpc=true + count>=2) to deploy the app pool.
+app_signer_account    = ""               # H8: app signer EOA; empty for a SWIFT-only chain
+app_rpc_allowed_cidrs = ["10.20.0.0/16"] # the app VPC CIDR (traffic arrives via PrivateLink)
+
+# --- Stage 9 Blockscout explorer (in-cluster, private) ------------------------
+# Dedicated explorer-rpc pool + Blockscout chart, fully private. Reached via the
+# in-VPC runner's kubectl port-forward — no public exposure.
+enable_blockscout              = true
+explorer_rpc_count             = 1   # single indexing source (Blockscout reads node 1)
+blockscout_pg_storage_size_gib = 50  # larger DB for prod history (re-indexable)
+blockscout_network_name        = "Besu (private)"
+
+# --- Runner code+config delivery (D-21 / F16) ---------------------------------
+# The in-VPC runner has NO internet: no package manager, no GitHub clone. Its
+# toolchain and source arrive as two S3 objects; the gitignored env config arrives
+# through Secrets Manager. Both destinations are created by this root, so nothing
+# to configure here. Between the AWS-layer apply and applying terraform/runner:
+#
+#   AWS_REGION=af-south-1 scripts/runner/push-runner-bundle.sh   # tools + source
+#   AWS_REGION=af-south-1 ENV=uat scripts/runner/push-deploy-config.sh
+#
+# There is deliberately no GitHub token setting: the PAT was removed with the
+# clone (it needed egress the VPC does not have, and it produced F28/H18/H39).
+
+# --- Observability (later stages) ---------------------------------------------
+alert_email        = "ops@yourbank.example"
+log_retention_days = 90

@@ -1,0 +1,11 @@
+apiVersion: v2
+name: besu-blockscout
+description: >-
+  Stage 9 — Blockscout block explorer for the private Besu chain. Bundled
+  PostgreSQL + a Blockscout backend (UI+API) that indexes the dedicated
+  ClusterIP-only explorer-rpc pool (ETH/NET/WEB3/DEBUG/TRACE). Fully private:
+  no external endpoints, no exchange-rate / market-data egress.
+type: application
+version: 0.2.1
+# Blockscout app version is set via values (blockscout.image); pinned there.
+appVersion: "9.0.2"

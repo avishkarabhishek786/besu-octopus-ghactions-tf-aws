@@ -1,0 +1,3 @@
+besuNamespace: besu
+monitoringNamespace: monitoring
+metricsPort: metrics # named container port on the Besu pods (9545)

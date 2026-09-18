@@ -1,0 +1,32 @@
+# Besu chain-health alerts. Fire into Alertmanager, which routes to SNS -> email.
+# expr metric names follow Besu's Prometheus exporter; adjust if a future Besu
+# release renames them.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: besu-rules
+  namespace: {{ .Values.monitoringNamespace }}
+  labels:
+    app.kubernetes.io/part-of: besu
+spec:
+  groups:
+    - name: besu.chain
+      rules:
+        - alert: BesuNodeDown
+          expr: up{container="besu"} == 0
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "A Besu node target is down (scrape failing for 5m)."
+        - alert: BesuBlockHeightStalled
+          expr: increase(ethereum_blockchain_height[10m]) == 0
+          for: 10m
+          labels: { severity: critical }
+          annotations:
+            summary: "Besu chain height has not advanced in 10m (consensus stalled)."
+        - alert: BesuLowPeers
+          expr: ethereum_peer_count < 2
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "A Besu node has fewer than 2 peers for 10m."

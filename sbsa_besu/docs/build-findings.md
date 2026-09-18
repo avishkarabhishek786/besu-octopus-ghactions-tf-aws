@@ -1,0 +1,480 @@
+# Build findings — the SBSA port (B-series)
+
+Defects found while porting `besu-aws` onto the cloud team's VPC. Numbered `B1..`
+to avoid colliding with the inherited series: **F1–F33** (deploy-test findings),
+**H1–H39** (production hardening), **C1–C12** (app backlog).
+
+Every entry records **how it was found**, because the pattern matters more than
+the individual bugs: *four of these passed silently and were only caught by
+deliberately testing the failure path, not the success path.*
+
+**Provenance** distinguishes three kinds:
+
+- **inherited** — pre-existing in `besu-aws`, surfaced here
+- **port-induced** — created by, or invalidated by, moving to the new design
+- **tooling** — bugs in the verification scripts written for this project
+
+The last category is the worrying one. A broken check does not fail loudly; it
+reports success.
+
+---
+
+## Open
+
+### B13 — the five upstream Helm charts carry their own images
+**Provenance:** port-induced · **Status:** OPEN, tracked in `PORTING.md` item 4
+
+`var.container_images` covers the eight images this repository names directly. It
+does **not** cover the images the five pinned upstream charts pull themselves:
+Prometheus, Grafana, Alertmanager, kube-state-metrics, node-exporter and the
+operator (`kube-prometheus-stack`), the CSI node-driver-registrar and
+livenessprobe, and each AWS controller's own image — from `quay.io`,
+`registry.k8s.io`, `public.ecr.aws` and `docker.io`.
+
+In a VPC with no egress every one of them hangs. Each chart needs its image
+values overridden, and the key differs per chart (`image.repository`,
+`global.imageRegistry`, `prometheus.image`, …).
+
+**Found by:** enumerating the chart list for the air-gapped supply chain
+— not by any test. Nothing in the build would have caught it before a deploy-test.
+
+**Not in scope:** the EKS addons (VPC CNI, kube-proxy, CoreDNS, EBS CSI) reach an
+AWS-managed ECR in-region through the cluster's `ecr.api`/`ecr.dkr` endpoints.
+
+---
+
+## Closed
+
+### B24 — Tentacle's instance index lives in `/etc/octopus`, which the service user could not create
+**Provenance:** tooling · **Found:** 2026-09-17, first live `install-tentacle.sh` run · **Fixed:** same day
+
+Step 2 (`create-instance` as the unprivileged `tentacle` user, CD-62) died with
+`Access to the path '/etc/octopus' is denied`. The script's comment assumed the CLI records
+the instance under `$HOME/.octopus`; on Linux Tentacle keeps a **machine-wide** index in
+`/etc/octopus/Tentacle/instances/`, and an unprivileged user cannot create `/etc/octopus`.
+Two fixes: step 1 now creates `/etc/octopus` owned by the service user (it holds only a
+pointer file); and step 2 decides "instance exists" from **Tentacle's own index** (the
+`/etc/octopus/Tentacle/instances/<name>.config` pointer, or `list-instances`), not from
+the presence of `tentacle.config`. The first attempt at this fix treated only an *empty*
+config as residue — but the failed `create-instance` had already written a full XML
+skeleton, so the re-run still skipped step 2 and step 3 failed with "Instance besu-worker
+has not been configured on this machine. Available instances: ." A leftover config whose
+instance the index does not know is now removed before `create-instance`.
+
+**Found by:** the first run. The step-0 probe, the user, and the directories all passed;
+the failure was in the first Tentacle CLI call, i.e. the first line of this script that
+could only be tested against the real binary. Nothing before today had run it.
+
+---
+
+### B23 — probe 8 asked the one host that cannot traverse the VIP to traverse it
+**Provenance:** tooling · **Found:** 2026-09-17, first full `verify-egress.sh` run with a runner present · **Fixed:** `mimic_egress` (verify-egress.sh), same day
+
+Probes 1–7 passed from the runner through the VIP (`proxy.egress.mimic.internal` →
+NLB → Squid). Probe 8 — "a non-allowed source is refused" — ran on the **proxy host**
+and sent its CONNECT **through the same VIP**: `000`, `Connection timed out after 15003
+milliseconds`. Not the ACL: an NLB target cannot connect to itself through its own NLB
+when client-IP preservation is on — the packet arrives with source == destination ==
+its own address and is dropped (AWS's documented hairpin/loopback restriction for
+`preserve_client_ip`). The probe would have failed on any correctly configured proxy.
+
+What probe 8 must prove is only that a *different* source is refused; the VIP's
+client-IP preservation is already proven by probe 2 (Squid allowed `10.60.0.250` — had
+the NLB NATed, Squid would have seen the NLB's address and refused). So probe 8 now
+talks to Squid directly on the proxy host's own private address, which Squid sees as a
+non-allowlisted source and refuses with 403.
+
+**Found by:** the probe failing and the runner's passes contradicting it. On 2026-09-14
+probe 8 had only ever been exercised by hand from the proxy host *directly* to Squid
+(where it correctly showed `TCP_DENIED/403`); the through-the-VIP form in the script was
+never run before today — a third instance of a check that had not met its real input.
+
+---
+
+### B22 — the deploy-config bundle looked for a tfvars file this repo does not have
+**Provenance:** port-induced · **Found:** 2026-09-17, reading `push-deploy-config.sh` before the first bundle push · **Fixed:** same day
+
+`scripts/runner/push-deploy-config.sh` bundled `terraform/environments/<env>/primary.tfvars`
+— the single-file convention inherited from besu-aws. Phase D (2026-08-30) split this repo's
+tfvars into `common.tfvars` + `chain.tfvars` and no `primary.tfvars` exists under
+`environments/`. The script tolerates a missing candidate (it bundles "whichever exist"), so
+it would have exited 0 having shipped **only the two hand-over files**, and the first
+`terraform plan` run from the in-VPC runner would have failed with "No value for required
+variable" on all six `common.tfvars` values. Fixed by listing `common.tfvars` and
+`chain.tfvars` as the always-shipped candidates; `fetch-deploy-config.sh`'s usage comment
+updated to the split form.
+
+**Found by:** reading the script's candidate list against the environment directory before
+running it — not by the R-9 mock, which never runs Terraform on the runner and would have
+passed. A tolerant "bundle what exists" is the right behaviour for optional files and the
+wrong one for the file every root needs; the fix keeps the tolerance and corrects the list.
+
+---
+
+### B21 — the NAT gate crashed on the first route table that carried a non-local route
+**Provenance:** port-induced · **Found:** 2026-09-17, first `shared` plan of the R-9 mock · **Fixed:** same day
+
+`modules/network-contract` asserts "no NAT" with
+`coalesce(r.nat_gateway_id, "") != ""`. Terraform's `coalesce` treats `""` as *absent*
+and **errors** when every argument is absent — and the `aws_route_table` data source
+reports `nat_gateway_id = ""` (not `null`) for any route that is not a NAT route. So the
+gate could only evaluate cleanly on a route list with **zero** routes, which is exactly
+what the ledger tables had until now: the data source omits the `local` route, and Phase C
+(2026-08-30) proved the gates against a mimic whose ledger tables had nothing else. The
+first `shared` plan after `mimic_egress` added the peering route (`10.61.0.0/24 → pcx-…`,
+CD-60) hit three identical errors — one per ledger table — with the message
+`Call to function "coalesce" failed: no non-null, non-empty-string arguments`.
+
+The fix is the idiom the neighbouring IGW check already used: a non-empty sentinel,
+`coalesce(r.nat_gateway_id, "-") != "-"`. Swept the roots for the same pattern; none.
+
+**Found by:** the plan failing. Not by Phase C — which passed for the wrong reason (an empty
+list), the same shape as B19 and B20: a check that "passes" on the input it was written
+against is not evidence it works on the input it will meet.
+
+---
+
+### B20 — curl reports a REFUSED CONNECT as `000`, so the egress probes scored allow and deny alike
+**Provenance:** tooling · **Found:** 2026-09-14, first live run against the egress mimic · **Fixed:** same day
+
+`verify-egress-proxy.sh` (and the mimic's probe 8) read `-w '%{http_code}'` and expected
+`403` when the proxy refused a tunnel. But when a proxy answers `CONNECT` with 403, curl
+exits 56 and reports **`http_code=000`** — the proxy's status is a *different* variable,
+**`%{http_connect}`**. Verified live from the proxy host: `connect=403 000` for every
+refused tunnel, `connect=000 403` for the one plain-HTTP request (no CONNECT involved).
+With the old logic probe 4 (deny) would have FAILED on a correctly-configured proxy, and
+probe 2 (allow) could not distinguish "refused" from "unreachable".
+
+Now every https probe reads both numbers and scores on `http_connect` (200 = tunnel
+accepted, 403 = refused, 000 = no connection); the plain-HTTP probe scores on
+`http_code`, which is the proxy's own answer there.
+
+**Found by:** running the four requests by hand from the proxy host while checking the
+bootstrap, and noticing `000` where the Squid access log said `TCP_DENIED/403`. Not by
+the probe script — which is the point: a verification tool must be tested against the
+failure it is meant to detect before it is trusted.
+
+---
+
+### B19 — a failed hand-over render left a 0-byte file and a STALE hand-over in the platform
+**Provenance:** tooling · **Found:** 2026-09-14, first live run of the R-9 mock · **Fixed:** `mimic_vpc` (emit-handover.sh)
+
+`emit-handover.sh` rendered with `cat > "$OUT" <<TFVARS … $(terraform output …) … TFVARS`.
+The shell **truncates `$OUT` before** evaluating the substitutions, and `set -e` does not
+propagate out of a heredoc's command substitutions. On the first run after the af-south-1
+apply, the first `terraform output` call failed transiently; the result was a **0-byte**
+`network-handover.auto.tfvars`, the copy-into-platform step never ran, and `sbsa_besu`
+kept the **Aug-30 us-east-1 hand-over** — internally consistent, well-formed, and pointing
+at a VPC that no longer existed. The operator saw only the "rendering…" line and no error.
+
+Now: render to a `mktemp` beside the target, `die` on any failed or empty output read,
+assert the render is non-empty and carries `vpc_id` and `network_region`, then `mv` into
+place. The same shape belongs in `mimic_egress/scripts/emit-handover.sh` (applied there
+too).
+
+**Found by:** the operator pasting the last lines of the run — which ended at
+"rendering…" — and a 0-byte file where a 3 KB one should have been. Not by any check: the
+platform's network-contract gate would have caught the region mismatch, but only after
+`mimic_egress` had tried to peer with a dead VPC ID.
+
+---
+
+### B17 — the runner root read a chain output that does not exist
+**Provenance:** port-induced · **Fixed:** 2026-09-14 (R-9 build)
+
+`terraform/runner/main.tf` placed the instance with `local.chain.private_subnet_ids[0]`.
+The chain root has never exported `private_subnet_ids`; since the port it exports
+**`ledger_subnet_ids`, a map keyed by AZ ID** (#5). Reading a missing attribute from
+`terraform_remote_state` is a plan-time error, so the runner root could not have been
+planned since the hand-over landed.
+
+Now `runner_subnet_az_id` (default: first AZ in sorted order — deterministic, so a re-apply
+never moves the runner) selects the subnet from the map, and the same choice fixes the
+address the egress allowlist depends on (CD-60): the AZ, the subnet and the pinned IP are
+one decision, not three.
+
+**Found by:** reading the line while wiring `runner_private_ip`, not by a test — the runner
+root had not been planned since `ledger_subnet_ids` replaced the list.
+
+---
+
+### B18 — the hand-over never reached the runner, and the config script looked in a root that no longer exists
+**Provenance:** port-induced · **Fixed:** 2026-09-14 (R-9 build)
+
+Two halves of one gap. `push-deploy-config.sh` defaulted its secret name from
+`terraform -chdir=terraform output …` — the monolithic root that split into
+`shared/chain/runner/contract` on 2026-08-30 — so the default never resolved and the
+script died with "secret name not given". And its file list carried the env tfvars only:
+**`network-handover.auto.tfvars` was never delivered.** It is `*.auto.tfvars`, therefore
+gitignored, therefore absent from the `git archive` source bundle (D-21) — so every root
+on the runner would have failed with *No value for required variable "vpc_id"*. B14 fixed
+the symlinks on the laptop; nothing fixed the file on the runner.
+
+The secret lookup now targets `terraform/chain`; both hand-over files
+(`network-handover`, and the new `egress-handover`) ride in the deploy-config bundle;
+`fetch-deploy-config.sh` recreates the per-root symlinks after extracting.
+
+**Found by:** asking where `install-tentacle.sh` would read the proxy address from on the
+runner, and following the file backwards to the laptop.
+
+---
+
+### B1 — `cidrcontains` does not exist in Terraform
+**Provenance:** tooling · **Fixed:** commit `a35c883`
+
+The service-CIDR overlap gate (#9) and a `check` block were written against a
+function Terraform does not have. Replaced with integer CIDR arithmetic
+(`split`/`tonumber`/`min`/`pow`/`floor`).
+
+The gate matters because the EKS service CIDR is **immutable after cluster
+creation** — an overlap discovered later cannot be corrected without rebuilding
+the cluster.
+
+**Found by:** `terraform validate`. The only one of these caught for free.
+
+---
+
+### B2 — instance-type offerings compared AZ *name* against AZ *ID*
+**Provenance:** tooling · **Fixed:** commit `619acea`
+
+`describe-instance-type-offerings --location-type availability-zone` returns
+`us-east-1a`; the script compared it against `use1-az1`. Result:
+`m6i.xlarge is NOT offered anywhere in us-east-1`, which is false.
+
+**Found by:** the human reading output that contradicted itself — the summary
+said "not offered anywhere" while the table beside it listed availability.
+
+---
+
+### B3 — a jq `index()` inside a pipe made every AZ report "yes"
+**Provenance:** tooling · **Fixed:** commit `619acea`
+
+In `$off | index(.[1])`, the `.` inside `index()` refers to *that pipe's input*
+(`$off`), not the AZ row — so it evaluated `offers[1]` and was **always truthy**.
+Every AZ printed `yes`.
+
+**This is the one worth remembering.** B2 and B3 were both live at once and
+**masked each other in opposite directions**: B3 said every AZ had the instance
+type, B2 said none did. Fixing either alone would have produced a confidently
+wrong answer. The AZ selection they feed decides where validators are placed.
+
+**Found by:** re-reading the script after B2, rather than trusting that one fix
+had resolved the contradiction.
+
+---
+
+### B4 — a subshell discarded the verification counters
+**Provenance:** tooling · **Fixed:** during Phase B
+
+`jq ... | while read` runs the loop in a subshell, so `PASS`/`FAIL` increments
+were lost. The script reported **12 passed** while running **27** checks.
+
+Not cosmetic. A capacity **failure** would have printed its message, been dropped
+from the count, and **exited 0** — a broken network reported as contract-clean.
+Fixed with process substitution (`done < <(jq ...)`).
+
+**Found by:** the count not matching the number of checks in the file.
+
+---
+
+### B5 — requirements numbered `#14b` with no `#14a`
+**Provenance:** tooling · **Fixed:** during Phase A
+
+`NETWORK_REQUIREMENTS_CLOUD_TEAM.md` had a `#14b` with no `#14a`, and worse, it
+sat in the Tier 2 section while the summary table marked it Tier 1 — a
+priority contradiction in a document being sent to another team.
+
+Renumbered throughout. **One reference, `(see #18)`, was initially missed**: the
+fix-up regex covered `(#N)`, `#N `, `#N,`, `#N.` and `#N\n` but not `#N)`.
+
+**Found by:** the human asking "where are points 14a and 14b?", then by dumping
+every reference and reading them rather than trusting the regex.
+
+---
+
+### B6 — `Environment = "prod"` hardcoded in `default_tags`
+**Provenance:** inherited assumption, invalidated by the port · **Fixed:** `f7ec3ae`
+
+`besu-aws` was prod-only, so a literal `"prod"` in the provider's `default_tags`
+was harmless. This project has `test` and `prod`, so **every test resource was
+tagged as production** — corrupting cost allocation and making a deploy-test
+indistinguishable from the real deployment in the console and the bill.
+
+Now `var.environment`, with **no default** and a validation restricting it to
+`prod|test`.
+
+**Found by:** reading `tags_all` in a plan, not by any check.
+
+---
+
+### B7 — the eight gates ran against the wrong region
+**Provenance:** port-induced · **Fixed:** commit `d8c2592`
+
+`module "network_contract"` was the **only** module in the repository not passed
+`providers = { aws = aws.primary }`. It therefore inherited the *default*
+provider, whose region comes from the shell (`AWS_REGION` / profile) rather than
+from `var.primary_region`.
+
+Both were `us-east-1` throughout Phase C, so every gate passed either way. At
+go-live with `primary_region = "af-south-1"` the gates would have validated a
+**different region's network** than the one being deployed into.
+
+**Gate 8 could not have caught it** — it compares two variables, not the
+provider's actual region. The gate designed for region portability was itself
+region-blind.
+
+**Found by:** noticing the missing `providers` argument while adding a new root
+that needed the same wiring — not by testing.
+
+---
+
+### B8 — `output "vpc_cidr"` reported a VPC that does not exist
+**Provenance:** port-induced · **Fixed:** commit `b658b62`
+
+The output returned `var.primary_vpc_cidr`, orphaned when `modules/network` was
+deleted. The plan reported **`10.0.0.0/16` for a VPC that is `10.60.0.0/20`** —
+the variable's stale default, with nothing left in this project able to set it
+correctly.
+
+Latent, because no root consumed the output yet. It would have activated the
+moment the `app` root read it, and anything scoping a security group or NACL to
+that value would have been silently wrong — and wrong in the permissive
+direction.
+
+**Found by:** reading the plan output the human pasted. It was visible in an
+earlier plan too, and not noticed.
+
+---
+
+### B9 — three images were never parameterised at all
+**Provenance:** inherited · **Fixed:** commit `de60ad1`
+
+`stats`, `visualizer` and the `nginx` proxy came straight from the Blockscout
+chart's `values.yaml`, hardcoded to `ghcr.io` and `docker.io`. No Terraform
+variable reached them.
+
+In an air-gapped VPC those three pods hang on `ImagePullBackOff` while every
+other component pulls from the mirror — the worst shape of this failure, because the
+working majority makes it look like a Blockscout problem rather than a registry
+one.
+
+**Found by:** grepping every chart for image references while designing the
+registry indirection, rather than assuming the existing variables covered it.
+
+---
+
+### B10 — `tools_image` was declared but never passed
+**Provenance:** inherited · **Fixed:** commit `de60ad1`
+
+`modules/besu` declared `tools_image`; the root never set it. It silently used
+the module default, so `alpine/k8s` would have come from `docker.io` regardless
+of configuration. A quieter shape of B9: the seam existed and was simply not
+connected.
+
+**Found by:** the same grep as B9.
+
+---
+
+### B11 — the Besu version was written down twice
+**Provenance:** inherited · **Fixed:** commit `de60ad1`
+
+`26.6.1` appeared both as the fallback in `local.besu_pinned_version` and in the
+image reference, free to disagree. Now the image list is the single source and
+the fallback reads from it.
+
+---
+
+### B12 — AL2023 requires MIME multipart user data
+**Provenance:** port-induced · **Fixed:** commit `3a97ee4`
+
+Installing the private-registry CA needs `user_data` on the node launch template.
+EKS 1.35 means AL2023, where user data **must** be MIME multipart: EKS appends
+its own `application/node.eks.aws` NodeConfig part, and a bare shell script is
+not merged. The node never finishes bootstrapping and the node group rolls back
+after ~15 minutes with no useful message.
+
+`ami_type` had never been set — it was left to the API default — so the contract
+the user_data had to satisfy was undefined. Now explicit
+(`AL2023_x86_64_STANDARD`) and validated.
+
+**Found by:** checking the AMI family before writing the bootstrap, then
+**rendering the MIME and parsing it** rather than reasoning about it. The `<<-`
+heredoc stripping interacts with a multi-line interpolated PEM, so the column
+alignment was verified with Python's `email` parser and `bash -n`, not by eye.
+
+---
+
+### B14 — the hand-over symlinks were gitignored
+**Provenance:** port-induced · **Fixed:** commit `d8c2592`
+
+Each root reads one hand-over file through a symlink, so the roots cannot drift.
+But `*.auto.tfvars` in `.gitignore` matches the **symlinks** by name, so a fresh
+clone would have had every root unwired, failing with missing required variables.
+
+`emit-handover.sh` now recreates them, so a fresh clone plus one script run is
+fully wired — no manual step to forget.
+
+**Found by:** checking what `.gitignore` matched before committing.
+
+---
+
+### B15 — the runbook's mimic resource count was wrong
+**Provenance:** tooling · **Fixed:** commit `3db725e`
+
+Documented as ~40; the real plan was **65**. The gap was per-subnet route tables
+and associations (15 each) and the NACL rules. A count in a runbook is a check —
+if the human sees 65 where the doc says 40, they cannot tell a correct plan from
+a wrong one.
+
+---
+
+### B16 — the tag API reports deleted resources, so it is the wrong zero-check
+**Provenance:** operations · **Found:** 2026-09-04, tearing down the us-east-1 mimic
+
+`terraform destroy` reported **65 destroyed** and `describe-vpcs` returned nothing.
+But `resourcegroupstaggingapi get-resources` on the same `DeletionGroup` still
+listed **3 ARNs** — two VPC endpoints and a flow log. Describing each one directly
+returned `InvalidVpcEndpointId.NotFound` and an empty flow-log list: all three were
+already gone. The Resource Groups Tagging API is **eventually consistent and keeps
+indexing deleted resources for a while.**
+
+This matters because the teardown discipline (`CLAUDE.md` §9, `docs/test-run-log.md`)
+says "sweep by `DeletionGroup` tag, then zero-check", and
+`scripts/maintenance/full-delete.sh` is keyed on that same API. Two failure modes:
+
+- **False positive.** A clean teardown looks like a leak. Harmless once, corrosive
+  repeatedly — it trains the operator to ignore the zero-check, which is the one
+  control standing between a stalled test and an overnight bill.
+- **False negative — the dangerous one.** The lag runs in both directions. A
+  resource created moments earlier may not be indexed yet, so a tag-API sweep can
+  *miss* a live resource and report zero.
+
+**Rule:** the tag API is fine for *discovery* (finding what to delete). The
+**zero-check must be a direct service-API describe** — `describe-vpcs`,
+`describe-volumes`, `describe-network-interfaces`, `describe-nat-gateways` — filtered
+by tag. If a tag-API entry persists after a direct describe says the resource is
+gone, re-check in a few minutes rather than chasing it.
+
+---
+
+## The pattern
+
+Twenty-four findings; **four (B2, B3, B4, B7) would have passed silently**, two more (B17, B18) would have failed only on the runner, on the day, B19 *did* pass silently on the first live run, B20 was a verification tool that would have contradicted a correct proxy, B21 was a gate that had only ever been evaluated against an empty list, B22 was a bundle that would have shipped without the one file every root needs, B23 was a negative probe that could not physically reach what it tested, and B24 was a documented assumption about where a third-party binary keeps its state. None of
+those four was caught by a test — they were caught by reading output that
+contradicted itself, by re-reading a script after a related fix, and by noticing a
+missing argument while doing unrelated work.
+
+Two consequences shaped the rest of the build:
+
+1. **The negative test is the test.** Phase C was not considered done when the
+   gates passed against a correct network — only when a tag was deliberately
+   deleted and the plan was observed to **fail**, citing the right requirement.
+   Until then, four gate bugs had been found and two had passed silently, so
+   "it passed" was not evidence the gate worked. See `docs/RUNBOOK.md` Phase C.
+
+2. **Render and parse; do not reason about format.** B12's MIME payload was
+   verified by rendering it with a sample certificate and parsing the result,
+   because the failure mode (node never joins, rollback after 15 minutes, no
+   useful message) is expensive and arrives late.
+
+Both practices carry into the deploy-test phases.

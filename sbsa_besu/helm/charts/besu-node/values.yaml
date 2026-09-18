@@ -1,0 +1,232 @@
+# =============================================================================
+# besu-node — values
+# -----------------------------------------------------------------------------
+# One release per node. Terraform sets fullnameOverride to the node's release
+# name (e.g. besu-validator-1) so the StatefulSet/headless-Service DNS is
+# deterministic and matches the enode hosts other nodes are told about.
+# =============================================================================
+
+# Set by Terraform per node = the release name, so resource DNS is predictable.
+fullnameOverride: ""
+
+# validator | bootnode | rpc | app-rpc | explorer-rpc — drives RPC exposure,
+# security profile, PDB, and labels. rpc = SWIFT pool (mTLS+JWT); app-rpc = app
+# pool (server-TLS+JWT, HTTP+WS); explorer-rpc = Blockscout pool (ClusterIP-only,
+# DEBUG/TRACE, NO TLS/JWT — never on an external edge). Privileged QBFT/admin
+# namespaces live on the validator-internal opsRpc listener.
+role: validator
+
+# --- Images (PINNED, must match the genesis chart) ---------------------------
+besuImage: hyperledger/besu:26.6.1
+toolsImage: alpine/k8s:1.30.13
+
+# --- Network / ports ---------------------------------------------------------
+chainId: 1337
+p2pPort: 30303
+rpcHttpPort: 8545
+rpcWsPort: 8546 # app-rpc WebSocket (eth_subscribe); also the ops listener if used
+metricsPort: 9545
+clusterDomain: cluster.local
+
+# --- Secrets (this node's identity + the public CA cert) ---------------------
+# nodeSecretName is THIS node's key (e.g. besu-node-validator-1). The per-node
+# SecretProviderClass mounts only this one, so the pod can read only its own key.
+nodeSecretName: ""
+caCertSecretName: besu-node-ca-cert
+secretsRegion: us-east-1
+
+# ConfigMap published by the genesis Job (genesis.json + node-pubkeys.json).
+genesisConfigMapName: besu-genesis
+
+# Read-only IRSA service account (created by the genesis chart).
+serviceAccountName: quorum-node-secrets-sa
+
+# --- Storage (encrypted gp3 PVC for the chain DB) ----------------------------
+storage:
+  storageClassName: besu-gp3
+  size: 20Gi
+
+# --- Permissioning -----------------------------------------------------------
+permissioning:
+  nodeMode: local # file-based node allowlist (permissions_config.toml) — the only mode
+  # accountMode: "off" (no account permissioning) is the default. The on-chain contract
+  # path was REMOVED (C8) — Besu dropped smart-contract permissioning in 25.6.0 (F17), so
+  # it could never run. "local" (file-based) is the SUPPORTED redesign (C6, implemented
+  # 2026-07-05): when set, Besu reads accounts-allowlist from the ConfigMap below via
+  # --permissions-accounts-config-file (deny-by-default; only listed senders may transact).
+  # See docs 02 §2.5 / backlog C6.
+  accountMode: "off" # off | local (file-based account allowlist)
+  # ConfigMap (from the besu-genesis chart) holding the accounts-allowlist. Mounted
+  # read-only at accountAllowlistMountPath when accountMode=local. Terraform sets the
+  # name from the module so it matches the genesis chart's ConfigMap.
+  accountAllowlistConfigMapName: besu-account-allowlist
+  # Fixed in-container mount path for the accounts permissions file (structural,
+  # like /genesis and /secrets). Besu points --permissions-accounts-config-file here.
+  accountAllowlistMountPath: /config/perm-accounts
+
+# --- Full network topology (Terraform-computed, ordered to match pubkeys) ----
+# Each list holds the pod-0 DNS host of every node of that role, in the SAME
+# order as node-pubkeys.json, so the initContainer can zip pubkey[i] <-> host[i]
+# into enode URLs.
+peers:
+  validators: []
+  bootnodes: []
+  rpc: []
+  appRpc: []      # stage 8: app-facing RPC pool hosts (enodes added to the allowlist)
+  explorerRpc: [] # stage 9: Blockscout explorer RPC pool hosts (enodes in the allowlist)
+
+# --- F27 permanent fix (backlog C10): startup DNS-readiness gate -------------
+# Besu's node permissioning resolves the allowlist enode DNS ONCE, at startup.
+# On a fresh genesis every pod boots simultaneously, so a node can resolve its
+# peers BEFORE their headless-Service DNS records exist → those peers are
+# silently dropped from the effective allowlist → validators see 0 peers → no
+# QBFT quorum → the chain sticks at block 0 (F27; nondeterministic race — the
+# 2026-07-01 run lost it, the 2026-07-02 run won it). The headless Service sets
+# publishNotReadyAddresses:true, so a pod's DNS record exists while it is still
+# in its OWN init phase — meaning every pod can wait for every other pod's DNS
+# with no deadlock. This gate is an init container that blocks Besu's start
+# until ALL peer hostnames resolve.
+dnsReadiness:
+  enabled: true
+  timeoutSeconds: 300 # per init attempt; on failure kubelet re-runs the init (visible as Init:Error)
+  pollSeconds: 5      # re-check interval
+  # fail = exit 1 on timeout (kubelet retries the init container forever, with
+  #        backoff — Besu NEVER starts with a partial peer view; the pod shows
+  #        Init:Error/Init:CrashLoopBackOff, which is the loud, correct signal).
+  # continue = log the unresolved peers and start Besu anyway (pre-C10 behavior,
+  #        escape hatch if a listed peer is legitimately gone mid-transition).
+  onTimeout: fail
+
+# --- RPC exposure (role=rpc = SWIFT pool) ------------------------------------
+rpc:
+  # SWIFT pool: read/tx namespaces ONLY. QBFT/admin are NOT exposed on any
+  # external edge — they live on the validator-internal opsRpc listener below.
+  apis: "ETH,NET,WEB3"
+  hostAllowlist: "*"
+
+# --- mTLS + method scoping (stage 4; role=rpc) -------------------------------
+# When enabled, Besu RPC terminates mTLS itself: a PKCS12 server keystore
+# (CA-signed) + a CA truststore (verifies SWIFT client certs). Secrets are
+# issued by scripts/pki/issue-server-cert.sh and base64-decoded by the
+# initContainer. JWT method scoping (rpcAuth.mode=tls-plus-method) verifies
+# SWIFT JWTs against the RSA public key.
+mtls:
+  enabled: false
+  keystoreSecret: besu-node-rpc-keystore
+  truststoreSecret: besu-node-rpc-truststore
+  keystorePasswordSecret: besu-node-tls-keystore-password
+  truststorePasswordSecret: besu-node-tls-truststore-password
+  # H9: opt-in client-cert PINNING. Today client auth trusts ANY cert chaining to a
+  # CA in the truststore (our single infra CA) — so any infra-CA-signed clientAuth
+  # cert is accepted as a valid SWIFT client. When knownClientsSecret is set, Besu
+  # also honors a known-clients file (SHA-256 fingerprints of the exact allowed
+  # client certs). caClientsEnabled controls whether CA/truststore trust is ALSO
+  # accepted: true = current behavior (pinned OR CA-signed); false = STRICT pinning
+  # (only the pinned SWIFT cert). Default off preserves today's behavior.
+  knownClientsSecret: "" # Secrets Manager name of a Besu known-clients file: "<CN> <sha256>" per line
+  caClientsEnabled: true
+
+rpcAuth:
+  mode: tls-plus-method # tls-only | tls-plus-method
+  jwtPubkeySecret: besu-node-rpc-jwt-pubkey
+
+# --- App RPC pool (role=app-rpc; stage 8) ------------------------------------
+# Separate, app-facing Besu RPC pool: server-TLS (Besu-terminated, CA-signed
+# server cert; NO client-auth — apps are NOT mTLS clients) + JWT, restricted to
+# ETH,NET,WEB3, exposing BOTH HTTP and WS (WS for the read-only event listener's
+# eth_subscribe). Consumed from the app VPC over a SEPARATE NLB + PrivateLink
+# service (independent edge, own blast radius). Distinct node identities from SWIFT.
+appRpc:
+  apis: "ETH,NET,WEB3"
+  hostAllowlist: "*"
+  ws:
+    enabled: true
+  # Server-side TLS (https/wss). PKCS12 keystore issued by our CA; no truststore,
+  # no client auth. The app trusts our CA and presents a JWT.
+  tls:
+    enabled: true
+    keystoreSecret: besu-node-apprpc-keystore
+    keystorePasswordSecret: besu-node-apprpc-keystore-password
+  # JWT (RS256): the app mints short-lived tokens; Besu verifies with this pubkey.
+  auth:
+    enabled: true
+    jwtPubkeySecret: besu-node-apprpc-jwt-pubkey
+
+# --- Explorer RPC pool (role=explorer-rpc; stage 9) --------------------------
+# Dedicated read-only RPC pool for Blockscout. INTERNAL ClusterIP only — NEVER
+# fronted by an NLB/PrivateLink. Exposes DEBUG/TRACE (in addition to ETH,NET,WEB3)
+# so Blockscout's indexer can surface INTERNAL transactions. No TLS, no JWT:
+# trust is the in-cluster network boundary (only Blockscout + the runner reach it),
+# and keeping trace/debug off every external edge is the whole point of a separate
+# pool. Distinct node identities; peers intra-cluster like any other node.
+explorerRpc:
+  apis: "ETH,NET,WEB3,DEBUG,TRACE"
+  hostAllowlist: "*"
+  ws:
+    enabled: true # eth_subscribe for Blockscout's realtime block/tx updates
+
+# --- Validator-internal ops RPC (role=validator; stage 8) --------------------
+# Privileged namespaces (QBFT validator voting + optional ADMIN/DEBUG/TXPOOL) on
+# an INTERNAL-ONLY ClusterIP listener — NEVER fronted by an NLB/PrivateLink.
+# Reached only from the in-VPC runner via `kubectl port-forward`. QBFT votes must
+# be cast on each validator, so this is the correct (and only) home for them.
+opsRpc:
+  enabled: false
+  # PERM is included so the operator can hot-reconcile the account allowlist on
+  # validators via perm_add/removeAccountsFromAllowlist (C6/H3). SAFE here because
+  # this listener is ClusterIP-only and reached solely via `kubectl port-forward`
+  # from the in-VPC runner — perm_* mutators are NEVER on the SWIFT/app external edges.
+  apis: "ETH,NET,WEB3,QBFT,ADMIN,DEBUG,TXPOOL,PERM"
+  # JWT (internal-only path). When a pubkey secret is set, auth is on.
+  jwtPubkeySecret: ""
+  # H6: the ops listener carries the PRIVILEGED QBFT/ADMIN/PERM namespaces, so
+  # rendering FAILS if opsRpc.enabled=true with an empty jwtPubkeySecret — UNLESS
+  # allowNoJwt=true. Set allowNoJwt=true to keep the ClusterIP + port-forward (+
+  # NetworkPolicy) trust model without a JWT; set the pubkey secret to require auth.
+  allowNoJwt: false
+
+# --- NetworkPolicy (H6) ------------------------------------------------------
+# Restrict pod-network ingress to the besu-node pods so a compromised in-cluster
+# pod cannot reach the privileged listeners (validator ops = QBFT/ADMIN/PERM;
+# explorer = DEBUG/TRACE). OFF by default because it (a) only ENFORCES when the
+# AWS VPC CNI NetworkPolicy agent is enabled (Terraform enable_network_policy —
+# otherwise the objects exist but do nothing), and (b) needs the client sources
+# below set for YOUR deployment — an incomplete set DENIES legitimate RPC. Enable,
+# set the sources, then VALIDATE peering/metrics/RPC on a mock deploy. The validator
+# ops listener gets NO RPC ingress rule under any setting → reachable only via
+# `kubectl port-forward` (API-server-mediated, not pod-network, so unaffected).
+networkPolicy:
+  enabled: false
+  monitoringNamespace: monitoring # namespace Prometheus scrapes metrics from
+  rpcClientCidrs: []              # SWIFT NLB client CIDRs (role=rpc; TLS passthrough → pod sees client IP)
+  appRpcClientCidrs: []           # app NLB client CIDRs (role=app-rpc)
+  explorerClient: {}              # podSelector matchLabels for Blockscout (role=explorer-rpc), e.g. {app.kubernetes.io/name: blockscout}
+
+# --- Scheduling / resources --------------------------------------------------
+resources:
+  requests: { cpu: "250m", memory: "1Gi" }
+  limits: { memory: "4Gi" }
+
+# Spread pods of the same role across nodes/AZs (best-effort).
+topologySpread:
+  enabled: true
+
+# --- RPC CORS (H23) ----------------------------------------------------------
+# Value for --rpc-http-cors-origins on every RPC listener (was hardcoded "*"). All
+# our RPC planes are reached SERVER-SIDE (SWIFT client, Blockscout backend, the app's
+# Next.js backend) — none directly from a browser — so CORS provides no needed
+# function and "*" is pure attack surface (cross-origin + DNS-rebinding pairing).
+# Set to "none" to disable CORS on the server-to-server pools; keep an explicit origin
+# only if a browser ever calls a listener directly. H23: default is now "none" (was "*");
+# Terraform sets it via var.rpc_cors_origins.
+corsOrigins: "none"
+
+# --- QBFT wire-compat (H11) --------------------------------------------------
+# During a rolling upgrade that crosses Besu 25.x <-> 26.x, the 26.x nodes need
+# --Xbft-legacy-protocol-encoding to speak the 25.x QBFT wire format through the
+# MIXED-version window, or the roll stalls (peers can't exchange consensus msgs).
+# Default false (fresh single-version deploys on 26.x don't need it). The rolling
+# script sets it (LEGACY_PROTOCOL_ENCODING=true) for a 25<->26 roll, then it is
+# cleared once every node is on 26.x.
+bft:
+  legacyProtocolEncoding: false

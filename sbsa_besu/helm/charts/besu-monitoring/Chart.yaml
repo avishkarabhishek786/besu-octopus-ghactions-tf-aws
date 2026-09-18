@@ -1,0 +1,10 @@
+apiVersion: v2
+name: besu-monitoring
+description: >-
+  Besu observability glue for kube-prometheus-stack: a PodMonitor that scrapes
+  the Besu nodes' Prometheus metrics (port 9545), a PrometheusRule with chain
+  health alerts (node down, block height stalled, low peers) routed to
+  Alertmanager -> SNS, and a Grafana dashboard. Applied after
+  kube-prometheus-stack so its CRDs exist.
+type: application
+version: 0.1.1

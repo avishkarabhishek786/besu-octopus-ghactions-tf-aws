@@ -1,0 +1,22 @@
+# =============================================================================
+# helm/values/besu-validator.yaml  (besu-node chart, role=validator)
+# -----------------------------------------------------------------------------
+# Role-specific overrides for VALIDATOR nodes. The per-node identity
+# (fullnameOverride, nodeSecretName) and the network topology (peers) are
+# injected by Terraform (modules/besu) per release; this file documents the
+# role-level differences that are the same for every validator.
+# =============================================================================
+role: validator
+
+# Validators expose NO public RPC — they only do consensus + P2P.
+rpc:
+  apis: "ETH,NET,WEB3,QBFT"
+
+# Validators get a PodDisruptionBudget (rendered by the chart for role=validator)
+# and are spread across AZs/nodes.
+topologySpread:
+  enabled: true
+
+resources:
+  requests: { cpu: "500m", memory: "2Gi" }
+  limits: { memory: "4Gi" }

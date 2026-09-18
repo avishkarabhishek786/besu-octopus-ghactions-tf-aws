@@ -1,0 +1,72 @@
+{{- if .Values.stats.enabled }}
+# Blockscout STATS microservice (optional). Computes chart/counter data from the
+# indexed chain data in the bundled Postgres (its own `stats` database) and the
+# backend API, serving JSON on :8050. ClusterIP only — the frontend reaches it
+# (browser-side) via frontend.statsApiHost, which you port-forward. No external
+# egress; private like everything else.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "blockscout.statsName" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockscout.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "blockscout.statsName" . }}
+  ports:
+    - { name: http, port: {{ .Values.stats.port }}, targetPort: {{ .Values.stats.port }} }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "blockscout.statsName" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockscout.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "blockscout.statsName" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "blockscout.statsName" . }}
+        {{- include "blockscout.labels" . | nindent 8 }}
+    spec:
+      # Wait for Postgres before the stats migrations run.
+      initContainers:
+        - name: wait-postgres
+          image: {{ .Values.postgres.image | quote }}
+          command: ["sh", "-c", "until pg_isready -h {{ include "blockscout.pgHost" . }} -p {{ .Values.postgres.port }} -U {{ .Values.postgres.username }}; do echo waiting-for-postgres; sleep 3; done"]
+      containers:
+        - name: stats
+          image: {{ .Values.stats.image | quote }}
+          ports:
+            - { name: http, containerPort: {{ .Values.stats.port }} }
+          env:
+            # DB_PASSWORD first so $(DB_PASSWORD) interpolates in the URLs below.
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.secret.name }}, key: DB_PASSWORD }
+            # stats' OWN database (auto-created + migrated on first start).
+            - { name: STATS__DB_URL, value: "postgresql://{{ .Values.postgres.username }}:$(DB_PASSWORD)@{{ include "blockscout.pgHost" . }}:{{ .Values.postgres.port }}/{{ .Values.stats.database }}" }
+            - { name: STATS__CREATE_DATABASE, value: "true" }
+            - { name: STATS__RUN_MIGRATIONS, value: "true" }
+            # the indexed Blockscout database (read-only source of chart data).
+            - { name: STATS__BLOCKSCOUT_DB_URL, value: {{ include "blockscout.databaseUrl" . | quote }} }
+            - { name: STATS__BLOCKSCOUT_API_URL, value: "http://{{ include "blockscout.backendHost" . }}:{{ .Values.blockscout.port }}" }
+            - { name: STATS__SERVER__HTTP__ADDR, value: "0.0.0.0:{{ .Values.stats.port }}" }
+            # permissive CORS so the browser (localhost:<pf>) can call it.
+            - { name: STATS__SERVER__HTTP__CORS__ENABLED, value: "true" }
+            - { name: STATS__SERVER__HTTP__CORS__ALLOWED_ORIGIN, value: "*" }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 30
+          resources:
+            {{- toYaml .Values.stats.resources | nindent 12 }}
+{{- end }}

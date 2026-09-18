@@ -1,0 +1,57 @@
+# =============================================================================
+# besu-account-allowlist ConfigMap — the FILE-BASED account (tx-sender) allowlist.
+# -----------------------------------------------------------------------------
+# Rendered ONLY when account_permissioning_mode="local" (backlog C6). This is the
+# single SOURCE OF TRUTH for the account allowlist (Model B, decided 2026-07-05):
+#   * seeded here from permissioning_admin_account + initial_account_allowlist;
+#   * mounted READ-ONLY into every enforcing besu-node pod (validators + all RPC
+#     pools), which point --permissions-accounts-config-file at it;
+#   * runtime onboarding patches THIS ConfigMap, then reloads/restarts the pods
+#     (scripts/permissioning/add-account.sh) — no re-genesis.
+#
+# WHY a separate file from the nodes-allowlist: the nodes-allowlist
+# (permissions_config.toml) is assembled per-pod at init from RUNTIME data
+# (generated node pubkeys × peer DNS), so it lives on the writable PVC. The
+# accounts-allowlist is static operator input known at apply time, so it is a
+# ConfigMap Besu reads directly — which is what makes hot `perm_reloadPermissions
+# FromFile` and restart-survival work (a ConfigMap update propagates to the mount;
+# on a pod restart the pod re-reads the current ConfigMap). Besu's
+# --permissions-nodes-config-file and --permissions-accounts-config-file are
+# INDEPENDENT flags, so the two allowlists may live in two different files.
+#
+# DENY-BY-DEFAULT: with the accounts file enabled, ONLY listed senders may
+# originate transactions; an empty list denies EVERY sender (the tx plane bricks).
+# The preflight below refuses to render an empty seed — you must seed at least the
+# admin account. (A seeded account is also alloc'd a genesis balance by
+# qbft-config-configmap.yaml, so it can transact from block 0 — F20.)
+# =============================================================================
+{{- if eq .Values.permissioning.accountMode "local" }}
+{{- $accts := list }}
+{{- if .Values.permissioning.adminAccount }}
+{{- $accts = append $accts .Values.permissioning.adminAccount }}
+{{- end }}
+{{- range .Values.permissioning.initialAccountAllowlist }}
+{{- $accts = append $accts . }}
+{{- end }}
+{{- $accts = $accts | uniq }}
+{{- if eq (len $accts) 0 }}
+{{- fail "PREFLIGHT: account_permissioning_mode=\"local\" but the account allowlist seed is EMPTY. Set permissioning_admin_account and/or initial_account_allowlist, or every transaction sender is denied and the chain accepts no transactions. Seed at least the admin account before enabling account permissioning (backlog C6)." }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.accountAllowlist.configMapName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "besu-genesis.labels" . | nindent 4 }}
+data:
+  # A valid Besu permissions TOML holding ONLY the accounts key (the nodes key is
+  # in each pod's /data/permissions_config.toml). perm_reloadPermissionsFromFile
+  # re-reads this file; a pod restart re-reads the current ConfigMap. Runtime edits
+  # via scripts/permissioning/add-account.sh patch this ConfigMap in place — to
+  # persist across a helm/terraform apply, ALSO add the address to
+  # initial_account_allowlist in the env tfvars (the apply would otherwise revert
+  # the ConfigMap to the seed).
+  permissions_accounts.toml: |
+    accounts-allowlist=[{{ range $i, $a := $accts }}{{ if $i }},{{ end }}{{ $a | quote }}{{ end }}]
+{{- end }}

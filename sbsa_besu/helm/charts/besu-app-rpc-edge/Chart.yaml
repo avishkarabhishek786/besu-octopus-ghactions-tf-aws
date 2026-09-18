@@ -1,0 +1,11 @@
+apiVersion: v2
+name: besu-app-rpc-edge
+description: >-
+  Stage 8. Binds the app-rpc pool pods to the Terraform-created internal APP NLB
+  target groups. One shared Service selects ALL app-rpc-role pods (across the
+  per-node releases) exposing HTTP + WS; two TargetGroupBindings (AWS Load
+  Balancer Controller CRDs) register their IPs into the HTTP and WS target
+  groups respectively. Separate from besu-rpc-edge (the SWIFT pool) so the two
+  RPC planes are independent edges (own blast radius).
+type: application
+version: 0.1.0

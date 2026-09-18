@@ -1,0 +1,38 @@
+# =============================================================================
+# environments/uat/primary.tfvars  (Octopus environment UAT)
+# -----------------------------------------------------------------------------
+# Copy to primary.tfvars (gitignored) and fill in. ALL THREE environments — and
+# the deploy-tests — run in af-south-1, the same region as the ledger VPC
+# (mimic_vpc moved there 2026-09-04). The mock uses a FREE-TIER Octopus Cloud
+# instance; production uses the bank's. Only the instance name differs.
+#
+# Also copy the network hand-over in FIRST:
+#   cp ../mimic_vpc/network-handover.auto.tfvars terraform/
+# =============================================================================
+
+project_name   = "sbsa-besu"
+environment    = "uat" # must match the mimic_vpc environment whose hand-over you copied in
+deletion_group = "sbsa-egress-uat-2026-09-14" # UNIQUE per deployment
+owner          = "you@example.com"
+cost_center    = "CC-XXXX"
+
+region = "af-south-1" # must equal network_region in the hand-over (opt-in region, enabled)
+az_id  = "afs1-az1"   # one of the ledger's az_ids — keeps the polling path intra-AZ
+
+# Disjoint from the ledger /20 (10.60.0.0/20 in the mimic) AND from 100.64.0.0/16.
+egress_vpc_cidr = "10.61.0.0/24"
+
+# The proxy as the platform will address it: <proxy_hostname>.<proxy_dns_zone>:<proxy_port>
+proxy_port     = 3128
+proxy_dns_zone = "egress.mimic.internal"
+proxy_hostname = "proxy"
+instance_type  = "t3.micro"
+
+# THE ALLOWLIST (R-10 / CD-59 / CD-60)
+octopus_instance  = "your-free-tier-instance" # the <instance> in https://<instance>.octopus.app
+runner_private_ip = "10.60.0.250"             # inside a LEDGER subnet, outside AWS's reserved
+#                                               first 4 / last 1. The platform's runner MUST
+#                                               launch with this exact address.
+
+enable_flow_logs        = true
+flow_log_retention_days = 1

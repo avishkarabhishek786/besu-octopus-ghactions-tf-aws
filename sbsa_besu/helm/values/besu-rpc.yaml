@@ -1,0 +1,26 @@
+# =============================================================================
+# helm/values/besu-rpc.yaml  (besu-node chart, role=rpc)
+# -----------------------------------------------------------------------------
+# RPC nodes are the only ones that expose JSON-RPC. They are NON-validating
+# (no consensus), so losing one never threatens quorum. Stage 4 fronts these
+# with an internal NLB / PrivateLink + mTLS for the SWIFT SIPN path; mTLS.enabled
+# is the hook, left false until then.
+# =============================================================================
+role: rpc
+
+rpc:
+  # The SWIFT-facing API surface. Method-level scoping (swift_permitted_methods)
+  # and mTLS are enforced at the RPC edge in stage 4; these are the API groups
+  # Besu itself exposes. NO admin/debug/miner/perm groups.
+  apis: "ETH,NET,WEB3,QBFT"
+  hostAllowlist: "*"
+
+mtls:
+  enabled: false # stage 4 wires real server cert + truststore here
+
+topologySpread:
+  enabled: true
+
+resources:
+  requests: { cpu: "500m", memory: "2Gi" }
+  limits: { memory: "4Gi" }

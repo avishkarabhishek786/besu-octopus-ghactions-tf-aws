@@ -1,0 +1,469 @@
+# =============================================================================
+# besu-node StatefulSet (replicas=1; one release per node).
+# -----------------------------------------------------------------------------
+# initContainer "wait-peer-dns" (F27 gate, backlog C10):
+#   Blocks Besu's start until every peer hostname resolves, so the one-shot
+#   node-permissioning DNS resolution at startup sees the FULL allowlist
+#   (fresh-genesis race otherwise → 0 peers → chain stuck at block 0).
+# initContainer "build-config":
+#   Zips the genesis ConfigMap's node-pubkeys.json (ordered pubkeys) with the
+#   peer DNS hosts (Terraform-computed, same order) into enode URLs, then writes
+#   <data>/static-nodes.json (P2P peers) and, for node-local permissioning,
+#   <data>/permissions_config.toml (the deny-by-default nodes-allowlist).
+# main container "besu":
+#   Runs Besu (QBFT), reading its key from the CSI-mounted Secrets Manager file,
+#   the genesis from the ConfigMap, and the peer/permission files from the PVC.
+# =============================================================================
+{{- /* H6: the validator ops listener exposes the privileged QBFT/ADMIN/PERM
+       namespaces. Refuse to render it without a JWT pubkey unless the operator
+       explicitly opts into the ClusterIP+port-forward(+NetworkPolicy)-only model. */ -}}
+{{- if and (eq .Values.role "validator") .Values.opsRpc.enabled (not .Values.opsRpc.jwtPubkeySecret) (not .Values.opsRpc.allowNoJwt) }}
+{{- fail "opsRpc.enabled=true but opsRpc.jwtPubkeySecret is empty: the validator ops listener exposes QBFT/ADMIN/PERM and must be JWT-authenticated. Set opsRpc.jwtPubkeySecret (module var ops_rpc_jwt_pubkey_secret_name), or set opsRpc.allowNoJwt=true (module var ops_rpc_allow_no_jwt) to accept ClusterIP+port-forward+NetworkPolicy-only protection. [H6]" }}
+{{- end }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "besu-node.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "besu-node.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "besu-node.fullname" . }}
+  replicas: 1
+  {{- if eq .Values.role "validator" }}
+  # H1 (upgrade fail-safety): validators use OnDelete so a StatefulSet template
+  # change — a routine `terraform apply`/`helm upgrade` that bumps the image,
+  # peers, resources, or any other pod-spec value — does NOT auto-restart the
+  # pod. QBFT (N=3F+1) needs a quorum of 2F+1 online (3 of 4); an automatic
+  # RollingUpdate applied across all validator releases at once would bounce
+  # every validator together, drop below quorum, and HALT the chain. With
+  # OnDelete the new template only takes effect when an operator DELETES the pod
+  # — done ONE AT A TIME by scripts/maintenance/rolling-besu-apply.sh under the
+  # quorum/catch-up gate. Paired with `ignore_changes=[values]` on the validator
+  # helm_release (terraform/modules/besu/main.tf) so Terraform never pushes the
+  # change in the first place.
+  updateStrategy:
+    type: OnDelete
+  {{- else }}
+  # Non-consensus pools (bootnode/rpc/app-rpc/explorer-rpc) cast no QBFT votes,
+  # so a normal RollingUpdate is safe — there is no quorum to lose.
+  updateStrategy:
+    type: RollingUpdate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "besu-node.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "besu-node.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      securityContext:
+        fsGroup: 1000 # besu runs as uid 1000; lets it read the CSI key + write the PVC
+        seccompProfile:
+          type: RuntimeDefault # H14: default syscall filter for all containers in the pod
+      {{- if .Values.topologySpread.enabled }}
+      # Spread pods of the SAME role across AZs and nodes (matches across the
+      # per-node releases via the besu.role label). Best-effort so scheduling
+      # never blocks, but validators land in distinct AZs when capacity allows.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              besu.role: {{ .Values.role }}
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              besu.role: {{ .Values.role }}
+      {{- end }}
+      volumes:
+        - name: genesis
+          configMap:
+            name: {{ .Values.genesisConfigMapName }}
+        - name: secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ include "besu-node.fullname" . }}
+        {{- if eq .Values.permissioning.accountMode "local" }}
+        # C6: the file-based account allowlist, from the shared besu-account-allowlist
+        # ConfigMap (published by the genesis chart). Mounted as a whole-volume (NOT
+        # subPath) so a ConfigMap patch propagates to the mount for hot reload.
+        - name: perm-accounts
+          configMap:
+            name: {{ .Values.permissioning.accountAllowlistConfigMapName }}
+        {{- end }}
+      initContainers:
+        {{- if .Values.dnsReadiness.enabled }}
+        # F27 gate (C10): block Besu's start until EVERY peer hostname resolves.
+        # Node permissioning resolves the allowlist enode DNS once at startup;
+        # starting before all peer DNS records exist silently shrinks the
+        # effective allowlist (fresh-genesis race → 0 peers → chain stuck at 0).
+        # No deadlock: the headless Service publishes not-ready addresses, so
+        # each pod's own DNS record exists while it sits in THIS init phase.
+        - name: wait-peer-dns
+          image: {{ .Values.toolsImage | quote }}
+          # H14: this init only resolves peer DNS — run it fully locked down (non-root,
+          # no caps, no privilege escalation) so a compromised tools image gets no foothold.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          command: ["/bin/sh", "-c"]
+          env:
+            - { name: VALIDATOR_HOSTS, value: "{{ join " " .Values.peers.validators }}" }
+            - { name: BOOTNODE_HOSTS, value: "{{ join " " .Values.peers.bootnodes }}" }
+            - { name: RPC_HOSTS, value: "{{ join " " .Values.peers.rpc }}" }
+            - { name: APP_RPC_HOSTS, value: "{{ join " " (.Values.peers.appRpc | default list) }}" }
+            - { name: EXPLORER_RPC_HOSTS, value: "{{ join " " (.Values.peers.explorerRpc | default list) }}" }
+            - { name: TIMEOUT_S, value: "{{ .Values.dnsReadiness.timeoutSeconds }}" }
+            - { name: POLL_S, value: "{{ .Values.dnsReadiness.pollSeconds }}" }
+            - { name: ON_TIMEOUT, value: "{{ .Values.dnsReadiness.onTimeout }}" }
+          args:
+            - |
+              set -eu
+              PENDING="$VALIDATOR_HOSTS $BOOTNODE_HOSTS $RPC_HOSTS $APP_RPC_HOSTS $EXPLORER_RPC_HOSTS"
+              TOTAL=$(echo "$PENDING" | wc -w)
+              echo "[wait-peer-dns] waiting for $TOTAL peer hostnames (timeout ${TIMEOUT_S}s, poll ${POLL_S}s)"
+              ELAPSED=0
+              while :; do
+                LEFT=""
+                for h in $PENDING; do
+                  getent hosts "$h" >/dev/null 2>&1 || LEFT="$LEFT $h"
+                done
+                PENDING=$(echo "$LEFT" | sed 's/^ *//')
+                if [ -z "$PENDING" ]; then
+                  echo "[wait-peer-dns] OK all $TOTAL peer hostnames resolve (after ${ELAPSED}s) — starting Besu"
+                  exit 0
+                fi
+                if [ "$ELAPSED" -ge "$TIMEOUT_S" ]; then
+                  echo "[wait-peer-dns] TIMEOUT after ${ELAPSED}s; unresolved: $PENDING"
+                  if [ "$ON_TIMEOUT" = "continue" ]; then
+                    echo "[wait-peer-dns] onTimeout=continue — starting Besu with a PARTIAL peer view (F27 risk)"
+                    exit 0
+                  fi
+                  echo "[wait-peer-dns] onTimeout=fail — failing the init; kubelet will retry (pod shows Init:Error until peers resolve)"
+                  exit 1
+                fi
+                echo "[wait-peer-dns] still unresolved ($(echo "$PENDING" | wc -w)/$TOTAL):$( [ -n "$PENDING" ] && echo " $PENDING" ) — ${ELAPSED}s elapsed"
+                sleep "$POLL_S"
+                ELAPSED=$((ELAPSED + POLL_S))
+              done
+        {{- end }}
+        - name: build-config
+          image: {{ .Values.toolsImage | quote }}
+          # H14: build-config stays root ONLY to prepare files it hands to besu (uid 1000): it
+          # chown's the accounts-allowlist to 1000 (CHOWN), chmod's that now-1000-owned file
+          # (FOWNER — root can't chmod a file it doesn't own), and on a RESTART overwrites the
+          # 1000-owned 0644 file (DAC_OVERRIDE — group is read-only to root). Grant EXACTLY those
+          # three file caps and DROP the rest of the default root set (SETUID/SETGID/NET_*/SYS_*/
+          # KILL/…) + block privilege escalation, so it is no longer an unbounded-root foothold.
+          # (Fewer caps would EPERM the chmod/overwrite under `set -eu` → Init:Error.)
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
+            seccompProfile:
+              type: RuntimeDefault
+          command: ["/bin/sh", "-c"]
+          env:
+            - { name: P2P_PORT, value: "{{ .Values.p2pPort }}" }
+            - { name: VALIDATOR_HOSTS, value: "{{ join " " .Values.peers.validators }}" }
+            - { name: BOOTNODE_HOSTS, value: "{{ join " " .Values.peers.bootnodes }}" }
+            - { name: RPC_HOSTS, value: "{{ join " " .Values.peers.rpc }}" }
+            - { name: APP_RPC_HOSTS, value: "{{ join " " (.Values.peers.appRpc | default list) }}" }
+            - { name: EXPLORER_RPC_HOSTS, value: "{{ join " " (.Values.peers.explorerRpc | default list) }}" }
+          args:
+            - |
+              set -eu
+              PUBS=/genesis/node-pubkeys.json
+              emit() { # $1=json key  $2=space-separated hosts
+                i=1
+                for pub in $(jq -r ".$1[]" "$PUBS"); do
+                  host=$(echo "$2" | cut -d' ' -f"$i")
+                  [ -n "$host" ] && echo "enode://$pub@$host:$P2P_PORT"
+                  i=$((i+1))
+                done
+              }
+              { emit validators "$VALIDATOR_HOSTS"; emit bootnodes "$BOOTNODE_HOSTS"; emit rpc "$RPC_HOSTS"; emit appRpc "$APP_RPC_HOSTS"; emit explorerRpc "$EXPLORER_RPC_HOSTS"; } > /tmp/enodes.txt
+              echo "[build-config] enodes:"; cat /tmp/enodes.txt
+
+              # static-nodes.json (Besu auto-reads <data-path>/static-nodes.json)
+              jq -R . /tmp/enodes.txt | jq -s . > /data/static-nodes.json
+
+              # node-local permissioning allowlist (deny-by-default)
+              {
+                printf 'nodes-allowlist=['
+                first=1
+                while IFS= read -r e; do
+                  [ -z "$e" ] && continue
+                  [ "$first" -eq 1 ] || printf ','
+                  printf '"%s"' "$e"; first=0
+                done < /tmp/enodes.txt
+                printf ']\n'
+              } > /data/permissions_config.toml
+              echo "[build-config] wrote static-nodes.json + permissions_config.toml"
+              {{- if eq .Values.permissioning.accountMode "local" }}
+              # C6/F32: Besu's accounts-allowlist file must be WRITABLE — its AllowlistPersistor
+              # validates/persists the file at startup, so a read-only ConfigMap mount crashes Besu
+              # with ERROR_ALLOWLIST_PERSIST_FAIL. Copy the read-only source ConfigMap
+              # (besu-account-allowlist) onto the writable PVC; Besu reads THIS copy. On a pod
+              # restart this re-copies the current ConfigMap, so restart-based onboarding still works.
+              cp {{ .Values.permissioning.accountAllowlistMountPath }}/permissions_accounts.toml /data/permissions_accounts.toml
+              # F32b: Besu (uid 1000) PERSISTS this file at startup, so it must be writable BY besu.
+              # build-config runs as root → the copy lands root-owned 0644 (group read-only) → besu
+              # can't write → ERROR_ALLOWLIST_PERSIST_FAIL. Make it besu-owned + owner-writable.
+              chown 1000:1000 /data/permissions_accounts.toml 2>/dev/null || true
+              chmod 0644 /data/permissions_accounts.toml
+              echo "[build-config] accounts-allowlist → /data/permissions_accounts.toml ($(ls -la /data/permissions_accounts.toml)):"; cat /data/permissions_accounts.toml
+              {{- end }}
+              {{- if and (eq .Values.role "rpc") .Values.mtls.enabled }}
+              # Stage 4: decode the base64 PKCS12 keystore + truststore (binary)
+              # from the CSI-mounted Secrets Manager values into files Besu reads.
+              echo "[build-config] decoding RPC mTLS keystore/truststore"
+              base64 -d /secrets/keystore-b64 > /data/keystore.p12
+              base64 -d /secrets/truststore-b64 > /data/truststore.p12
+              {{- end }}
+              {{- if and (eq .Values.role "app-rpc") .Values.appRpc.tls.enabled }}
+              # Stage 8: decode the base64 PKCS12 SERVER keystore (CA-signed) for
+              # the app-rpc pool. Server-TLS only — no truststore/client-auth.
+              echo "[build-config] decoding app-rpc server keystore"
+              base64 -d /secrets/apprpc-keystore-b64 > /data/apprpc-keystore.p12
+              {{- end }}
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: genesis, mountPath: /genesis, readOnly: true }
+            {{- if eq .Values.permissioning.accountMode "local" }}
+            # C6/F32: read the account-allowlist ConfigMap HERE (init) to copy it to writable /data.
+            - { name: perm-accounts, mountPath: {{ .Values.permissioning.accountAllowlistMountPath | quote }}, readOnly: true }
+            {{- end }}
+            {{- if or (and (eq .Values.role "rpc") .Values.mtls.enabled) (and (eq .Values.role "app-rpc") .Values.appRpc.tls.enabled) }}
+            - { name: secrets, mountPath: /secrets, readOnly: true }
+            {{- end }}
+      containers:
+        - name: besu
+          image: {{ .Values.besuImage | quote }}
+          # H14: harden the long-running consensus/RPC container — non-root (uid 1000 =
+          # the besu user), no privilege escalation, drop ALL Linux capabilities,
+          # RuntimeDefault seccomp. NOT readOnlyRootFilesystem (Besu writes scratch
+          # outside /data); the /data PVC stays writable via the pod fsGroup.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          args:
+            - --data-path=/data
+            - --genesis-file=/genesis/genesis.json
+            - --node-private-key-file=/secrets/nodekey
+            - --p2p-host=0.0.0.0
+            - --p2p-port={{ .Values.p2pPort }}
+            - --nat-method=NONE
+            - --discovery-enabled=false
+            - --Xdns-enabled=true
+            - --Xdns-update-enabled=true
+            - --min-gas-price=0
+            - --host-allowlist={{ .Values.rpc.hostAllowlist | quote }}
+            - --metrics-enabled=true
+            - --metrics-host=0.0.0.0
+            - --metrics-port={{ .Values.metricsPort }}
+            {{- if .Values.bft.legacyProtocolEncoding }}
+            # H11: QBFT 25.x wire-compat for a mixed-version (25<->26) rolling upgrade.
+            # Set by rolling-besu-apply.sh (LEGACY_PROTOCOL_ENCODING=true); clear once
+            # every node is on 26.x. Fresh single-version deploys never need it.
+            - --Xbft-legacy-protocol-encoding
+            {{- end }}
+            {{- if eq .Values.permissioning.nodeMode "local" }}
+            - --permissions-nodes-config-file-enabled=true
+            - --permissions-nodes-config-file=/data/permissions_config.toml
+            {{- end }}
+            {{- if eq .Values.permissioning.accountMode "local" }}
+            # C6: FILE-BASED account (tx-sender) permissioning — deny-by-default; only
+            # senders in the accounts-allowlist may originate transactions. The list comes
+            # from the besu-account-allowlist ConfigMap, which build-config copies to the
+            # WRITABLE /data/permissions_accounts.toml (F32: Besu's AllowlistPersistor needs
+            # a writable file — a read-only ConfigMap mount crashes with
+            # ERROR_ALLOWLIST_PERSIST_FAIL). The on-chain contract path was REMOVED (C8) —
+            # Besu dropped smart-contract permissioning in 25.6.0 (F17). Runtime onboarding:
+            # patch the ConfigMap + rolling pod restart (re-copies to /data) — see
+            # scripts/permissioning/add-account.sh.
+            - --permissions-accounts-config-file-enabled=true
+            - --permissions-accounts-config-file=/data/permissions_accounts.toml
+            {{- end }}
+            {{- if eq .Values.role "rpc" }}
+            # --- SWIFT pool: mTLS + JWT, read/tx namespaces (ETH,NET,WEB3) -----
+            - --rpc-http-enabled=true
+            - --rpc-http-host=0.0.0.0
+            - --rpc-http-port={{ .Values.rpcHttpPort }}
+            - --rpc-http-api={{ .Values.rpc.apis }}
+            - --rpc-http-cors-origins={{ .Values.corsOrigins }}
+            {{- if .Values.mtls.enabled }}
+            # mTLS terminated at Besu: server keystore (CA-signed) + client auth
+            # against the CA truststore. SWIFT must present a CA-signed cert.
+            - --rpc-http-tls-enabled=true
+            - --rpc-http-tls-keystore-file=/data/keystore.p12
+            - --rpc-http-tls-keystore-password-file=/secrets/keystore-pass
+            - --rpc-http-tls-client-auth-enabled=true
+            # Truststore-based client auth: Besu trusts any client cert chaining
+            # to a CA in the truststore.
+            - --rpc-http-tls-truststore-file=/data/truststore.p12
+            - --rpc-http-tls-truststore-password-file=/secrets/truststore-pass
+            {{- if .Values.mtls.knownClientsSecret }}
+            # H9: pin SWIFT's client cert by SHA-256 fingerprint (known-clients file,
+            # mounted read-only from Secrets Manager). caClientsEnabled=false makes this
+            # STRICT (only the pinned cert accepted); true keeps CA/truststore trust as a
+            # fallback (pinned OR CA-signed). Verify the exact flag semantics on the pinned
+            # Besu version before relying on strict mode.
+            - --rpc-http-tls-known-clients-file=/secrets/known-clients
+            - --rpc-http-tls-ca-clients-enabled={{ .Values.mtls.caClientsEnabled }}
+            {{- end }}
+            {{- end }}
+            {{- if and .Values.mtls.enabled (eq .Values.rpcAuth.mode "tls-plus-method") }}
+            # Method scoping: verify SWIFT JWTs (permissions claim) with our RSA
+            # public key. Tokens are minted per-client by make-join-pack.sh.
+            # Gated on mtls.enabled because the JWT public key is mounted via the
+            # mTLS SecretProviderClass block — no mTLS, no key file, so no JWT.
+            - --rpc-http-authentication-enabled=true
+            - --rpc-http-authentication-jwt-public-key-file=/secrets/jwt-pubkey.pem
+            {{- end }}
+            {{- else if eq .Values.role "app-rpc" }}
+            # --- App pool (stage 8): server-TLS (NO client-auth) + JWT, HTTP+WS -
+            - --rpc-http-enabled=true
+            - --rpc-http-host=0.0.0.0
+            - --rpc-http-port={{ .Values.rpcHttpPort }}
+            - --rpc-http-api={{ .Values.appRpc.apis }}
+            - --rpc-http-cors-origins={{ .Values.corsOrigins }}
+            {{- if .Values.appRpc.tls.enabled }}
+            # Server-side TLS only: CA-signed server keystore, NO client auth
+            # (apps are not mTLS clients). App trusts our CA + presents a JWT.
+            - --rpc-http-tls-enabled=true
+            - --rpc-http-tls-keystore-file=/data/apprpc-keystore.p12
+            - --rpc-http-tls-keystore-password-file=/secrets/apprpc-keystore-pass
+            - --rpc-http-tls-client-auth-enabled=false
+            {{- end }}
+            {{- if .Values.appRpc.auth.enabled }}
+            - --rpc-http-authentication-enabled=true
+            - --rpc-http-authentication-jwt-public-key-file=/secrets/apprpc-jwt-pubkey.pem
+            {{- end }}
+            {{- if .Values.appRpc.ws.enabled }}
+            # WS plane for the read-only event listener (eth_subscribe). Same
+            # server-TLS + JWT. (Besu WS TLS flags: --rpc-ws-ssl-*; verify vs the
+            # pinned Besu version at preflight.)
+            - --rpc-ws-enabled=true
+            - --rpc-ws-host=0.0.0.0
+            - --rpc-ws-port={{ .Values.rpcWsPort }}
+            - --rpc-ws-api={{ .Values.appRpc.apis }}
+            {{- if .Values.appRpc.tls.enabled }}
+            - --rpc-ws-ssl-enabled=true
+            - --rpc-ws-ssl-keystore-file=/data/apprpc-keystore.p12
+            - --rpc-ws-ssl-keystore-password-file=/secrets/apprpc-keystore-pass
+            - --rpc-ws-ssl-keystore-type=PKCS12
+            {{- end }}
+            {{- if .Values.appRpc.auth.enabled }}
+            - --rpc-ws-authentication-enabled=true
+            - --rpc-ws-authentication-jwt-public-key-file=/secrets/apprpc-jwt-pubkey.pem
+            {{- end }}
+            {{- end }}
+            {{- else if eq .Values.role "explorer-rpc" }}
+            # --- Explorer pool (stage 9): ClusterIP-only, DEBUG/TRACE for
+            # Blockscout internal-tx indexing. NO TLS, NO JWT, NO edge — trust is
+            # the in-cluster boundary. HTTP + WS (eth_subscribe).
+            - --rpc-http-enabled=true
+            - --rpc-http-host=0.0.0.0
+            - --rpc-http-port={{ .Values.rpcHttpPort }}
+            - --rpc-http-api={{ .Values.explorerRpc.apis }}
+            - --rpc-http-cors-origins={{ .Values.corsOrigins }}
+            {{- if .Values.explorerRpc.ws.enabled }}
+            - --rpc-ws-enabled=true
+            - --rpc-ws-host=0.0.0.0
+            - --rpc-ws-port={{ .Values.rpcWsPort }}
+            - --rpc-ws-api={{ .Values.explorerRpc.apis }}
+            {{- end }}
+            {{- else if and (eq .Values.role "validator") .Values.opsRpc.enabled }}
+            # --- Validator-internal ops RPC: privileged namespaces, ClusterIP-only
+            # NEVER fronted by an NLB/PrivateLink. Reached only via the in-VPC
+            # runner's `kubectl port-forward`. QBFT votes must be cast per-validator.
+            - --rpc-http-enabled=true
+            - --rpc-http-host=0.0.0.0
+            - --rpc-http-port={{ .Values.rpcHttpPort }}
+            - --rpc-http-api={{ .Values.opsRpc.apis }}
+            - --rpc-http-cors-origins={{ .Values.corsOrigins }}
+            {{- if .Values.opsRpc.jwtPubkeySecret }}
+            - --rpc-http-authentication-enabled=true
+            - --rpc-http-authentication-jwt-public-key-file=/secrets/ops-jwt-pubkey.pem
+            {{- end }}
+            {{- end }}
+          ports:
+            - { name: p2p-tcp, containerPort: {{ .Values.p2pPort }}, protocol: TCP }
+            - { name: p2p-udp, containerPort: {{ .Values.p2pPort }}, protocol: UDP }
+            - { name: metrics, containerPort: {{ .Values.metricsPort }}, protocol: TCP }
+            {{- if eq .Values.role "rpc" }}
+            - { name: rpc-http, containerPort: {{ .Values.rpcHttpPort }}, protocol: TCP }
+            {{- else if eq .Values.role "app-rpc" }}
+            - { name: rpc-http, containerPort: {{ .Values.rpcHttpPort }}, protocol: TCP }
+            {{- if .Values.appRpc.ws.enabled }}
+            - { name: rpc-ws, containerPort: {{ .Values.rpcWsPort }}, protocol: TCP }
+            {{- end }}
+            {{- else if eq .Values.role "explorer-rpc" }}
+            - { name: rpc-http, containerPort: {{ .Values.rpcHttpPort }}, protocol: TCP }
+            {{- if .Values.explorerRpc.ws.enabled }}
+            - { name: rpc-ws, containerPort: {{ .Values.rpcWsPort }}, protocol: TCP }
+            {{- end }}
+            {{- else if and (eq .Values.role "validator") .Values.opsRpc.enabled }}
+            - { name: rpc-http, containerPort: {{ .Values.rpcHttpPort }}, protocol: TCP }
+            {{- end }}
+          readinessProbe:
+            {{- if or (eq .Values.role "rpc") (eq .Values.role "app-rpc") (eq .Values.role "explorer-rpc") (and (eq .Values.role "validator") .Values.opsRpc.enabled) }}
+            # H15: RPC-role pods become Ready only once their RPC port ACCEPTS
+            # connections — so the NLB/PrivateLink does not route traffic to a pod whose
+            # listener is not up yet. TCP-connect works with or without TLS on the port.
+            tcpSocket: { port: rpc-http }
+            {{- else }}
+            tcpSocket: { port: p2p-tcp }
+            {{- end }}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          livenessProbe:
+            # Liveness stays on the P2P socket (conservative — an aggressive RPC/consensus
+            # liveness could restart a slow-but-healthy validator and disrupt quorum).
+            tcpSocket: { port: p2p-tcp }
+            initialDelaySeconds: 90
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: genesis, mountPath: /genesis, readOnly: true }
+            - { name: secrets, mountPath: /secrets, readOnly: true }
+            {{- /* C6/F32: Besu reads the accounts-allowlist from the WRITABLE
+                   /data/permissions_accounts.toml that build-config copied from the
+                   ConfigMap — it does NOT mount the read-only ConfigMap here (that would
+                   crash Besu's AllowlistPersistor). The ConfigMap is mounted on the
+                   build-config init container instead. */}}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.storage.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.size }}

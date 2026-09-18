@@ -1,0 +1,18 @@
+# =============================================================================
+# helm/values/besu-bootnode.yaml  (besu-node chart, role=bootnode)
+# -----------------------------------------------------------------------------
+# BOOTNODES are non-validating peers that provide stable, redundant connection
+# seeds. With discovery disabled in favour of a static-nodes list, they act as
+# always-on full nodes the others peer with. No RPC, no PDB.
+# =============================================================================
+role: bootnode
+
+rpc:
+  apis: "ETH,NET,WEB3,QBFT"
+
+topologySpread:
+  enabled: true
+
+resources:
+  requests: { cpu: "250m", memory: "1Gi" }
+  limits: { memory: "2Gi" }

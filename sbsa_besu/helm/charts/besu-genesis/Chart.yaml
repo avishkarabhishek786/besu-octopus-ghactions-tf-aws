@@ -1,0 +1,13 @@
+apiVersion: v2
+name: besu-genesis
+description: >-
+  One-shot QBFT genesis bootstrap for the Besu network. Runs the NATIVE
+  `besu operator generate-blockchain-config` to generate validator secp256k1
+  keys + the QBFT extraData, generates bootnode keys, runs preflight
+  permissioning checks, writes the node keys into AWS Secrets Manager (via an
+  IRSA write role), and publishes genesis.json + the node permissioning
+  allowlist + bootnode public keys as a ConfigMap the besu-node chart consumes.
+type: application
+version: 0.1.0
+# Pinned Besu (verified current stable as of 2026-06-18 from besu-eth/besu).
+appVersion: "26.6.1"

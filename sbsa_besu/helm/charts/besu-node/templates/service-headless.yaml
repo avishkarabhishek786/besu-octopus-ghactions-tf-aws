@@ -1,0 +1,22 @@
+# Headless service: gives the StatefulSet pod a stable DNS name
+#   <fullname>-0.<fullname>.<namespace>.svc.<clusterDomain>
+# which is exactly the host other nodes use in their enode URLs (P2P).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "besu-node.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "besu-node.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true # peers must resolve before the node is "ready"
+  selector:
+    {{- include "besu-node.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: p2p-tcp
+      port: {{ .Values.p2pPort }}
+      protocol: TCP
+    - name: p2p-udp
+      port: {{ .Values.p2pPort }}
+      protocol: UDP

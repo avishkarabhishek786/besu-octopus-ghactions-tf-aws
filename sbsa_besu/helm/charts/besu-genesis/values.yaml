@@ -1,0 +1,106 @@
+# =============================================================================
+# besu-genesis — values
+# -----------------------------------------------------------------------------
+# Defaults are sane for the non-prod test; the root Terraform overrides the
+# environment-specific values (chainId, counts, region, role ARNs, admin acct)
+# from the tfvars at helm_release time.
+# =============================================================================
+
+# Namespace is normally set by the release (--namespace); kept here for the
+# ConfigMap/SA metadata where templates reference it explicitly.
+namespace: besu
+
+# --- Images (PINNED) ---------------------------------------------------------
+images:
+  # Official Besu image. Tag must match the besu-node chart's image tag.
+  besu: hyperledger/besu:26.6.1
+  # Multi-tool image with kubectl + aws-cli + jq for the publish step.
+  tools: alpine/k8s:1.30.13
+
+# --- Chain / QBFT ------------------------------------------------------------
+chainId: 1337
+blockPeriodSeconds: 5
+epochLength: 30000
+# Free-gas private chain: zero base fee, large block gas limit.
+gasLimit: "0x1fffffffffffff"
+zeroBaseFee: true
+
+# --- Topology (drives key generation + secret names) -------------------------
+validatorCount: 4
+bootnodeCount: 2
+rpcCount: 2
+appRpcCount: 0      # stage 8: app-facing RPC pool nodes (0 = app layer not deployed)
+explorerRpcCount: 0 # stage 9: Blockscout explorer RPC pool nodes (0 = explorer not deployed)
+p2pPort: 30303
+
+# C4: when true, the genesis Job fetches the operator-supplied validator keys from
+# Secrets Manager and builds the QBFT extraData from THEIR addresses (instead of from
+# freshly-generated keys), so the on-chain validator set matches the keys the pods load.
+# Mirrors the root var use_provided_validator_keys.
+providedValidatorKeys: false
+
+# F20: accounts alloc'd a genesis BALANCE so they can originate transactions on the
+# zero-gas chain (min-gas-price=0 / zeroBaseFee). Independent of permissioning — a
+# zero-balance account's tx is NOT mined even at gasPrice 0. The app signer EOA goes
+# here (written by app/scripts/gen-app-identity.sh into app-identity.tfvars).
+fundedAccounts: []
+
+# --- Permissioning -----------------------------------------------------------
+# The on-chain ("onchain") account-permissioning path was REMOVED (C8): Besu
+# dropped smart-contract permissioning in 25.6.0 (F17, CHANGELOG 25.6.0 /
+# PR hyperledger/besu#8597) so it could never run on our pinned version. The
+# supported replacement is FILE-BASED ("local") account permissioning (C6,
+# implemented 2026-07-05): the accounts-allowlist below is seeded into the
+# besu-account-allowlist ConfigMap (permissions-accounts-configmap.yaml) that
+# every enforcing node reads. History in docs 02 §2.5.
+permissioning:
+  accountMode: "off" # off | local (file-based account allowlist — backlog C6)
+  nodeMode: local    # file-based node allowlist (permissions_config.toml)
+  # Admin + initial allowlist accounts are alloc'd a genesis balance (F20) so
+  # they can transact from block 0, AND (when accountMode=local) seed the
+  # besu-account-allowlist ConfigMap. Empty seed + accountMode=local fails a
+  # render-time preflight (an empty allowlist denies every sender).
+  adminAccount: ""
+  initialAccountAllowlist: []
+
+# Name of the ConfigMap holding the file-based account allowlist (accountMode=
+# local). Single source of truth; the besu-node chart mounts it read-only.
+# Terraform overrides this from the module so both charts agree on one name.
+accountAllowlist:
+  configMapName: besu-account-allowlist
+
+# --- Secrets Manager (where generated keys are written) ----------------------
+secrets:
+  region: us-east-1
+  validatorPrefix: besu-node-validator # -> besu-node-validator-1..N
+  bootnodePrefix: besu-node-bootnode   # -> besu-node-bootnode-1..M
+  rpcPrefix: besu-node-rpc             # -> besu-node-rpc-1..K
+  appRpcPrefix: besu-node-app-rpc      # -> besu-node-app-rpc-1..J (stage 8)
+  explorerRpcPrefix: besu-node-explorer-rpc # -> besu-node-explorer-rpc-1..E (stage 9)
+
+# --- Service account (annotated with the genesis WRITE IRSA role) ------------
+serviceAccount:
+  name: besu-genesis-sa
+  roleArn: "" # modules/iam besu_genesis_role_arn
+
+# --- Pod (read-only) service account the Besu NODES use --------------------
+# Created here (genesis runs first) so the besu-node releases can just reference
+# it. Annotated with the read-only IRSA role from stage 1 (modules/iam).
+podServiceAccount:
+  name: quorum-node-secrets-sa
+  roleArn: "" # modules/iam besu_secrets_role_arn
+
+# ConfigMap the besu-node chart reads (genesis.json + allowlist + bootnode pubkeys).
+genesisConfigMapName: besu-genesis
+
+# Re-run safety: when true, the Job skips writing a node key if its secret
+# already holds a value (so re-applying never rotates keys and halts the chain).
+skipExistingKeys: true
+
+# H2 (re-genesis guard): when false (default), the publish step REFUSES to overwrite
+# an existing besu-genesis ConfigMap — a re-run cannot republish a mismatched
+# genesis.json and brick a live chain (validators would compute a genesis hash that no
+# longer matches their RocksDB). Terraform overrides this from allow_regenesis. Set
+# true ONLY for a deliberate, destructive re-genesis, AFTER wiping the node-key secrets
+# + validator PVCs. Belt-and-suspenders with helm_release.genesis ignore_changes[values].
+allowRegenesis: false

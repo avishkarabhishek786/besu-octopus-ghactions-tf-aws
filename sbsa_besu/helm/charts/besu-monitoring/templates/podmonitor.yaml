@@ -1,0 +1,20 @@
+# Scrapes every Besu pod's Prometheus metrics endpoint (named port "metrics" =
+# 9545). Prometheus picks this up because the stack is configured with
+# podMonitorSelectorNilUsesHelmValues=false (scrape all PodMonitors).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: besu-nodes
+  namespace: {{ .Values.besuNamespace }}
+  labels:
+    app.kubernetes.io/part-of: besu
+spec:
+  namespaceSelector:
+    matchNames: [{{ .Values.besuNamespace }}]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: besu-node
+  podMetricsEndpoints:
+    - port: {{ .Values.metricsPort }}
+      path: /metrics
+      interval: 30s

@@ -1,0 +1,93 @@
+{{- if eq .Values.role "rpc" }}
+# ClusterIP RPC service (role=rpc = SWIFT pool). Stage 4 fronts this with an
+# internal NLB / PrivateLink for the SWIFT SIPN path + mTLS termination; here it
+# is just the in-cluster endpoint.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "besu-node.fullname" . }}-rpc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "besu-node.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "besu-node.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: rpc-http
+      port: {{ .Values.rpcHttpPort }}
+      targetPort: {{ .Values.rpcHttpPort }}
+      protocol: TCP
+{{- else if eq .Values.role "app-rpc" }}
+# ClusterIP RPC service (role=app-rpc = app pool). Stage 8 fronts this with a
+# SEPARATE internal NLB + PrivateLink service for the app VPC (HTTP + WS). The
+# rpc-access module binds its app target groups to these ports.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "besu-node.fullname" . }}-rpc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "besu-node.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "besu-node.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: rpc-http
+      port: {{ .Values.rpcHttpPort }}
+      targetPort: {{ .Values.rpcHttpPort }}
+      protocol: TCP
+    {{- if .Values.appRpc.ws.enabled }}
+    - name: rpc-ws
+      port: {{ .Values.rpcWsPort }}
+      targetPort: {{ .Values.rpcWsPort }}
+      protocol: TCP
+    {{- end }}
+{{- else if eq .Values.role "explorer-rpc" }}
+# ClusterIP RPC service (role=explorer-rpc = Blockscout pool). INTERNAL only —
+# never fronted by an NLB/PrivateLink. Blockscout reaches it in-cluster at
+# <name>-rpc.<ns>.svc:<httpPort> (HTTP) / :<wsPort> (WS). DEBUG/TRACE enabled.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "besu-node.fullname" . }}-rpc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "besu-node.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "besu-node.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: rpc-http
+      port: {{ .Values.rpcHttpPort }}
+      targetPort: {{ .Values.rpcHttpPort }}
+      protocol: TCP
+    {{- if .Values.explorerRpc.ws.enabled }}
+    - name: rpc-ws
+      port: {{ .Values.rpcWsPort }}
+      targetPort: {{ .Values.rpcWsPort }}
+      protocol: TCP
+    {{- end }}
+{{- else if and (eq .Values.role "validator") .Values.opsRpc.enabled }}
+# Validator-internal ops RPC service (privileged namespaces). ClusterIP ONLY —
+# deliberately NOT fronted by any NLB/PrivateLink. Reached via the in-VPC
+# runner's `kubectl port-forward svc/<name>-ops 8545:8545`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "besu-node.fullname" . }}-ops
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "besu-node.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "besu-node.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: rpc-http
+      port: {{ .Values.rpcHttpPort }}
+      targetPort: {{ .Values.rpcHttpPort }}
+      protocol: TCP
+{{- end }}

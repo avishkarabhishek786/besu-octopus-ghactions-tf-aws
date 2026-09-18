@@ -1,0 +1,54 @@
+{{- if .Values.visualizer.enabled }}
+# Blockscout VISUALIZER microservice (optional). Stateless: turns verified
+# Solidity source into a Sol2UML SVG diagram on the contract page. Serves on
+# :8050. ClusterIP only — the frontend reaches it (browser-side) via
+# frontend.visualizeApiHost, which you port-forward. No DB, no external egress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "blockscout.visualizerName" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockscout.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "blockscout.visualizerName" . }}
+  ports:
+    - { name: http, port: {{ .Values.visualizer.port }}, targetPort: {{ .Values.visualizer.port }} }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "blockscout.visualizerName" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "blockscout.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "blockscout.visualizerName" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "blockscout.visualizerName" . }}
+        {{- include "blockscout.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: visualizer
+          image: {{ .Values.visualizer.image | quote }}
+          ports:
+            - { name: http, containerPort: {{ .Values.visualizer.port }} }
+          env:
+            - { name: VISUALIZER__SERVER__HTTP__ADDR, value: "0.0.0.0:{{ .Values.visualizer.port }}" }
+            - { name: VISUALIZER__SERVER__HTTP__CORS__ENABLED, value: "true" }
+            - { name: VISUALIZER__SERVER__HTTP__CORS__ALLOWED_ORIGIN, value: "*" }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30
+          resources:
+            {{- toYaml .Values.visualizer.resources | nindent 12 }}
+{{- end }}
