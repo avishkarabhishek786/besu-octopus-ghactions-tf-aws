@@ -8,13 +8,17 @@ owns and hands over**.
 > **Start with [`docs/RUNBOOK.md`](docs/RUNBOOK.md).** It carries the build order,
 > the current state, and the failure modes.
 
-## The three repositories
+## The three projects (one repository since 2026-09-18)
 
-| Repo | Role |
+| Directory | Role |
 |---|---|
-| `besu-aws` | **Frozen. Reference only.** The pre-redesign build. Not modified. |
-| `mimic_vpc` | A throwaway mimic of the VPC the cloud team will hand over, so the contract can be tested for free. |
+| `besu-aws` (beside this repository, not in it) | **Frozen. Reference only.** The pre-redesign build. Not modified. |
+| `../mimic_vpc` | A throwaway mimic of the VPC the cloud team will hand over, so the contract can be tested for free. |
+| `../mimic_egress` | A throwaway mimic of the bank's shared egress proxy, so the Octopus polling-Tentacle path can be tested before the real egress is wired. |
 | **`sbsa_besu`** (this) | The platform: everything from EKS upwards. |
+
+Why one repository, and how the "never create network resources" rule is
+protected now that the mimics sit beside the platform: [`docs/RUNBOOK.md` §1](docs/RUNBOOK.md).
 
 ## What makes this build different
 

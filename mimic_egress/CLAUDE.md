@@ -95,7 +95,8 @@ terraform/
     vip/            internal NLB + target group + listener; PHZ + alias record
     peering/        peering to the ledger VPC + the two specific-prefix routes
   environments/
-    sit/            primary.tfvars      (af-south-1, deploy-tests too)
+    sit/            primary.tfvars      (af-south-1; deploy-tests) + .example
+    uat/            primary.tfvars.example  (af-south-1)
     prod/           primary.tfvars.example  (af-south-1 — documents the ask, never applied)
 scripts/
   emit-handover.sh      writes egress-handover.auto.tfvars for sbsa_besu (§4)
@@ -104,7 +105,8 @@ docs/
   egress-handover.md    build sheet + console/CLI equivalents + the R-10 ticket text
 ```
 
-Conventions: backend key `besu/network/egress.tfstate` (touched by nothing else); provider
+Conventions: backend key `besu/<env>/egress.tfstate` (`<env>` = `sit` | `uat` | `prod`, passed
+at `init`; was `besu/network/egress.tfstate` until 2026-09-18), touched by nothing else; provider
 `default_tags` (`Project`, `Environment`, `ManagedBy`, `DeletionGroup`, `Owner`,
 `CostCenter`); comment heavily, explain the WHY; **nothing hardcoded** — the Octopus
 instance name, the runner IP, the proxy port, the zone name and every CIDR are variables.

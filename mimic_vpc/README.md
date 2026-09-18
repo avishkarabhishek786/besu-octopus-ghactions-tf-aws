@@ -31,12 +31,12 @@ subnet, or any `0.0.0.0/0` route. There is no toggle for this.
 
 ```bash
 cd terraform
-cp environments/test/primary.tfvars.example environments/test/primary.tfvars   # then edit
+cp environments/sit/primary.tfvars.example environments/sit/primary.tfvars     # then edit
 terraform init -backend-config="bucket=<state-bucket>" \
-               -backend-config="key=besu/<env>/network.tfstate" \   # <env> = dev | prod
+               -backend-config="key=besu/<env>/network.tfstate" \   # <env> = sit | uat | prod
                -backend-config="region=<state-region>"
-terraform plan  -var-file=environments/test/primary.tfvars
-terraform apply -var-file=environments/test/primary.tfvars
+terraform plan  -var-file=environments/sit/primary.tfvars
+terraform apply -var-file=environments/sit/primary.tfvars
 
 cd .. && ./scripts/verify-contract.sh          # assert the contract against live AWS
 ./scripts/emit-handover.sh                     # render the tfvars for sbsa_besu

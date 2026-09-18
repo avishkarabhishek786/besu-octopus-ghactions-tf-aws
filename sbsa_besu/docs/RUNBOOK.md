@@ -1,25 +1,36 @@
 # RUNBOOK — building the SBSA Besu platform on a cloud-team VPC
 
-**Status:** 2026-08-29 · Phase B not yet started
+**Status:** 2026-09-18 · Phases B, C and E.1 (the R-9 mock) done; Phase D item 4 in
+progress — see §2. The three projects live in one repository since 2026-09-18 (§1).
 **Audience:** the operator. Deployment is **advise-only** — this document tells
 you what to run; nothing is executed for you.
 
 ---
 
-## 1. Orientation — three repositories
+## 1. Orientation — three projects, one repository
 
-| Repo | Role | Lifetime |
+| Directory | Role | Lifetime |
 |---|---|---|
-| `besu-aws` | The proven single-VPC build. **Reference only** — source of truth for porting. | Frozen |
-| `sbsa/mimic_vpc` | Impersonates the bank cloud team's network hand-over. | Throwaway — delete when the real VPC exists |
-| `sbsa/sbsa_besu` | The platform: 2 EKS clusters, Besu, everything else. | Permanent |
+| `besu-aws` (beside this repository, not in it) | The proven single-VPC build. **Reference only** — source of truth for porting. | Frozen |
+| `mimic_vpc/` | Impersonates the bank cloud team's network hand-over. | Throwaway — delete when the real VPC exists |
+| `mimic_egress/` | Impersonates the bank's shared egress proxy (R-9, CD-63). | Throwaway — delete when the R-10 ticket is answered |
+| `sbsa_besu/` | The platform: 2 EKS clusters, Besu, everything else. | Permanent |
 
-They are **separate git repositories on purpose**, not one repo with two
-subdirectories. The two `CLAUDE.md` files contradict each other by design —
-the mimic's says *"create the VPC"*, the platform's says *"NEVER create
-network-layer resources"* — and in one repo the second rule, the one protecting
-the cloud team's network, is the one that gets diluted. Separate repos also let
-you deny `ec2:CreateVpc` to the platform's IAM role outright.
+They were **separate git repositories until 2026-09-18** and are now three
+subdirectories of one. The reason they were kept apart still stands — the
+mimics' `CLAUDE.md` says *"create the VPC"*, the platform's says *"NEVER create
+network-layer resources"*, and the second rule is the one that protects the
+cloud team's network — but the three move together: the hand-over file
+`mimic_vpc` emits is an input to `mimic_egress`, whose own hand-over is an input
+to `sbsa_besu`, so one change to the contract was three commits in three
+histories with nothing tying them together. The guard against dilution is now
+structural rather than repository-level: each subtree keeps its own `CLAUDE.md`
+and its own `.gitignore`, the root `.gitignore` is the floor beneath all three,
+and the IAM control is untouched — the platform is deployed by Octopus
+`besu-infra` under its own role, which can still be denied `ec2:CreateVpc`
+outright, while the mimics are only ever applied from the laptop and never ship.
+The pre-merge histories are kept outside the repository at
+`../_sbsa-git-history-backup-2026-09-18/`.
 
 The platform was forked from `besu-aws@prod`, so it already carries the
 C6 / C10 / C12 + H1–H27 hardening baseline. `upstream` still points at the source
@@ -60,8 +71,11 @@ repo for cherry-picking later fixes.
   CD-56..CD-61 confirmed. Four defects found and fixed live (**B21–B24**); one design answer
   (Environment manager scoped to the Space is enough to register — CD-65). Full record with
   every command, output and the teardown: `docs/deploy-run-2026-09-17-r9-mock.md`. State keys
-  for `shared`/`chain`/`runner` now carry the `<env>` segment (`besu/sit/…`); the two mimic
-  roots are still on `besu/network/…` — move them at their next re-init.
+  for `shared`/`chain`/`runner` now carry the `<env>` segment (`besu/sit/…`). The two mimic
+  roots were last initialised on the old `besu/network/{main,egress}.tfstate`; their docs and
+  `backend.tf` now specify `besu/<env>/{network,egress}.tfstate`, so **their next
+  `terraform init` must pass the new key**. Everything is destroyed, so a fresh init is
+  enough — no `-migrate-state`; the two old objects hold empty state and can be deleted.
 
 **Phase D in progress (2026-08-30)** — items 1–3 of `PORTING.md` complete, item 4
 partial. All local, all free; nothing of the platform is applied.
@@ -161,7 +175,7 @@ aws ec2 describe-availability-zones --region af-south-1 \
 ```
 
 ```bash
-cd ~/Documents/Blockchain/Besu/sbsa/mimic_vpc/terraform
+cd ~/Documents/Blockchain/Besu/besu-octopus-ghactions-tf-aws/mimic_vpc/terraform
 cp environments/sit/primary.tfvars.example environments/sit/primary.tfvars
 # edit: az_ids, owner, cost_center, deletion_group
 
@@ -207,7 +221,7 @@ because the platform will meet reality rather than state.
 
 cd ../sbsa_besu/terraform/chain
 terraform init -backend-config="bucket=<state-bucket>" \
-               -backend-config="key=besu/dev/chain.tfstate" \
+               -backend-config="key=besu/<env>/chain.tfstate" \     # sit | uat | prod
                -backend-config="region=<state-region>" \
                -backend-config="use_lockfile=true"
 terraform plan -var-file=../environments/sit/common.tfvars \
@@ -273,7 +287,7 @@ bill about $11/day.
 Roots initialise independently, each with its own backend key:
 
 ```bash
-cd ~/Documents/Blockchain/Besu/sbsa/sbsa_besu/terraform/shared
+cd ~/Documents/Blockchain/Besu/besu-octopus-ghactions-tf-aws/sbsa_besu/terraform/shared
 terraform init -backend-config="bucket=<state-bucket>" \
                -backend-config="key=besu/<env>/shared.tfstate"     # sit | uat | prod \
                -backend-config="region=<state-region>" \

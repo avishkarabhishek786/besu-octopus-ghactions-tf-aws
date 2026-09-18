@@ -68,9 +68,12 @@ Settled context (do not re-litigate):
   a future move to VPC CNI custom networking is a config change rather than a rolling
   replacement of every node on a live ledger.
 - **Three AZs**, addressed by **AZ ID** (`afs1-az1/2/3`), never by AZ name.
-- **Region `af-south-1`** (Africa, Cape Town) for production. Deploy-tests run in
-  `us-east-1` to avoid the opt-in and the regional premium — the topology is
-  identical, only `az_ids` and rates differ.
+- **Region `af-south-1`** (Africa, Cape Town) for **all three environments** —
+  `sit`, `uat`, `prod` — since 2026-09-04. Deploy-tests used to run in `us-east-1`
+  to avoid the opt-in and the regional premium; that is retired, because a test
+  in another region does not prove the things most likely to break in
+  af-south-1 (endpoint-service availability, per-AZ instance offerings, the AZ
+  IDs themselves). The topology is region-agnostic; only `az_ids` do not travel.
 
 ---
 
@@ -83,8 +86,9 @@ terraform/
     vpc/          VPC, CIDR associations, DHCP options, flow logs
     subnets/      the 15 subnets, tags, route tables, NACLs
   environments/
-    prod/         primary.tfvars      (af-south-1)
-    test/         primary.tfvars      (us-east-1, deploy-tests)
+    sit/  uat/  prod/   primary.tfvars.example each (all af-south-1); the real,
+                        gitignored primary.tfvars lives beside it — sit/ is the
+                        one deploy-tests use
 scripts/
   emit-handover.sh      writes the Phase-2/3 tfvars fragment (§4)
   verify-contract.sh    re-asserts every requirement post-apply (§5)
@@ -93,7 +97,9 @@ docs/
 ```
 
 Conventions:
-- **Backend key:** `besu/network/main.tfstate`. This state is touched by nothing else.
+- **Backend key:** `besu/<env>/network.tfstate` (`<env>` = `sit` | `uat` | `prod`),
+  passed at `init` time. This state is touched by nothing else. (Was
+  `besu/network/main.tfstate` until 2026-09-18 — pass the new key at the next init.)
 - **Tag everything** via provider `default_tags`: `Project`, `Environment`,
   `ManagedBy`, `DeletionGroup`, `Owner`, `CostCenter`.
 - **Comment heavily, explain the WHY**, matching the style of the `besu-aws` modules.

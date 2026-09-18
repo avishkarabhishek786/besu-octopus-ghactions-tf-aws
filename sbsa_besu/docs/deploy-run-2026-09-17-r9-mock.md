@@ -7,6 +7,13 @@
 > Four defects found and fixed on the way (**B21–B24**), one design answer for the bank
 > (the least-privilege Octopus role for registration — see step 8). Teardown: §T.
 
+> **Read this if re-running.** This record predates the 2026-09-18 merge of the three
+> projects into one repository. Every `~/Documents/Blockchain/Besu/sbsa/<project>` below is now
+> `~/Documents/Blockchain/Besu/besu-octopus-ghactions-tf-aws/<project>`; the commands are otherwise
+> unchanged. The two mimic state keys in the table below (`besu/network/…`) are the ones used
+> that day; the mimic docs and `backend.tf` now specify `besu/<env>/{network,egress}.tfstate`
+> — pass the new key at the next `terraform init` (RUNBOOK §2).
+
 **What this run proves.** The bank's cloud team gives us no egress internals (R-9 closed as
 "option 1", 2026-09-14): a shared central egress behind a load balancer, reachable only from
 a pinned source. Our in-VPC runner must register with Octopus Cloud as a **polling Tentacle

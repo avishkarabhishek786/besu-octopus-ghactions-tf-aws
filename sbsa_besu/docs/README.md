@@ -17,8 +17,8 @@ purpose — see below.
 | [CICD_DESIGN_NOTES.md](CICD_DESIGN_NOTES.md) | **CI/CD: GitHub Actions + Octopus Deploy.** **§0 is the orientation — read it first:** the two execution classes, the two artefacts CI produces, who deploys what, the build sequence, how R-9 closed, and a comparison against the `besu-aws` model. Then decisions CD-1..CD-64, the three-project Octopus design, the H1 validator gate, **§7 = how Octopus reaches the private cluster as now decided** (polling Tentacle worker on the runner through the bank's shared egress; §7.3 = every egress question answered with its fallback, CD-55..CD-63), and Octopus API-key setup. |
 | [diagrams/cicd-build-flow.drawio](diagrams/cicd-build-flow.drawio) | **The CI/CD flow as a picture**, three pages of one `.drawio` file: **1** ownership — what the cloud team owns versus what we own, and what we are still waiting on; **2** engineering detail — the two workflows, the three Octopus projects, and the SIT/UAT/PROD matrix; **3** a management view with no tool or file names. **Redrawn 2026-09-14:** the R-9 branch is now solid — Octopus drives the in-VPC host through the bank's egress (CD-55). Dashed edges now mean image/chart pull only. |
 | [EVENT_LISTENER_DESIGN_NOTES.md](EVENT_LISTENER_DESIGN_NOTES.md) | The SWIFT event pipeline: chain-tailer → SNS FIFO → SQS FIFO, decisions E-1..E-20. |
-| [mimic-vpc-brief.md](mimic-vpc-brief.md) | Reference copy of the `mimic_vpc` operating brief. The live one is that project's `CLAUDE.md`. |
-| [../../mimic_egress/CLAUDE.md](../../mimic_egress/CLAUDE.md) | **NEW 2026-09-14.** Operating brief for `mimic_egress` — the cloud team's **shared egress proxy**, mimicked (CD-63): explicit `CONNECT` Squid behind an internal NLB VIP, PHZ name, peering + one specific-prefix route into the ledger route tables, allowlist = runner /32 → the two Octopus hostnames on 443, no TLS interception. Brief only — no Terraform yet. |
+| [mimic-vpc-brief.md](mimic-vpc-brief.md) | The **design-phase draft** of the `mimic_vpc` brief, from before that project existed (it still opens with "rename this file to `CLAUDE.md`"). Kept as the record of what was asked for; it is NOT kept in sync. **The live brief is [../../mimic_vpc/CLAUDE.md](../../mimic_vpc/CLAUDE.md)** — same repository since 2026-09-18. |
+| [../../mimic_egress/CLAUDE.md](../../mimic_egress/CLAUDE.md) | **NEW 2026-09-14.** Operating brief for `mimic_egress` — the cloud team's **shared egress proxy**, mimicked (CD-63): explicit `CONNECT` Squid behind an internal NLB VIP, PHZ name, peering + one specific-prefix route into the ledger route tables, allowlist = runner /32 → the two Octopus hostnames on 443, no TLS interception. Built and **applied live on 2026-09-14 and 2026-09-17** (29 resources, 8/8 probes); same repository since 2026-09-18. |
 | [build-findings.md](build-findings.md) | Defects found while porting (B1–B15). Four would have passed silently; the entries record how each was found. |
 | [../../CHART_IMAGES.md](../../CHART_IMAGES.md) | The **15 images the five upstream charts carry**, on top of the 8 in `var.container_images` — enumerated by `helm template`, not from memory. Registry-independent. `verify-images.sh` does not cover the 15, so it can exit 0 with all of them missing (PORTING item 4). |
 | [../PORTING.md](../PORTING.md) | What is ported from `besu-aws` and what remains. |
@@ -53,7 +53,8 @@ every `prod-deploy-run-*` / `test-run-log` / pentest log — described a build t
 **no longer exists**: one Terraform root, a VPC we created, NAT egress, a single
 `primary.tfvars`. Left in place they would have been read and believed.
 
-They are intact in the frozen reference repo at `../../besu-aws`, in both its
+They are intact in the frozen reference repo `besu-aws`, which sits beside this
+repository's root (`../../../besu-aws` from this directory), in both its
 working tree and its history, and in this repository's own history before
 `docs: prune inherited documentation`. Code comments citing `docs/explained/…` or
 an F-number resolve **there**.

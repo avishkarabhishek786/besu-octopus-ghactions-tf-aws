@@ -1,9 +1,10 @@
 # =============================================================================
 # backend.tf
 # -----------------------------------------------------------------------------
-# State lives under its own key prefix, `besu/network/`, which NOTHING else
-# touches. The platform project (`sbsa_besu`) uses `besu/platform/*` and must
-# never be granted read access to this prefix — the real cloud team will not
+# State lives in its own key, `besu/<env>/network.tfstate`, which NOTHING else
+# touches. The platform project (`sbsa_besu`) uses
+# `besu/<env>/{shared,runner,chain,app}.tfstate` and must never be granted read
+# access to this key — the real cloud team will not
 # share state, so allowing it here would let the platform develop a dependency
 # that cannot exist in production (CLAUDE.md §4).
 #
