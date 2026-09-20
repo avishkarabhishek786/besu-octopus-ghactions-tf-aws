@@ -124,6 +124,11 @@ jobs:
       - name: Check manifest agrees with Terraform
         run: ./scripts/supply-chain/mirror.sh --check-drift
 
+      # Crane is used for copying images between registries — 
+      # crane copy docker.io/library/nginx:1.27 my-registry.example.com/nginx:1.27.
+      # This is exactly what your workflow does, and it's crane's most common job:
+      # mirroring public images into a private registry, promoting images from a
+      # staging registry to production, or migrating between registry providers.  
       - name: Install crane and helm
         run: |
           set -euo pipefail
