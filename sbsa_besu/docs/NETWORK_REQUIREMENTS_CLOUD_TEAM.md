@@ -4,6 +4,7 @@
 **From:** Ledger Platform Engineering
 **Date:** 2026-08-29
 **Status:** Request for provisioning parameters — response needed before VPC creation
+**2026-09-21:** **§9 added — shared EKS cluster, namespace tenancy (#27–#38).** It withdraws nine of the requirements below and re-scopes two. **Where §9 and §§2–8 differ, §9 governs.**
 
 ---
 
@@ -32,8 +33,8 @@ to provide.
 |---|---|
 | Region | **`af-south-1` (Africa, Cape Town)** — CONFIRMED 2026-08-29 |
 | Availability Zones | 3 |
-| EKS clusters | **2** — one for the ledger, one for the application estate |
-| Worker nodes at peak | ~26 (~6 ledger, ~20 applications) |
+| EKS clusters | ~~**2** — one for the ledger, one for the application estate~~ **2026-09-21: none — we are a namespace tenant of your shared cluster (§9)** |
+| Worker nodes at peak | ~~~26 (~6 ledger, ~20 applications)~~ **2026-09-21: your nodes; ~20 pods, ~6 vCPU / 20 GiB requested, 8 × 20 GiB volumes — §9.3 #27** |
 | Internet egress required | **None.** The ledger is a closed network. |
 
 ---
@@ -68,6 +69,7 @@ to provide.
 | 24 | Confirm the VPC is **not RAM-shared** — if it is, you must create the endpoints | 1 | none |
 | 25 | ECR account topology, and cross-account pull granted to our node roles | 1 | none |
 | 26 | An approved **build-and-push path outside the VPC** (CodeBuild with no VPC config) | 1 | pennies |
+| **27–38** | **Shared EKS cluster, namespace tenancy — see §9 (2026-09-21).** Withdraws #4, #7, #9, #10, #12, #15, #16, #17; re-scopes #11 → #28 and #25 → #38 | see §9 | none |
 
 ---
 
@@ -574,6 +576,331 @@ actually be deployed), pulls every manifest, and prints the digests.
 That single check exercises requirements **#20, #22 and #23** end-to-end, in about ten
 seconds, before any billable cluster exists. If it passes, the supply chain is proven. If
 it fails, we come back to you with a specific requirement number rather than a symptom.
+
+---
+
+## 9. Addendum — shared EKS cluster, namespace tenancy (2026-09-21)
+
+> **⇢ This section is written to be sent on its own.** It assumes the reader has our
+> 2026-08-29 document and the 2026-09-09 follow-up, and it supersedes both wherever they
+> speak about clusters, subnets we would own, or address space.
+
+**Please read this alongside §§2–8. Where they differ, this section governs.**
+
+You told us on 2026-09-21 that we will **not build EKS**: a shared cluster exists, we
+are allotted a **namespace** in it, and you run the cluster and its maintenance. You
+also told us your VPC has **separate subnets per role** (application, data, …) with
+**security rules you define**. We have adopted both. This section states what that
+model needs from you, what it lets us **withdraw**, and — because the change moves one
+specific operation onto your schedule — the one thing we need agreed in writing rather
+than configured.
+
+### 9.1 The model
+
+We become a **Kubernetes tenant**. Everything cluster-scoped is yours: the cluster,
+node groups, addons, CRDs, DaemonSets, StorageClasses, webhooks, cluster RBAC. We own
+what lives inside our namespaces, and the AWS resources beside the cluster: KMS keys,
+Secrets Manager secrets, two internal NLBs, IAM roles, SNS, S3, and one small EC2
+administrative instance (the deployment worker — see the 2026-09-14 R-10 ticket, which
+is unchanged by this).
+
+**What we will run in the namespace(s)** — from our chart values, so these are real
+numbers, not estimates. Production may grow modestly; we will send final figures before
+each environment is built.
+
+| Workload | Pods | CPU requested | Memory requested / limit | Persistent volumes |
+|---|---|---|---|---|
+| Validators (QBFT, one per node — see #28/#29) | 4 | 4 × 500m | 4 × 2 GiB / 4 GiB | 4 × 20 GiB, grows with the chain |
+| Bootnodes | 2 | 2 × 250m | 2 × 1 GiB / 2 GiB | 2 × 20 GiB |
+| RPC pool (SWIFT, mTLS) | 2 | 2 × 500m | 2 × 2 GiB / 4 GiB | 2 × 20 GiB |
+| Explorer (Blockscout: backend, frontend, stats, visualizer, proxy, database) | 6 | ~0.6 vCPU | ~1.8 GiB / ~5.7 GiB | 1 × database (see #37) |
+| Monitoring (Prometheus, Alertmanager, Grafana — only if we run our own, #30) | 3 | ~0.4 vCPU | ~0.9 GiB / ~1.9 GiB | 1 × Prometheus |
+| **Total, ledger namespace** | **~20** | **~4.5 vCPU** | **~17 GiB / ~36 GiB** | **~10 volumes, ~200 GiB** |
+
+**We would ask for a `ResourceQuota` of roughly 8 vCPU / 24 GiB requests, 48 GiB limits,
+40 pods, 12 PVCs / 300 GiB** — the table plus ~30 % headroom, so a routine change does
+not hit the ceiling. An application namespace (#27) is sized separately, later.
+
+**Two settled points that do not change:** (1) **no internet egress** — nothing in our
+namespaces reaches the internet; images come from ECR over your endpoints (§8); (2) the
+**deployment path** — Octopus drives our administrative instance through your shared
+egress (R-10). The instance now needs *namespace-scoped* access to your cluster instead
+of admin access to ours (#32).
+
+### 9.2 What this lets us withdraw
+
+Nine requirements from the 2026-08-29 document are withdrawn outright, two are
+re-scoped. Please treat the originals as closed.
+
+| Withdrawn | Was | Why |
+|---|---|---|
+| **#4** | Subnet tag `kubernetes.io/role/internal-elb=1` | We bind pods to NLBs we create in Terraform (`TargetGroupBinding`); the controller creates no load balancer and discovers no subnet |
+| **#7** | Contiguous /20 from a reserved /18 — and the whole **2026-09-09 CIDR review** (SIT/UAT/PROD /20 each) | We no longer lay out subnets. Our demand is ~20 pod addresses plus NLB interfaces in *your* application subnets — a sizing note for you (#34), not a request |
+| **#9** | EKS service CIDR confirmation | Your cluster, your service CIDR |
+| **#10** | Gateway-endpoint association | Your cluster's nodes already need S3; the endpoint exists and we verify it (#20 still stands) |
+| **#12** | Dedicated route tables for ledger subnets | Folds into #28 if a dedicated node group is granted; otherwise moot |
+| **#15** | Permission to create interface endpoints | All 15 services your cluster already needs; we verify (`verify-endpoints.sh`), we create none |
+| **#16** | Endpoint subnets distinct from load-balancer subnets | Existed for a PrivateLink path between our two clusters. There is one cluster now; that path is gone |
+| **#17** | `100.64.0.0/16` secondary CIDR | Your CNI configuration, not ours |
+| — | **Appendix A** (subnet plan) | Superseded in full |
+
+| Re-scoped | Was | Now |
+|---|---|---|
+| **#11** | Dedicated ledger *subnets* | **#28** — a dedicated ledger *node group*, in dedicated subnets if you can |
+| **#25** | Cross-account ECR pull for *our* node roles | **#38** — pull for *your* cluster's node role on our repositories |
+
+Still standing, unchanged: **#1, #2, #3, #6, #18, #20–#24**, and the R-10 egress ticket.
+
+### 9.3 New requirements — Tier 1 unless marked
+
+As before, each states what breaks without it. Most cost nothing. **#29 is the one that
+is not a configuration item**, and we ask you to read it first.
+
+#### 29. Node maintenance — a written operating agreement for the validator nodes
+
+The ledger is QBFT with **four validators** and tolerates **exactly one** being down.
+Two down at once and the chain **halts** — it does not degrade, it stops, and it stays
+stopped until an operator intervenes. This is the single failure we design everything
+around, and node maintenance is the operation most likely to cause it.
+
+Our validators carry a `PodDisruptionBudget` with `maxUnavailable: 0` and hostname
+anti-affinity, so a normal drain of one node evicts nothing and waits. **We need your
+node-rotation and Kubernetes-upgrade tooling to honour that**, specifically:
+
+1. **Never force-evict past the PDB** on nodes carrying our validators. A managed
+   node-group update with `--force` ignores PDBs by design; that flag, on our nodes, is
+   a chain halt.
+2. **One node at a time**, with our validator confirmed back in the block-producing set
+   before the next. We will provide a one-line health check you can run, and we are
+   happy to be paged to run it ourselves.
+3. **Notice** of planned node rotation and Kubernetes version upgrades — we would ask
+   for 5 working days — and a **maintenance window** we can attend. Besu must be
+   compatibility-tested against each new Kubernetes minor before your upgrade, on your
+   cadence (#36).
+4. If your tooling cannot do 1–2, the alternative is **#28 with the node group excluded
+   from automated rotation**, and we rotate it ourselves under change control.
+
+**What breaks without it:** a routine node rotation halts a payment ledger. There is no
+configuration on our side that prevents it; only the agreement does.
+
+#### 27. Two namespaces, with known Pod Security and quota settings
+
+**Ledger** and **application** namespaces, not one — RBAC, `ResourceQuota` and Pod
+Security Admission are namespace-granular, and the application workloads (including the
+SWIFT event listener) must not share any of them with validators. If the application
+estate is not destined for this cluster, tell us and we ask for one.
+
+On each namespace we need to know, before we deploy: the **Pod Security Admission
+level** (`kubectl get ns <ns> --show-labels`) — our validator pod has one init step that
+runs as root to fix file ownership, which `restricted` rejects at admission, so we need
+`baseline` or we rework it first; the **`ResourceQuota`** (§9.1 has our numbers); and any
+**`LimitRange`** whose defaults or maximums sit below the requests in §9.1.
+
+**What breaks without it:** at `restricted`, every validator pod is refused before it
+starts; a quota below the table makes the fourth validator unschedulable — and QBFT with
+three of four is one failure from a halt.
+
+#### 28. A dedicated, tainted node group for the ledger — Tier 2, and it matters
+
+Validators are the trust anchor of a payment ledger. Sharing a node's kernel with
+other tenants' pods is a security-posture regression we would rather not absorb.
+Standard multi-tenant practice, and it fits your role-separated layout:
+
+- a **node group reserved for our ledger namespace** — a taint only our pods tolerate,
+  a label we select on;
+- **at least 4 nodes across 3 AZs** (one validator per node, spread by zone), of an
+  `m6i.xlarge`-class instance;
+- in **dedicated ledger subnets** if you can — that restores the NACL boundary and flow
+  logs we asked for in August, now in your hands rather than ours; in the application
+  subnets if not.
+
+**If refused:** we run on shared nodes with `NetworkPolicy` default-deny as the
+compensating control, and we record the posture change in the design. We would rather
+you said no than we assumed.
+
+#### 30. Cluster add-ons we depend on — please tell us which exist
+
+Our workloads consume four cluster-scoped components that a tenant cannot install.
+For each: what we need, and what we do if it is absent.
+
+| Add-on | What we need | If absent |
+|---|---|---|
+| **AWS Load Balancer Controller** | the `TargetGroupBinding` CRD, and tenants permitted to create them — we register our pods into NLB target groups we own | **No workaround.** Our SWIFT and application RPC endpoints cannot be exposed without it. Hard requirement |
+| **EBS CSI driver + a StorageClass** | a class we may use: `gp3`, encrypted, `volumeBindingMode: WaitForFirstConsumer`, `allowVolumeExpansion: true` (the chain grows). Tell us whose KMS key encrypts it | **No workaround** — the chain needs persistent volumes |
+| **Secrets Store CSI driver + AWS provider** | the `SecretProviderClass` CRD — our validator keys are mounted from Secrets Manager under a customer-managed KMS key | We fetch at pod start from Secrets Manager via the pod's IAM role instead. Acceptable; we prefer the CSI path |
+| **Prometheus Operator** | the `PodMonitor` / `PrometheusRule` CRDs, and either your Prometheus scraping our namespace or our own `Prometheus` object in it | We run a plain Prometheus in-namespace. Acceptable |
+| **Log shipping** (Fluent Bit or equivalent) | our containers' logs delivered to a CloudWatch log group **we can read and alarm on** | A sidecar per pod. Acceptable, heavier |
+
+**What breaks without it:** the first two, everything — no RPC endpoint and no chain
+data. The others degrade the operational posture rather than the ledger.
+
+#### 31. Pod identity mechanism — IRSA or EKS Pod Identity
+
+Our pods reach KMS, Secrets Manager, SNS and SQS through IAM roles bound to service
+accounts. Tell us which mechanism the cluster uses:
+
+- **IRSA** — we need the cluster's **OIDC provider ARN and issuer URL**; our roles trust
+  it with a condition on `system:serviceaccount:<our-namespace>:<sa>`; or
+- **EKS Pod Identity** — the `eks-pod-identity-agent` addon is present, and we need
+  permission to create **pod identity associations** for service accounts in our
+  namespaces (or you create them from a list we send).
+
+Either is fine. **What breaks without it:** no pod can decrypt a validator key or read a
+secret; nothing starts.
+
+#### 32. Cluster access for our administrative instance — namespace-scoped
+
+Our deployment worker (the R-10 instance) applies Helm releases and runs the
+one-validator-at-a-time upgrade script. It needs an **EKS access entry** for its IAM
+role with **`AmazonEKSEditPolicy` scoped to our two namespaces** (or a `Role` +
+`RoleBinding` you prefer) — never cluster-wide. Plus: the **cluster name, API endpoint
+and CA certificate**, and confirmation the endpoint is **private-only**.
+
+**What breaks without it:** nothing can be deployed. And too broad a grant would be
+something we have to explain in a review; scoped is what we want.
+
+#### 33. Node security group — admit our load balancers, or enable Security Groups for Pods
+
+Our two internal NLBs target **pod IPs**, so traffic arrives at the **node** security
+group, which is yours. Either:
+
+- add an ingress rule on the node SG permitting **TCP 8545–8546 from our NLB security
+  groups** (we will send the IDs), or
+- enable **Security Groups for Pods** (`ENABLE_POD_ENI`) so we attach our own SG to the
+  RPC pods and you touch nothing.
+
+Also needed: the **node security group ID** and the **node IAM role ARN** (for #38).
+
+**What breaks without it:** the NLB health checks never pass, and SWIFT's endpoint is
+unreachable — with no error anywhere, just `unhealthy` targets.
+
+#### 34. Network flows through your subnet rules
+
+You define the rules on each subnet; our pods sit in your application subnets, one per
+AZ. Validators are deliberately spread across all three AZs, so **every
+validator-to-validator connection crosses a subnet boundary** and meets your rules.
+Please confirm these flows are permitted — or send us the rules (§9.4) and we will check
+ourselves:
+
+| # | Flow | Port / protocol | From → To |
+|---|---|---|---|
+| F-1 | Validator/bootnode peer-to-peer | **30303 TCP and UDP** | application subnet ↔ application subnet, all AZs |
+| F-2 | RPC via our NLBs (IP targets) + their TCP health checks | 8545, 8546 TCP | load-balancer subnet → application subnet |
+| F-3 | Return path for F-2 — **only if the rules are stateless (NACLs)** | 1024–65535 TCP | application subnet → load-balancer subnet |
+| F-4 | Metrics scrape | 9545 TCP | your Prometheus → application subnet (or intra-namespace) |
+| F-5 | AWS APIs via interface endpoints | 443 TCP | application and administrative-instance subnets → endpoint subnet (+ return if stateless) |
+| F-6 | S3 gateway — image layers, Terraform state, our tool bundle | 443 TCP | application and administrative-instance subnets → **the S3 prefix list** (a NACL cannot reference it; the rule must cover S3's regional ranges) |
+| F-7 | Administrative instance → cluster API | 443 TCP | its subnet → the control-plane ENIs' subnets |
+| F-8 | Administrative instance → egress proxy VIP | the proxy port | its subnet → the egress prefix (R-10, unchanged) |
+| F-9 | Explorer database | 5432 TCP | intra-namespace, or application → data subnet (#37) |
+
+And three placement facts: **which subnet(s) your node group uses**, **which
+load-balancer subnets** we may place NLBs in, and **which subnet** our administrative
+instance should use.
+
+**What breaks without it:** a blocked F-1 means the chain never reaches quorum and
+reports nothing except a peer count of zero; a blocked F-2 is #33's silent failure; a
+blocked F-6 stops every image pull half-way through a layer. None of these produce an
+error naming the cause — which is why we want to verify the rules before anything is
+built, not diagnose them after.
+
+#### 35. `NetworkPolicy` enforcement in the CNI
+
+With shared nodes, Kubernetes `NetworkPolicy` is our primary tenant boundary. Please
+confirm the cluster enforces it — VPC CNI with network policy enabled
+(`enable-network-policy=true` on `aws-node`), or Calico / Cilium.
+
+**What breaks without it:** our default-deny policies are accepted by the API and
+enforced by nothing; every pod in the cluster can reach the validators' privileged RPC.
+
+#### 36. Kubernetes version and upgrade cadence
+
+The current version, the planned upgrade cadence, and the notice period (#29 item 3).
+Hyperledger Besu's chart and our operator tooling are validated per Kubernetes minor;
+we need to run that validation **before** your upgrade, on your schedule.
+
+#### 37. Placement policy for the explorer database
+
+Blockscout (the block explorer, internal-only) runs a small PostgreSQL. Today it is a
+StatefulSet in the namespace. If your policy is that **databases live in the data
+subnets**, tell us and we move it to RDS there, with F-9 as an application → data rule.
+Either is fine; it is the lowest-stakes item in this document.
+
+#### 38. ECR pull for your cluster's node role (re-scopes #25)
+
+Images are pulled by **your** nodes now. The repository policies on our ECR
+repositories (central shared-services account, §8) must grant pull to **your node
+group's IAM role** — send us its ARN (#33) and we add it, or add it yourselves if the
+repositories are managed centrally.
+
+**What breaks without it:** `ImagePullBackOff` on every pod, against a registry that
+looks fully populated.
+
+### 9.4 What we need you to send — three commands, then a few questions
+
+Most of §9.3 is answered by pasting three outputs. We ask for these rather than
+descriptions because we have been misled by descriptions before; a string cannot be
+ambiguous.
+
+```bash
+# 1 — the cluster: version, endpoint access, OIDC issuer, addons
+aws eks describe-cluster --name <cluster> --region af-south-1
+aws eks list-addons      --cluster-name <cluster> --region af-south-1
+aws eks describe-nodegroup --cluster-name <cluster> --nodegroup-name <ng> \
+    --query 'nodegroup.{subnets:subnets,instanceTypes:instanceTypes,taints:taints,labels:labels,nodeRole:nodeRole,sg:resources.remoteAccessSecurityGroup}'
+
+# 2 — what is installed, and what we may use
+kubectl get crd | grep -E 'targetgroupbindings|secretproviderclasses|podmonitors|prometheusrules|securitygrouppolicies'
+kubectl get storageclass
+kubectl get ns <our-namespace> --show-labels
+kubectl get resourcequota,limitrange -n <our-namespace>
+kubectl -n kube-system get ds aws-node -o jsonpath='{.spec.template.spec.containers[?(@.name=="aws-node")].env}' | tr ',' '\n' | grep -iE 'NETWORK_POLICY|POD_ENI'
+
+# 3 — the subnet rules our flows must pass (#34)
+aws ec2 describe-network-acls   --region af-south-1 --filters Name=association.subnet-id,Values=<node,lb,data subnet ids>
+aws ec2 describe-security-groups --region af-south-1 --group-ids <node sg id>
+```
+
+In words:
+
+| # | Question |
+|---|---|
+| A | Is the **application estate** also destined for this cluster (#27 — one namespace or two)? |
+| B | Is the node group **charged back** to consuming teams? (cost model only) |
+| C | Are the subnet rules **NACLs, security groups, or both**? (decides whether F-3 and the return rows in #34 are real) |
+| D | For #33: will you **add the node-SG rule**, or is **Security Groups for Pods** enabled? |
+| E | Your **node-rotation policy** — do you ever force past a PDB, and what notice do tenants get? (#29) |
+| F | The **cadence** for Kubernetes upgrades (#36) |
+| G | **Databases in data subnets** — policy or preference? (#37) |
+| H | Who creates our **access entry** (#32) and **pod identity associations** if #31 is Pod Identity |
+
+### 9.5 Shared responsibility — delta to §7 and §8.5
+
+| Resource | Cloud Platform Team | Ledger Platform Team |
+|---|---|---|
+| EKS cluster, node groups, Kubernetes upgrades, addons, CRDs, StorageClasses, cluster RBAC | **Own** | Consume; assert via preflight |
+| Node rotation on ledger nodes | **Own the tooling, honour #29** | Provide the health check; attend the window |
+| Namespaces, quotas, PSA labels, access entries | **Own** (#27, #32) | Request; verify |
+| Node security group rule for our NLBs, or SGP | **Own** (#33) | Send NLB SG IDs |
+| Subnet rules for F-1..F-9 | **Own** (#34) | Verify by preflight; cite the flow number on failure |
+| Everything inside our namespaces; NLBs, KMS, Secrets Manager, IAM roles, SNS/SQS, S3, the administrative instance | — | **Own** |
+| ECR repository policies for your node role (#38) | Add, if repositories are centrally managed | Request; verify from the runner |
+| ~~Interface endpoints, gateway endpoints, route tables, NACL rules, flow logs~~ | **Own — all of it, now without qualification** | Verify only |
+
+### 9.6 How we will prove it works before we spend anything
+
+Three read-only checks, all run from our administrative instance inside the VPC, all
+free, all about ten seconds:
+
+1. **The cluster contract** — version, private endpoint, OIDC/Pod Identity, the CRDs
+   in #30, the StorageClass, our namespaces and their PSA labels, our access entry.
+2. **The subnet rules** — the NACLs and security groups on the node, load-balancer and
+   administrative-instance subnets, evaluated against F-1..F-9.
+3. **The registry** — `verify-images.sh` as in §8.6, now pulling as *your* node role's
+   peer (#38).
+
+Each failure names the requirement number above. If they pass, the platform deploys;
+if they fail, we come back with `#34 F-1` rather than *"the chain won't start."*
 
 ---
 

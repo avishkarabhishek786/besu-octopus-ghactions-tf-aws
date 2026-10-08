@@ -19,6 +19,29 @@ When in doubt about *why* something is the way it is, the answer is in that repo
 
 ---
 
+> ## ⚠️ CT-5 — 2026-09-21: the cluster is no longer ours to build. READ BEFORE ANYTHING BELOW.
+>
+> The cloud team provides a **shared EKS cluster** and allots us a **namespace**; they run
+> the cluster and its maintenance. Their VPC has **role-separated subnets with security
+> rules they define**. Recorded from a verbal update — **not yet confirmed in writing**.
+>
+> **This brief is not yet rewritten against it**, on purpose: the asks in
+> `docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md` **§9 (#27–#38)** decide which files are deleted
+> versus made conditional. The full design record is `docs/CLOUD_TEAM_REDESIGN_NOTES.md`
+> **§12** (D-23..D-34). Until the rewrite, these override the sections they name:
+>
+> - **§1 "Two EKS clusters"** — superseded. One cluster, ours is a namespace (two requested). PrivateLink between clusters, the `app` cluster and **Stage 3.0 are deleted** (D-28).
+> - **Prime directive 1 extends to EKS and to every cluster-scoped Kubernetes kind** — cluster, node groups, addons, CRDs, DaemonSets, StorageClasses, webhooks, cluster RBAC. A plan or chart that creates one is a bug (D-23).
+> - **The four cluster-scoped add-ons we install** (LBC, Secrets Store CSI + provider, kube-prometheus-stack, Fluent Bit) are the cloud team's to provide; we **assert, never install** (D-24). §5.3's chart mirroring shrinks accordingly.
+> - **§6 isolation** — the validator node group and per-tier SGs become an *ask* (#28, D-26); NetworkPolicy default-deny is now load-bearing. **§7's EKS version ladder** is theirs; what remains is a compatibility gate (#36).
+> - **Node maintenance is theirs and can halt the chain** — H1's rolling rule now depends on a written operating agreement (#29, D-27), not on our tooling.
+> - **The subnet security rules are a gate** (D-29): the flow table in §12.4 must pass rules we did not write, asserted by a read-only preflight before anything billable.
+> - **Do not start PORTING items 5 or 6 on the old premise.** Item 4's remaining work (OCI charts, chart-image overrides) mostly disappears if #30 confirms the add-ons are provided.
+>
+> Branches: this work is on **`shared-eks-namespace`**; the own-cluster design is frozen on **`own-eks-cluster-design`** (`3af66e8`).
+
+---
+
 ## 0. Prime directives (read first)
 
 1. **NEVER create network-layer resources.** No VPC, subnet, route table, IGW, NAT,

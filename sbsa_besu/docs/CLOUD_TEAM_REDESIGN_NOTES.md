@@ -1,7 +1,7 @@
 # Cloud-Team Redesign — Discussion Record & Design Decisions
 
-**Date:** 2026-08-18 (design discussion) · updated 2026-08-29
-**Status:** Discussion complete. `CLAUDE.md` for the new project **NOT yet written** (deliberately — see §7 open items).
+**Date:** 2026-08-18 (design discussion) · updated 2026-08-29 · **2026-09-21: §12 added (CT-5, shared EKS — namespace tenancy)**
+**Status:** Discussion complete; `CLAUDE.md` written and the platform built against CT-1..CT-4. **2026-09-21: CT-5 recorded from a verbal update — the cluster is no longer ours to build. §12 is the design record; the platform brief is NOT yet rewritten against it** (deliberately — the asks in `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9 must be answered first).
 **Scope:** This document seeds a **NEW, SEPARATE git project**. The current
 `besu-aws` repository is **unchanged** and remains the record of the existing
 design. Nothing here is to be applied to this repo.
@@ -30,6 +30,8 @@ project's `CLAUDE.md` can be written from it without re-deriving anything.
 | CT-2 | **Private subnets only.** No public subnets, therefore no Internet Gateway. |
 | CT-3 | **All container images from a private registry**, not public ones. Settled as **Amazon ECR** 2026-09-04 — see §11. |
 | CT-4 | **VPC CIDR may be smaller than /16.** Determine the ideal size, accounting for a future estate of ~a dozen applications competing for IPs with Besu at peak. |
+| CT-1a | **2026-09-21.** The cloud team's VPC has **separate subnets per role** (application, data, …), each with **security rules the cloud team defines**. A refinement of CT-1: we no longer choose or size subnets, and our flows must pass rules we did not write. See §12.4. |
+| CT-5 | **2026-09-21. We do not build EKS.** A **shared EKS cluster** exists; we are allotted a **namespace** and the cloud team runs the cluster and its maintenance. See §12. |
 
 ### Risk ranking (highest first)
 
@@ -43,6 +45,11 @@ project's `CLAUDE.md` can be written from it without re-deriving anything.
 
 Three of the four changes make our Terraform **smaller**. Only CT-2 makes the
 system harder.
+
+**2026-09-21:** CT-5 outranks all four. It makes the Terraform smaller again, but it
+moves node maintenance — the one operation that can halt a QBFT chain — to another
+team's schedule (§12.3), and it turns four cluster-scoped add-ons we install into
+dependencies on what the cloud team happens to run (§12.2).
 
 ---
 
@@ -850,3 +857,322 @@ New or changed work:
 - [AWS re:Post — Update yum on an EC2 instance without internet access](https://repost.aws/knowledge-center/ec2-al1-al2-update-yum-without-internet)
 - [amazonlinux/amazon-linux-2023 issue #535 — dnf resolves to the s3.dualstack URL](https://github.com/amazonlinux/amazon-linux-2023/issues/535)
 - [Amazon ECR pricing](https://aws.amazon.com/ecr/pricing/)
+
+---
+
+## 12. CT-5 — Shared EKS cluster, namespace tenancy; role-separated subnets with cloud-team rules (2026-09-21)
+
+### 12.0 Status
+
+**RECORDED 2026-09-21 from a verbal update. Nothing below is confirmed in writing yet.**
+The cloud team said two things:
+
+1. **We do not build EKS.** A **shared EKS cluster** exists. We are allotted a
+   **namespace** in it; the cloud team runs the cluster and all of its maintenance.
+2. **Their VPC has separate subnets per role** — application subnets, data subnets,
+   and so on — and each subnet carries **security rules the cloud team defines**.
+
+Together these move the platform from *owner of two clusters inside someone else's
+VPC* (CT-1) to **tenant of one namespace inside someone else's cluster**. It is a
+larger change than CT-1 was, and it has the same shape as CT-1 and R-9 before it: a
+**hand-over of plain values**, a **contract module that asserts it**, and a **mimic
+that impersonates it**. This section is the design record. The sendable asks are
+`NETWORK_REQUIREMENTS_CLOUD_TEAM.md` **§9 (#27–#38)**.
+
+The work is on branch **`shared-eks-namespace`**; the own-cluster design is frozen on
+**`own-eks-cluster-design`** at `3af66e8`. The platform brief (`CLAUDE.md`) is **not**
+rewritten yet — §12.11's asks decide which files are deleted versus made conditional,
+and guessing would be rework. `CLAUDE.md` carries a banner pointing here.
+
+### 12.1 What was said, and what it means for us
+
+| Said | Means |
+|---|---|
+| "A shared EKS cluster; you get a namespace" | We are a **Kubernetes tenant**. Everything cluster-scoped — the cluster, node groups, addons, CRDs, DaemonSets, StorageClasses, webhooks, cluster RBAC — is theirs. We own what lives inside our namespace(s) and the AWS resources beside the cluster (KMS, Secrets Manager, NLBs, IAM roles, SNS, buckets, the runner). |
+| "We manage the maintenance" | **Node rotation and Kubernetes upgrades happen on their schedule**, with their tooling. This is the operation that can halt a QBFT chain (§12.3). |
+| "Separate subnets for applications, data, …" | **Our pods land wherever their node groups are** — presumably the application subnets — beside every other tenant's pods. We no longer choose, size or route subnets. The 15-subnet plan and the `/20` ask (CT-4, CD-42..45) were sizing for a VPC we now merely occupy. |
+| "Security rules defined on the subnets" | Every flow our design needs that crosses a subnet boundary must be permitted by rules **we did not write and cannot see without asking**. Subnets are per-AZ and validators are AZ-spread, so **every P2P connection crosses one** (§12.4). |
+| (implied) "one namespace" | One namespace for the ledger **and** the application estate would share RBAC, `ResourceQuota` and Pod Security Admission between validators and application pods. We ask for **two** (§12.3, #27). |
+
+### 12.2 What the platform owns today that a tenant cannot
+
+Verified against the code on 2026-09-21, not from memory.
+
+**Terraform — creates the cluster and everything cluster-scoped:**
+
+| What | Where | Fate |
+|---|---|---|
+| EKS cluster, OIDC provider, managed node group, `vpc-cni` / `coredns` / `kube-proxy` addons, launch template + AL2023 MIME user data (B12), `ami_type` | `terraform/modules/eks/main.tf` | **Leaves `sbsa_besu`** → becomes the core of `mimic_eks` (§12.8) |
+| Cluster IAM role, node IAM role | `terraform/modules/iam` | Leaves. **IRSA roles stay** but trust *their* OIDC provider (or Pod Identity — #31) |
+| EBS CSI addon + `gp3` StorageClass (KMS-encrypted) | `terraform/modules/storage-csi/main.tf:88-116` | Leaves — a StorageClass is cluster-scoped. Asserted instead (#30) |
+| Runner EKS access entry + **admin** policy association | `terraform/modules/runner/main.tf:110-126` | Leaves — the cloud team creates it, **namespace-scoped** (#32). `runner_scope = "in-cluster"` (CD-54) becomes the only mode that makes sense |
+| `create_namespace = true` | `terraform/modules/besu/main.tf:153` (genesis), `terraform/modules/observability/main.tf:282` (kube-prometheus-stack) | Must be `false`; the namespace is an input |
+
+**Four cluster-scoped add-ons we install as `helm_release`s — and the CRDs our own charts consume from them.** A tenant cannot install any of these (DaemonSets, CRDs, webhooks, cluster RBAC):
+
+| Add-on | Installed at | Our charts consume its CRD | If the cluster does not provide it |
+|---|---|---|---|
+| aws-load-balancer-controller | `modules/rpc-access/main.tf:71` | `TargetGroupBinding` — `besu-rpc-edge`, `besu-app-rpc-edge` | No namespaced substitute binds pod IPs to a Terraform-made NLB target group. **Hard dependency** — #30 |
+| secrets-store-csi-driver + AWS provider | `modules/storage-csi/main.tf:170`, `modules/secrets/main.tf:326` | `SecretProviderClass` — `besu-node` (how validator keys reach pods, C12) | Init container fetching from Secrets Manager via IRSA. Namespaced, no CRD; loses the CSI mount's tmpfs-only guarantee — a C12 note, not a blocker |
+| kube-prometheus-stack | `modules/observability/main.tf:274` | `PodMonitor`, `PrometheusRule` — `besu-monitoring` | If the **operator** exists we run our own `Prometheus`/`Alertmanager` CRs in-namespace and keep Alertmanager→SNS. If nothing exists: a plain Prometheus StatefulSet with static scrape config — namespaced, CRD-free, uglier |
+| aws-for-fluent-bit | `modules/observability/main.tf:340` | — | Their central shipper; we need our log group readable, or a sidecar per pod |
+
+**What survives untouched** — and it is most of the platform's value: our six charts create
+**zero** cluster-scoped kinds (checked); genesis, permissioning (C6), PKI, KMS custody
+(C12), the mTLS NLB, the H1 rolling rule; the ECR mirror and `supply-chain.yml`; the
+runner, the polling Tentacle and `mimic_egress` (the whole R-9 result, CD-55..CD-65);
+`NetworkPolicy`, `PodDisruptionBudget`, and topology spread on both `zone` and
+`hostname` (already in `besu-node/templates/statefulset.yaml:70-78`); and the
+hand-over-as-plain-values pattern, now applied a third time.
+
+### 12.3 The three things that are not mechanical
+
+**1. Their node maintenance versus QBFT quorum — the dangerous one.** H1 holds today
+because *we* control node rotation: the validator PDB (`maxUnavailable = 0`) blocks
+drains, and the RUNBOOK says rotate one node at a time with a quorum check between.
+In a shared cluster **they** rotate nodes and upgrade Kubernetes, on their schedule,
+with their tooling. Our PDB will block their drain, and one of two things happens:
+their tooling stalls and they escalate to us, or it **force-evicts** — a managed
+node-group update with `--force` ignores PDBs by design — and if two validators share
+a node, or two nodes are rotated in one pass, quorum is lost and **the chain halts.**
+This cannot be fixed with configuration on our side alone. It needs a **written
+operational contract** (#29): PDBs respected, never forced, one node at a time, notice
+and a window; plus, on our side, pod anti-affinity by `hostname` promoted from
+preferred to **required**, so no node ever carries two validators. Besu-versus-Kubernetes
+compatibility is now tested on *their* upgrade cadence, not ours (#36).
+
+**2. Node-level isolation is gone unless requested.** §6 of the platform brief relies
+on a dedicated, tainted validator node group and per-tier security groups. Both need
+node control. Without a dedicated node pool, validators share kernels with other
+tenants' pods — a real security-posture regression for a payment ledger, to be raised
+rather than absorbed. The ask (#28) is standard multi-tenant practice and, given CT-1a,
+fits their own vocabulary: **a ledger node group in dedicated ledger subnets**, tainted,
+with our namespace the only one tolerating it. That also restores #11, gives the
+validators a NACL boundary, and makes subnet flow logs possible again. If refused, the
+compensating control is `NetworkPolicy` default-deny (D-9, H6), which goes from
+*mandatory-and-additive* to **load-bearing**, and the regression is stated in writing.
+
+**3. Two clusters become one.** D-4 (a dedicated chain cluster), D-1 (PrivateLink
+retained between the clusters), the PrivateLink consumer endpoint in the `app` root, and
+the Stage 3.0 same-VPC smoke test (the `app` gate) all disappear. Ledger ↔ application
+becomes in-cluster networking under `NetworkPolicy`, which is simpler. But it collapses
+into one namespace unless we ask otherwise: **two namespaces** (ledger, app), because
+RBAC, `ResourceQuota` and Pod Security Admission are namespace-granular and the event
+listener (E-14) must not share any of them with validators. Whether the application
+estate lands in this shared cluster at all is **Q-8**.
+
+**One concrete trap, found in the chart.** `besu-node/templates/statefulset.yaml:174`
+runs an init container as `runAsUser: 0` — the F32/F32b ownership fix for the
+permissions file. If the namespace enforces Pod Security Admission at `restricted`, that
+pod is **rejected at admission** (`restricted` forbids root explicitly). Either the
+namespace is `baseline` (#27) or the fix is redone without root before anything is
+applied. This is exactly the class of thing a mimic must reproduce (§12.8).
+
+### 12.4 CT-1a — the subnet security rules are a gate, in the "hangs, does not error" class
+
+Subnets are per-AZ; validators are spread across three AZs; so every validator-to-validator
+packet crosses a subnet boundary and meets rules we did not write. A blocked P2P
+rule does not fail an apply — the chain simply never reaches quorum, and the symptom is
+`Peer count: 0` with nothing else wrong. The same is true of the NLB health check (targets
+stay `unhealthy` forever) and of the runner's path to the control plane (`i/o timeout`).
+
+**The flows the design needs**, from the charts and `modules/rpc-access` as of 2026-09-21:
+
+| # | Flow | Port / proto | From → To |
+|---|---|---|---|
+| F-1 | QBFT P2P | **30303 TCP and UDP** | node subnet ↔ node subnet, all three AZs |
+| F-2 | SWIFT RPC and app RPC, NLB **IP targets** | 8545, 8546 TCP | LB subnet → node subnet — plus the NLB **TCP health check** on the same port |
+| F-3 | Return traffic for F-2 (only if the rules are **stateless** NACLs) | 1024–65535 TCP | node subnet → LB subnet |
+| F-4 | Prometheus scrape | 9545 TCP | wherever their Prometheus runs → node subnet (or intra-namespace if we run our own) |
+| F-5 | AWS APIs — ECR, STS, KMS, Secrets Manager, logs, SNS, SQS, ELB, SSM… | 443 TCP | node subnet and runner subnet → endpoint subnet (+ return if stateless) |
+| F-6 | S3 gateway — image **layers**, state, the runner bundle | 443 TCP | node subnet and runner subnet → **the S3 prefix list**. NACLs cannot reference a prefix list; the rule must cover S3's published CIDRs for the region — a classic trap |
+| F-7 | Runner → EKS private endpoint | 443 TCP | runner subnet → the control-plane ENIs in *their* cluster subnets |
+| F-8 | Runner → egress proxy VIP (Octopus polling, CD-57) | the proxy port | runner subnet → the egress prefix, over their TGW route |
+| F-9 | Blockscout → Postgres | 5432 TCP | intra-namespace if in-cluster; node subnet → **data subnet** if RDS (#37) |
+| F-10 | DNS | 53 | to the VPC resolver — **NACLs do not apply** to the Amazon-provided resolver, so nothing to ask; SGs must still permit it if pods carry their own |
+
+Two facts about the rules themselves decide the shape of the ask: whether they are
+**NACLs** (stateless — F-3 and every "+ return" above are real rules) or **security
+groups** (stateful), and whether the **node security group** — theirs, inherited by every
+pod under the VPC CNI — admits our NLB on F-2. That last one is a rule *they* add, unless
+Security Groups for Pods is enabled and we attach our own (#33).
+
+**Decision (D-29):** the flow table is a numbered requirement (#34), and it is
+**asserted, not assumed** — a read-only preflight in the spirit of
+`verify-endpoints.sh` reads the NACLs and security groups on the node, LB and runner
+subnets (`ec2:DescribeNetworkAcls`, `ec2:DescribeSecurityGroups`; free) and evaluates
+them against F-1..F-9, citing the flow number on failure. It runs before anything
+billable, and the same shift applies that CD-38 made for the ECR endpoint policy: **from
+"configure this for us" to "here are the flows — confirm your rules permit them."**
+
+### 12.5 The cluster hand-over — `eks-handover.auto.tfvars`
+
+Consumed as plain variables, never via `terraform_remote_state` — the same rule as the
+network and egress hand-overs, for the same reason. The shape (names indicative; fixed
+when the contract module is written):
+
+| Input | Why |
+|---|---|
+| `cluster_name`, `cluster_endpoint`, `cluster_ca_data`, `cluster_version` | kubeconfig for the runner and the `kubernetes`/`helm` providers; version for the Besu compatibility gate |
+| `oidc_provider_arn` + issuer URL, **or** `pod_identity = true` | which IAM-to-service-account mechanism our roles trust (#31) |
+| `namespace_ledger`, `namespace_app` | the two namespaces (#27) |
+| `psa_level` | `baseline` or `restricted` — decides the F32 init-container question (§12.3) |
+| `storage_class_name`, `storage_class_kms_key_arn` | the StorageClass we may use for chain data and Postgres (#30); whose key encrypts it |
+| `cluster_provides_lbc`, `cluster_provides_secrets_store_csi`, `cluster_provides_prometheus_operator`, `cluster_provides_log_shipping` | the four add-on booleans; each gates an assertion and selects the fallback (§12.2) |
+| `node_group_dedicated`, `node_taint`, `node_label` | whether #28 was granted, and the toleration/selector to use |
+| `node_subnet_ids`, `node_sg_id`, `node_role_arn` | where our pods live (F-1..F-6); the SG that must admit the NLB (#33); the principal that pulls from our ECR repositories (#38) |
+| `lb_subnet_ids`, `runner_subnet_id` | where our NLBs and the runner go (CT-1a) |
+| `network_policy_enforced` | the CNI enforces `NetworkPolicy` (#35) — H6 is load-bearing now |
+| `runner_access_entry_created` | they created the namespace-scoped access entry for the runner role (#32) |
+
+**What the network hand-over loses** (it stays, smaller): `ledger_subnet_ids`,
+`app_subnet_ids`, `endpoint_subnet_ids`, `data_subnet_ids`, the four route-table maps,
+`ledger_nacl_ids`, `dhcp_options_id`, `gateway_endpoints_created_here`. **What it keeps:**
+`vpc_id`, `vpc_cidr_primary` (security-group authoring), `az_ids` (gate 7 still catches a
+stale hand-over), and the egress values. The subnet inputs move to the cluster hand-over
+above because they are now facts *about the cluster's placement*, not about a VPC we lay
+out.
+
+**`modules/network-contract`** loses gates 2 (placement of *our* subnets), 3 (the
+`internal-elb` tag — we bind pods to a Terraform-made NLB via `TargetGroupBinding`, so the
+controller creates no load balancer and discovers no subnet), 5 (capacity of *our*
+subnets) and 6 (the EKS service CIDR — theirs). It keeps 1, 4 (no default route — still
+ours to refuse), 7 and 8. A new **`modules/cluster-contract`** carries the cluster-side
+gates: version, private endpoint, OIDC/Pod Identity, the four add-on CRDs, the
+StorageClass, the namespaces and their PSA labels, the access entry — AWS-side ones from
+anywhere, Kubernetes-side ones **from the runner** (the endpoint is private; a laptop
+cannot ask).
+
+### 12.6 What changes in the repository
+
+| File / area | Change |
+|---|---|
+| `terraform/modules/eks/` | Moves to `mimic_eks/terraform/modules/eks/` (§12.8). Deleted from the platform |
+| `terraform/modules/iam/` | Cluster and node roles removed. IRSA roles parameterised on `oidc_provider_arn` from the hand-over (or Pod Identity associations if #31 says so) |
+| `terraform/modules/storage-csi/` | Addon, StorageClass and the Secrets Store CSI `helm_release` removed. Becomes an assertion on `storage_class_name` |
+| `terraform/modules/secrets/` | The AWS-provider `helm_release` removed; `SecretProviderClass` path kept behind `cluster_provides_secrets_store_csi`, init-container fetch as the alternative |
+| `terraform/modules/rpc-access/` | LBC `helm_release` removed; `TargetGroupBinding` asserted available. NLB subnets = `lb_subnet_ids`; target ingress = a rule on *their* node SG (#33) or an SGP-attached SG of ours |
+| `terraform/modules/observability/` | kube-prometheus-stack and fluent-bit `helm_release`s removed; `Prometheus`/`Alertmanager` CRs in-namespace behind `cluster_provides_prometheus_operator`; SNS, alarms, CloudTrail stay |
+| `terraform/modules/besu/`, `blockscout/` | `create_namespace = false`; namespace from the hand-over; tolerations/selectors from `node_taint`/`node_label`; anti-affinity by hostname → `required` |
+| `terraform/modules/runner/` | Access entry + policy association removed (they create it, #32). Cluster identity from the hand-over, not from `chain` state. `runner_scope = "in-cluster"` becomes the default |
+| `terraform/modules/network-contract/` | Gates 2, 3, 5, 6 removed (§12.5) |
+| **new** `terraform/modules/cluster-contract/` | The EKS analogue of `network-contract`: creates nothing, asserts everything, one requirement number per failure message |
+| `terraform/contract/handover.tf` | Network inputs trimmed; new `eks-handover` contract file symlinked the same way |
+| `terraform/chain/` | AWS layer shrinks to KMS, Secrets Manager, PKI, NLBs + target groups, IRSA roles, CloudTrail, buckets, SNS/alarms. The committed `chain.plan` (106 resources) is superseded |
+| `terraform/app/` | Never created (PORTING item 5). Now: no cluster, no PrivateLink endpoint. SQS/SNS/S3 + IRSA roles + the app namespace's workloads |
+| `terraform/shared/` | The PHZ stays ours. Interface endpoints: `central_interface_endpoints = true` was already the production setting (CD-39); their cluster needs the same endpoints, so **the shared root creates nothing in the bank** and `verify-endpoints.sh` is the check |
+| `helm/charts/besu-node/` | `runAsUser: 0` init container (F32) — conditional on `psa_level`, or redone non-root (§12.3) |
+| `helm/charts/besu-blockscout/` | Postgres StatefulSet kept, or replaced by an RDS reference, per #37 |
+| `scripts/preflight/` | **new** `verify-subnet-rules.sh` (D-29); `verify-endpoints.sh` unchanged; `verify-images.sh` unchanged but the image list shrinks |
+| `scripts/maintenance/full-delete.sh` | No cluster to delete; the abort-on-hit denylist (item 7) gains `eks:cluster`, `eks:nodegroup`, and anything in a namespace that is not ours |
+| `scripts/supply-chain/mirror.manifest` | The four cluster-scoped charts and most of the 15 chart-carried images leave **if** #30 confirms they are provided. Prometheus / Alertmanager / Grafana images stay if we run our own instances. `../CHART_IMAGES.md` shrinks accordingly |
+| `docs/CICD_DESIGN_NOTES.md` | `besu-infra` loses the EKS step; CD-23's Terraform container and CD-29's endpoint assertion stand; a CD-66 entry when the pipeline is touched |
+| `CLAUDE.md` | §1 "Two EKS clusters", §2 layout, §4 phases, §6 isolation, §7 version policy, §9 teardown, §11 — all to be rewritten **after** §12.11 is answered. Banner in place meanwhile |
+
+### 12.7 What the design gets to delete
+
+- **The CIDR negotiation** — CD-42..CD-45, `CIDR_ALLOCATION_REVIEW.md`, Appendix A of the
+  requirements document, D-7, D-8, D-12. We occupy their subnets; our IP demand is
+  ~25–30 pod addresses plus NLB ENIs, which is a sizing note, not a request.
+- **PrivateLink between the clusters** (D-1), the consumer endpoint, and **Stage 3.0**.
+- **The EKS version ladder and its cost line** (§7 of the brief) — the version is theirs;
+  what remains is a compatibility gate (#36).
+- **Four `helm_release`s and their OCI conversion work** (D-22 still applies to whatever
+  charts remain — at minimum our own six).
+- **B13 mostly evaporates** — the 15 chart-carried images belong to charts we no longer
+  install, if #30 confirms the cloud team provides them.
+- **Requirements #4, #7, #9, #10, #11 (re-scoped into #28), #12, #15, #16, #17** — withdrawn
+  in `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.2.
+
+### 12.8 The mimic — `mimic_eks`, and one fidelity change to `mimic_vpc`
+
+**`mimic_eks` — a third mimic project, sibling of the other two.** Not folded into
+`mimic_vpc`, for the reason `mimic_egress` was not: different lifetime and cost. The VPC
+mimic is free and stays up for weeks; a cluster bills $0.10/h plus nodes and comes up
+per deploy-test. It is built from the **moved** `modules/eks` — so nothing is rewritten —
+plus what the cloud team says they run: the add-on set from #30, a node group in the
+"application" subnets (and a tainted ledger node group in ledger subnets if #28 is
+granted, so both answers can be rehearsed), two namespaces with a `ResourceQuota`,
+`LimitRange` and PSA labels, and a **namespace-scoped access entry** for the runner
+role. It emits `eks-handover.auto.tfvars` (§12.5).
+
+**The fidelity rule that matters:** the access entry the mimic gives our runner must
+be the one the bank would give — `AmazonEKSEditPolicy` scoped to our namespaces, or a
+custom `Role`, never cluster-admin. Then any cluster-scoped thing `sbsa_besu` attempts
+**fails in the mimic exactly as it would in the bank**. That is the structural guard
+against dilution, in the same spirit as the IAM deny on `ec2:CreateVpc` (§1 of the
+RUNBOOK): the mimic's job is to make the platform unable to tell it from production.
+
+**`mimic_vpc` — the NACL baseline flips from permissive to restrictive.** §3.5 of its
+brief ships allow-all NACLs "because Phase 2/3 owns the rules". Under CT-1a the cloud
+team owns the rules and ours is to conform, so an allow-all mimic hides precisely the
+failure class they just described. The mimic must carry a plausible **deny-by-default**
+ruleset that permits F-1..F-9 and nothing else — and `verify-subnet-rules.sh` must be
+tested against a deliberately *broken* copy of it first (the B12 lesson; a check only
+ever seen passing is not known to work). Its 15-subnet layout is kept: it already
+models role-separated subnets, which is what the cloud team described.
+
+### 12.9 Cost
+
+| | Before (own clusters) | After (namespace tenant) |
+|---|---|---|
+| Production steady state | ~$1,140–1,596/mo chain-only (RUNBOOK §4) | **EKS control plane and node lines leave our bill** — whether the cloud team charges back for the node group is Q-9. What remains: KMS, Secrets Manager, NLBs, the runner (stopped between deployments), CloudWatch, S3 |
+| Deploy-test | ~$2.40/h two clusters | **Unchanged in kind** — the mimic still bills a cluster and nodes. Slightly lower: one cluster, not two |
+| Interface endpoints | ~$0.45/h in `shared` | **Zero** — theirs, and already there for their cluster (CD-39). Q-2's ~$400/mo question is answered by CT-5 |
+
+### 12.10 Decisions
+
+| ID | Decision | Status |
+|---|---|---|
+| **D-23** | **The cluster is consumed, not created.** `modules/eks` leaves the platform. Prime directive 1 of the brief extends to *EKS resources and every cluster-scoped Kubernetes kind* — if a plan or a chart would create one, it is a bug. A new `modules/cluster-contract` asserts the cluster the way `network-contract` asserts the VPC. | DECIDED 2026-09-21 |
+| **D-24** | **Cluster-scoped add-ons are the cloud team's to provide; the platform asserts and never installs.** The four in §12.2 each carry a hand-over boolean, an assertion on the CRD, and a named namespaced fallback. The load-balancer controller has no fallback and is therefore a hard requirement (#30). | DECIDED |
+| **D-25** | **The cluster arrives as `eks-handover.auto.tfvars`** — plain values, symlinked into each root, never `terraform_remote_state`. Third application of the rule (network, egress, cluster). | DECIDED |
+| **D-26** | **Ask for a dedicated, tainted ledger node group in dedicated ledger subnets** (#28) — the multi-tenant-standard form of §6's node isolation, in the cloud team's own vocabulary. If refused: `NetworkPolicy` default-deny (D-9) is the compensating control and the posture regression is recorded in writing, not absorbed. | PROPOSED — needs the human's sign-off before sending |
+| **D-27** | **Node maintenance needs a written operational contract, not a configuration** (#29): PDBs respected, never forced, one node at a time, notice and a window, Kubernetes-upgrade cadence shared in advance. On our side, validator anti-affinity by hostname becomes `required`. The failure this prevents is a chain halt (H1), and it is named as such in the ask. | DECIDED (the ask); its terms are the cloud team's to accept |
+| **D-28** | **One cluster, two namespaces** (ledger, app) requested (#27). PrivateLink between clusters (D-1), the dedicated chain cluster (D-4), the `app` root's consumer endpoint and the Stage 3.0 gate are deleted; ledger ↔ application isolation is namespaces + `NetworkPolicy`. | DECIDED — supersedes D-1, D-4 |
+| **D-29** | **The subnet security rules are a gate.** The flow table (§12.4) is requirement #34, asserted by a read-only preflight against the live NACLs and security groups, citing the flow number on failure. The mimic ships restrictive rules so the check is exercised. | DECIDED |
+| **D-30** | **The network hand-over shrinks** (§12.5); `network-contract` loses gates 2, 3, 5, 6; the CIDR ask (CD-42..45, D-7, D-8, D-12) and Appendix A are withdrawn. | DECIDED — supersedes D-7, D-8, D-10 (partly: re-scoped into D-26), D-12 |
+| **D-31** | **Blockscout's Postgres placement follows their data-subnet policy** (#37): in-cluster if permitted, RDS in a data subnet if not. Explorer-only; the lowest-stakes item here. | DECIDED (conditional) |
+| **D-32** | **`mimic_eks` is a third mimic project** (§12.8), built from the moved `modules/eks`, giving the runner only the namespace-scoped access the bank would. **`mimic_vpc` NACLs become restrictive.** | DECIDED |
+| **D-33** | **Pod Security Admission is a gate.** The F32 root init container is incompatible with `restricted`; before any apply the namespace's PSA level is known (#27) and the chart either conditions on it or the fix is redone without root. | DECIDED |
+| **D-34** | **The runner stays** (CD-53 unchanged) and is more important, not less: it is the only host that can ask the Kubernetes-side questions in `cluster-contract`. Its cluster access is an access entry the cloud team creates, scoped to our namespaces (#32); `runner_scope = "in-cluster"` (CD-54) is the mode. | DECIDED |
+
+### 12.11 Open questions — and where each is asked
+
+| # | Question | Impact | Asked as |
+|---|---|---|---|
+| Q-8 | Does the **application estate** also land in this shared cluster, or only the ledger? | Decides whether `app` is a namespace or nothing; whether two namespaces are needed at all | #27 |
+| Q-9 | Is the node group **charged back** to consuming teams? | Cost model only | §9.4 of the requirements addendum |
+| Q-10 | **IRSA or Pod Identity?** | Which trust our IAM roles carry; whether `eks-auth` (excluded by D-14) is now needed — it is *their* endpoint either way | #31 |
+| Q-11 | **NACLs, security groups, or both** on the role subnets? | Whether F-3 and the "+ return" rows are real | #34 |
+| Q-12 | Will they **add a node-SG rule for our NLB**, or is **Security Groups for Pods** enabled? | F-2 is impossible without one of the two | #33 |
+| Q-13 | **PSA level** on our namespaces | D-33 | #27 |
+| Q-14 | Which of the **four add-ons** exist, at which versions | D-24 | #30 |
+| Q-15 | **Node-rotation policy** — do they ever force past a PDB | D-27 | #29 |
+
+All of these are answered by the three command outputs in §9.4 of the requirements
+addendum, plus the questions listed there in words. **Ask for observable strings** (the
+CD-31 → R-1 lesson); "does your cluster have the load-balancer controller?" produced
+ambiguous answers elsewhere, `kubectl get crd targetgroupbindings.elbv2.k8s.aws` cannot.
+
+### 12.12 Supersessions, effective 2026-09-21 (pending written confirmation)
+
+- **D-1** (PrivateLink retained between the clusters) → deleted with the second cluster (D-28).
+- **D-4** (dedicated EKS cluster for the chain) → superseded by D-23/D-28. The isolation
+  it bought is re-requested as a node group (D-26).
+- **D-7, D-8, D-12** (CIDR ask, pod-subnet parameterisation, secondary CIDR) → withdrawn (D-30).
+- **D-10** (dedicated ledger subnets / route tables / NACL rules / flow logs by ask) →
+  re-scoped into D-26; if #28 is granted most of it returns in their hands, not ours.
+- **D-11, D-14** (we own the eight critical endpoints; the 16 → 14 trim) → moot. CD-39
+  already made central endpoints the production setting; CT-5 removes the last reason to
+  create any.
+- **CD-42..CD-45** (the `/20` per environment, same size for all three) → withdrawn.
+- **Requirements #4, #7, #9, #10, #11, #12, #15, #16, #17** → withdrawn or re-scoped in
+  `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.2.
+- **`CLAUDE.md` §1 "Two EKS clusters"**, §4 Stage 3.0, §6 (node group + per-tier SGs),
+  §7 (EKS version ladder), §11 Q-2 / Q-2a → to be rewritten once §12.11 is answered.
+- **`CICD_DESIGN_NOTES.md` §0.3** — `besu-infra` no longer deploys a cluster; the three-
+  project shape, the Tentacle path and the validator gate are unchanged.
+
+**Not superseded, worth saying:** CT-2 (air-gap), CT-3a (ECR mirror), D-3, D-9 (now
+load-bearing), D-16..D-22, the whole of CD-55..CD-65, C6, C10, C12, H1, F19/F20/F32.

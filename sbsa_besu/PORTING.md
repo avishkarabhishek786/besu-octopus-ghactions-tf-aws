@@ -8,6 +8,17 @@ fixes can be cherry-picked.
 comments in the inherited modules encode findings F1–F33 and hardening items
 H1–H39. Preserve them.
 
+> **⚠️ CT-5 — 2026-09-21: paused at item 4.** The cloud team provides a **shared EKS cluster
+> and a namespace**; we no longer build EKS. Items **5** (second cluster, Stage 3.0) and **6**
+> (node group + per-tier SGs) are **superseded as written**; item **4**'s remaining work (OCI
+> charts, chart-image overrides, B13) mostly disappears if the cloud team confirms they provide
+> the four add-ons (#30); item **7** gains an EKS/namespace denylist. The replacement work —
+> `modules/cluster-contract`, the cluster hand-over, `verify-subnet-rules.sh`, `mimic_eks`, and
+> the removal of `modules/eks` / `storage-csi` / the four add-on releases — is listed in
+> `docs/CLOUD_TEAM_REDESIGN_NOTES.md` **§12.6** and starts once **§9 of the requirements
+> document is answered**. Branch `shared-eks-namespace`; the pre-CT-5 build is frozen on
+> `own-eks-cluster-design`.
+
 ---
 
 ## Done

@@ -1,7 +1,10 @@
 # RUNBOOK — building the SBSA Besu platform on a cloud-team VPC
 
-**Status:** 2026-09-18 · Phases B, C and E.1 (the R-9 mock) done; Phase D item 4 in
-progress — see §2. The three projects live in one repository since 2026-09-18 (§1).
+**Status:** 2026-09-21 · **CT-5: the cloud team provides a shared EKS cluster and a namespace — we no
+longer build EKS.** Design record `CLOUD_TEAM_REDESIGN_NOTES.md` §12; asks `NETWORK_REQUIREMENTS_CLOUD_TEAM.md`
+§9 (#27–#38). Phases B, C and E.1 (the R-9 mock) stand; **Phase D is paused at item 4** until §9 is answered
+(see §2). Branch `shared-eks-namespace`; the own-cluster build is frozen on `own-eks-cluster-design`.
+The three projects live in one repository since 2026-09-18 (§1).
 **Audience:** the operator. Deployment is **advise-only** — this document tells
 you what to run; nothing is executed for you.
 
@@ -77,8 +80,22 @@ repo for cherry-picking later fixes.
   `terraform init` must pass the new key**. Everything is destroyed, so a fresh init is
   enough — no `-migrate-state`; the two old objects hold empty state and can be deleted.
 
+**CT-5 — 2026-09-21.** The cloud team runs a **shared EKS cluster** and allots us a
+**namespace**; their VPC has **role-separated subnets with rules they define**. Everything
+cluster-scoped leaves the platform (`modules/eks`, the node/cluster IAM roles, the EBS CSI
+addon + StorageClass, the runner's admin access entry, and the four add-on `helm_release`s —
+LBC, Secrets Store CSI + provider, kube-prometheus-stack, Fluent Bit). What replaces it: a
+cluster hand-over (`eks-handover.auto.tfvars`), a `modules/cluster-contract` that asserts it,
+a `verify-subnet-rules.sh` preflight for the nine flows in §12.4 of the redesign notes, and a
+third mimic, `mimic_eks`. The E.1 result (runner + Tentacle + egress) is unchanged and more
+important, not less: the runner is the only host that can ask the cluster-side questions.
+**Nothing is rebuilt until `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9 is answered** — the three
+command outputs in §9.4 decide which files are deleted versus made conditional. The one item
+that is not configuration: **#29, a written node-maintenance agreement** — their node rotation
+can halt the chain (H1), and no setting on our side prevents it.
+
 **Phase D in progress (2026-08-30)** — items 1–3 of `PORTING.md` complete, item 4
-partial. All local, all free; nothing of the platform is applied.
+partial. All local, all free; nothing of the platform is applied. **Paused 2026-09-21 (CT-5).**
 
 | Item | State |
 |---|---|
@@ -441,7 +458,9 @@ more. Lead the next cloud-team conversation with it.
 | Q-2 central endpoints | ⬜ Worth ~$400/mo. **Ask first.** |
 | Q-3 egress model | ⬜ Building for full air-gap regardless. |
 | **Q-4a..Q-4e (ECR)** | ⬜ Blocks Phase D image work. Need written confirmation that ECR is the registry, the ECR account topology, any CVE-gating requirement, and who owns the mirror pipeline. See `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §8.4. |
-| Q-5 golden AMI | ⬜ RHEL would mean custom AMIs and losing EKS-managed patching. |
+| ~~Q-5 golden AMI~~ | **Moot under CT-5** — the nodes are the cloud team's. |
+| ~~Q-2 central endpoints~~ | **Answered by CT-5** — their cluster already needs every endpoint we do; `shared` creates none in the bank (CD-39). The ~$400/mo is not ours either way. |
+| **Q-8..Q-15 (CT-5)** | ⬜ **Blocks the rebuild.** App estate in this cluster? IRSA or Pod Identity? NACLs or SGs? node-SG rule or SGP? PSA level? which add-ons exist? node-rotation policy? All answered by the three command outputs in `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.4. Record: `CLOUD_TEAM_REDESIGN_NOTES.md` §12.11. |
 
 ## 6. Quick reference
 
