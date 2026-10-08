@@ -255,6 +255,21 @@ confirm each **digest** exists in the registry **before** apply. Cheap, and conv
 
 ## 5. CT-4 — CIDR sizing
 
+> **WITHDRAWN 2026-09-21 by D-30 (CT-5). Kept as the record of the analysis, not as a live ask.**
+> We no longer lay out subnets — we occupy the cloud team's. Our demand is ~20 pod
+> addresses plus load-balancer interfaces, stated as a sizing note in
+> `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.1, not as an address request.
+>
+> **Nothing below should be sent or acted on.** Two things in it are still *true* and get
+> cited elsewhere, which is the only reason to read it: §5.1-5.2 (why EKS consumes
+> addresses faster than pod count suggests) and §5.6 (the `100.64.0.0/16` secondary CIDR,
+> which `mimic_vpc` still associates because its VPC mimics theirs).
+>
+> The same material exists in two other places, both also withdrawn: this document's
+> §5, `CIDR_ALLOCATION_REVIEW.md` (the sendable version — **the one copy to keep** if
+> these are ever pruned), and `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` Appendix A.
+
+
 ### 5.1 Why EKS eats IP space
 
 With the AWS VPC CNI, **a pod gets a real VPC IP** — an actual routable address from
@@ -498,6 +513,16 @@ unknown as an explicit variable plus a preflight assertion.
 ---
 
 ## 8. What the new project's `CLAUDE.md` must contain
+
+> **DELIVERED — `CLAUDE.md` was written from this section in August 2026 and is the live
+> brief.** This is the specification it was built from, kept for provenance; it is not a
+> to-do list. Read `../CLAUDE.md` for what the rules actually are.
+>
+> Two rows below were voided by CT-5 (§12): **"IP budget"** (D-30 — we do not size the
+> address space) and **"Isolation model … records D-4"** (D-28 — there is no second
+> cluster; the isolation model is namespaces plus `NetworkPolicy`, and the node-group half
+> is now an ask, #28).
+
 
 ### 8.1 Carried over unchanged from this project
 
@@ -976,26 +1001,27 @@ rule does not fail an apply — the chain simply never reaches quorum, and the s
 `Peer count: 0` with nothing else wrong. The same is true of the NLB health check (targets
 stay `unhealthy` forever) and of the runner's path to the control plane (`i/o timeout`).
 
-**The flows the design needs**, from the charts and `modules/rpc-access` as of 2026-09-21:
+**The flows the design needs are requirement #34** in
+`NETWORK_REQUIREMENTS_CLOUD_TEAM.md` — ten rows, F-1..F-10, derived from the charts and
+`modules/rpc-access` on 2026-09-21. **That table is the single source of truth and is
+deliberately not copied here.** It is what we send, what `verify-subnet-rules.sh`
+implements, and what a failure cites (`#34 F-1`), so a second copy would be a second
+thing to keep right — the CD-12 rule, applied to a table instead of a version string.
+This section records only what the table does not say: why the flows are at risk, and
+the two traps in checking them.
 
-| # | Flow | Port / proto | From → To |
-|---|---|---|---|
-| F-1 | QBFT P2P | **30303 TCP and UDP** | node subnet ↔ node subnet, all three AZs |
-| F-2 | SWIFT RPC and app RPC, NLB **IP targets** | 8545, 8546 TCP | LB subnet → node subnet — plus the NLB **TCP health check** on the same port |
-| F-3 | Return traffic for F-2 (only if the rules are **stateless** NACLs) | 1024–65535 TCP | node subnet → LB subnet |
-| F-4 | Prometheus scrape | 9545 TCP | wherever their Prometheus runs → node subnet (or intra-namespace if we run our own) |
-| F-5 | AWS APIs — ECR, STS, KMS, Secrets Manager, logs, SNS, SQS, ELB, SSM… | 443 TCP | node subnet and runner subnet → endpoint subnet (+ return if stateless) |
-| F-6 | S3 gateway — image **layers**, state, the runner bundle | 443 TCP | node subnet and runner subnet → **the S3 prefix list**. NACLs cannot reference a prefix list; the rule must cover S3's published CIDRs for the region — a classic trap |
-| F-7 | Runner → EKS private endpoint | 443 TCP | runner subnet → the control-plane ENIs in *their* cluster subnets |
-| F-8 | Runner → egress proxy VIP (Octopus polling, CD-57) | the proxy port | runner subnet → the egress prefix, over their TGW route |
-| F-9 | Blockscout → Postgres | 5432 TCP | intra-namespace if in-cluster; node subnet → **data subnet** if RDS (#37) |
-| F-10 | DNS | 53 | to the VPC resolver — **NACLs do not apply** to the Amazon-provided resolver, so nothing to ask; SGs must still permit it if pods carry their own |
+In short: F-1 is validator P2P on **30303 TCP and UDP** across all three AZs, F-2/F-3 the
+NLB path to the RPC pods, F-5/F-6 the AWS endpoints and the S3 prefix list, F-7/F-8 the
+runner's reach to the cluster API and the egress proxy.
 
-Two facts about the rules themselves decide the shape of the ask: whether they are
-**NACLs** (stateless — F-3 and every "+ return" above are real rules) or **security
-groups** (stateful), and whether the **node security group** — theirs, inherited by every
-pod under the VPC CNI — admits our NLB on F-2. That last one is a rule *they* add, unless
-Security Groups for Pods is enabled and we attach our own (#33).
+**Three traps in checking them.** **(1)** F-6: a network ACL **cannot reference a prefix
+list**, so an S3 rule has to enumerate the region's published ranges — and S3 carries the
+image layers, so getting it wrong stops every pull half-way through. **(2)** Whether the
+rules are **stateless ACLs** or **stateful security groups** decides whether F-3 and every
+"+ return" row is a real rule at all; asked as Q-11 rather than assumed either way.
+**(3)** The **node security group is theirs**, and under the VPC CNI every pod inherits
+it — so F-2 depends on a rule *they* add, unless Security Groups for Pods is enabled and
+we attach our own (#33).
 
 **Decision (D-29):** the flow table is a numbered requirement (#34), and it is
 **asserted, not assumed** — a read-only preflight in the spirit of

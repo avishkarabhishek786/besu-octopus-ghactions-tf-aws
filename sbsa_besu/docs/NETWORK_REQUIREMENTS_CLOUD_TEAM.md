@@ -47,7 +47,7 @@ to provide.
 | 2 | `enableDnsSupport` **and** `enableDnsHostnames` = true | 1 | none |
 | 3 | DHCP option set resolves AWS endpoint **Private DNS** (see also #22) | 1 | none |
 | 4 | Subnet tag `kubernetes.io/role/internal-elb=1`; permission to tag | 1 | none |
-| 5 | 3 AZs, identified by **AZ ID**; both clusters and endpoints co-located | 1 | none |
+| 5 | 3 AZs, identified by **AZ ID** ~~; both clusters and endpoints co-located~~ — under §9 the cluster is yours; we still need our pods spread across 3 AZs for QBFT | 1 | none |
 | 6 | Permission to create and manage security groups | 1 | none |
 | 7 | Contiguous **/20**, carved from a reserved /18 | 1 | address space |
 | 8 | **WITHDRAWN under §8** (was: route and DNS to an external registry host) | — | none |
@@ -793,10 +793,14 @@ ourselves:
 | F-7 | Administrative instance → cluster API | 443 TCP | its subnet → the control-plane ENIs' subnets |
 | F-8 | Administrative instance → egress proxy VIP | the proxy port | its subnet → the egress prefix (R-10, unchanged) |
 | F-9 | Explorer database | 5432 TCP | intra-namespace, or application → data subnet (#37) |
+| F-10 | DNS | 53 UDP/TCP | to the VPC resolver. Listed for completeness: network ACLs do not apply to the Amazon-provided resolver, so there is probably nothing to do — but if pods resolve through anything else, it needs a rule |
 
 And three placement facts: **which subnet(s) your node group uses**, **which
 load-balancer subnets** we may place NLBs in, and **which subnet** our administrative
 instance should use.
+
+*(This table is the single source of truth for the flow list: our preflight check and
+our design record both cite `#34 F-n` rather than restating it.)*
 
 **What breaks without it:** a blocked F-1 means the chain never reaches quorum and
 reports nothing except a peer count of zero; a blocked F-2 is #33's silent failure; a
@@ -905,6 +909,11 @@ if they fail, we come back with `#34 F-1` rather than *"the chain won't start."*
 ---
 
 ## Appendix A — IP address sizing
+
+> **WITHDRAWN 2026-09-21 by §9.2 (shared cluster, namespace tenancy).** We no longer lay
+> out subnets or request address space; §9.1 states our footprint as a quota instead.
+> Kept so the numbers behind the original /20 request remain auditable.
+
 
 ### Why EKS consumes addresses faster than pod count suggests
 

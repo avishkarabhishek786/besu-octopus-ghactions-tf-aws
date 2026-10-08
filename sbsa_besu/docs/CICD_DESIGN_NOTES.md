@@ -506,7 +506,9 @@ Verified against the Octopus documentation, 2026-09-04.
 
 We are wiring the Besu ledger platform into GitHub Actions (CI) and Octopus Deploy (CD).
 The platform runs on two EKS clusters in the shared VPC, which has **no internet egress**
-and a **private EKS API endpoint**. Eight things we need from you:
+and a **private EKS API endpoint**. *(CT-5, 2026-09-21: it now runs in a namespace of the
+cloud team's shared cluster. CQ-1..CQ-8 below are closed and kept as the record; the
+deployment design they settled — Tentacle worker on the runner — is unaffected.)* Eight things we need from you:
 
 | # | Question | Why it matters |
 |---|---|---|

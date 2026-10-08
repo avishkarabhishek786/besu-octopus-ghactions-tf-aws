@@ -1,5 +1,17 @@
 # CIDR allocations — request
 
+> **⚠️ WITHDRAWN 2026-09-21 — DO NOT SEND (CT-5, D-30).** The cloud team provides a shared
+> EKS cluster and a namespace, and their VPC already has role-separated subnets. We no
+> longer request or lay out address space: our ask is a `ResourceQuota`, not a CIDR
+> (`NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.1). CD-42..CD-45 are withdrawn with it.
+>
+> **Kept as the single surviving record of the sizing analysis** — the arithmetic here is
+> still correct and still the best explanation of why EKS consumes addresses faster than
+> pod count suggests. `CLOUD_TEAM_REDESIGN_NOTES.md` §5 and
+> `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` Appendix A are the other two copies, both also
+> withdrawn.
+
+
 **Date:** 2026-09-09 · **From:** Ledger Platform Team · **Region:** af-south-1
 
 **What we are asking for: a `/20` (4,096 addresses) per environment — SIT, UAT and PROD.**

@@ -17,7 +17,8 @@ you what to run; nothing is executed for you.
 | `besu-aws` (beside this repository, not in it) | The proven single-VPC build. **Reference only** — source of truth for porting. | Frozen |
 | `mimic_vpc/` | Impersonates the bank cloud team's network hand-over. | Throwaway — delete when the real VPC exists |
 | `mimic_egress/` | Impersonates the bank's shared egress proxy (R-9, CD-63). | Throwaway — delete when the R-10 ticket is answered |
-| `sbsa_besu/` | The platform: 2 EKS clusters, Besu, everything else. | Permanent |
+| `sbsa_besu/` | The platform: Besu and everything around it, in **a namespace of the cloud team's shared cluster** (CT-5; was 2 EKS clusters of our own). | Permanent |
+| `mimic_eks/` | **To be built** — impersonates the shared EKS cluster and our namespace (CT-5, D-32). | Throwaway |
 
 They were **separate git repositories until 2026-09-18** and are now three
 subdirectories of one. The reason they were kept apart still stands — the
@@ -48,6 +49,11 @@ repo for cherry-picking later fixes.
 > as in `besu-aws`; afterwards SSM remains the **break-glass** path. **`CICD_DESIGN_NOTES.md`
 > §0 is the full picture** — read it before touching the pipeline. Do **not** remove the EC2
 > runner: it is both the Tentacle host and the only shell that can reach the cluster.
+
+> **CT-5 note.** None of the above changed — but the runner matters more, not less: it is
+> the only host that can ask the cluster-side questions in `modules/cluster-contract`,
+> because the EKS endpoint is private. Its cluster access becomes a namespace-scoped
+> access entry the cloud team creates (#32), not the admin entry we create today.
 
 ## 2. Where things stand
 

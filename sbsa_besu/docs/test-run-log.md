@@ -20,6 +20,14 @@ of this platform has been applied yet.**
 
 ## What bills, and how fast
 
+> **CT-5, 2026-09-21.** The lines below are the *own-cluster* cost model, and the runs
+> recorded further down were billed under it. In production the EKS control plane, the
+> worker nodes and the interface endpoints move to the cloud team's bill; what remains
+> ours is KMS, Secrets Manager, NLBs, the runner, CloudWatch and S3. **Deploy-tests are
+> unchanged in kind** — `mimic_eks` still bills a cluster and nodes, slightly less than
+> two did. Re-cost on the first post-CT-5 run; see `CLOUD_TEAM_REDESIGN_NOTES.md` §12.9.
+
+
 | Resource | Rate (af-south-1) | Note |
 |---|---|---|
 | Interface endpoints | **~$0.45/hr** | 15 services × 3 AZ; the `shared` root's whole cost |

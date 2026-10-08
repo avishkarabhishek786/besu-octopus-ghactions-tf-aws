@@ -29,6 +29,33 @@ purpose — see below.
 > two must be *visible*, not silently resolved by a symlink. Re-copy and bump the
 > version when the canonical document changes.
 
+## What is deliberately repeated, and what is a defect
+
+Reviewed 2026-10-08, because the records read as repetitive and it is worth knowing
+which repetition is load-bearing.
+
+**Deliberate — leave it alone:**
+
+| Repetition | Why |
+|---|---|
+| **Superseded decisions kept in place**, struck through with a pointer (D-5, D-6, CD-6, CD-17, CD-34, and all of D-1/D-4/D-7/D-8/D-12 under CT-5) | A decision log whose wrong turns are deleted cannot be audited, and the same question comes back. The rule throughout: **mark, never delete.** |
+| **Sendable documents restate context** — `CLOUD_TEAM_FOLLOWUP`, `CIDR_ALLOCATION_REVIEW`, the requirements addenda | Each is written to be forwarded to someone with no access to this repository. Self-containment is the point; §9 of the requirements document says so in its first line. |
+| **The dated spec copy in `mimic_vpc`** | Above. |
+| **A control's *why* in the H/C/F backlogs and its *rule* in `CLAUDE.md`** | The backlogs explain; the brief instructs. Different jobs, different audiences. |
+| **Internal and external views of the same table** — e.g. the cluster add-ons in `CLOUD_TEAM_REDESIGN_NOTES.md` §12.2 (with `file:line` and our fallback) versus requirements #30 (what we need from you) | Same subject, different columns and different reader. |
+
+**A defect — fix on sight:**
+
+| Repetition | Why it is different |
+|---|---|
+| **The same technical table in two places**, where both are meant to be current | Found 2026-10-08: the nine network flows existed in both §12.4 and requirement #34 and **had already drifted** — one copy had a DNS row the other did not, within a day of being written. #34 is now canonical; §12.4 cites it. Same rule as CD-12 for versions: one source of truth, because a second place to write it is a second place for it to be wrong. |
+| **A live ask that has been withdrawn but still reads as live** | The CIDR material (three copies) now carries a withdrawal banner on each. A reader cannot tell a withdrawn ask from a current one by its tone. |
+| **A spec for something that now exists** | §8 of the redesign notes specified `CLAUDE.md`; it is marked DELIVERED rather than read as a to-do list. |
+
+**The test:** if two passages must *change together* to stay true, that is drift waiting
+to happen — consolidate and cite. If one is a dated snapshot, a superseded record, or
+written for a different reader, it stays.
+
 ## Inherited from `besu-aws`
 
 Kept here because they still govern live code:

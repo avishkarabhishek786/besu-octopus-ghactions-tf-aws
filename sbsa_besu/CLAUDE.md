@@ -1,11 +1,13 @@
 # CLAUDE.md — Besu Ledger + Application Platform (`sbsa_besu`)
 
-> Consumes the shared VPC provided by the bank cloud team. During development
-> that VPC is produced by the sibling project `mimic_vpc`.
+> Consumes the shared VPC **and, since CT-5, the shared EKS cluster** provided by the
+> bank cloud team. During development those are produced by the sibling projects
+> `mimic_vpc` and (to be built) `mimic_eks`.
 
 You (Claude Code) are building a production Hyperledger Besu (QBFT) ledger and an
-application platform on **two EKS clusters inside a shared VPC that another team
-provides**. **Read this file fully at the start of every session.** It encodes
+application platform in **a namespace of a shared EKS cluster another team runs, inside a
+shared VPC that team owns** — see the CT-5 banner below; the text after it still says
+"two EKS clusters we build", which is superseded. **Read this file fully at the start of every session.** It encodes
 decisions already settled with the human, hard guardrails, and a mandatory
 documentation practice. Do not re-litigate settled decisions; if something here
 seems wrong, raise it with the human rather than silently changing course.
@@ -142,7 +144,7 @@ consumer is **SWIFT**, reaching **JSON-RPC** over SWIFT's private **MV-SIPN** ne
 
 ### What is new relative to `besu-aws`
 
-- **Two EKS clusters**, not one — ledger and applications, in the same VPC.
+- ~~**Two EKS clusters**, not one — ledger and applications, in the same VPC.~~ **Superseded by CT-5 (D-23/D-28): no cluster is ours. One shared cluster, two namespaces requested.**
 - **The VPC is not ours.** Consumed via the input contract (§3).
 - **No NAT/IGW.** Air-gapped supply chain (§5) is a first-class build stage.
 - **Images from a private ECR registry** (CT-3), mirrored in from outside the VPC.
