@@ -4,7 +4,7 @@
 **From:** Ledger Platform Engineering
 **Date:** 2026-08-29
 **Status:** Request for provisioning parameters — response needed before VPC creation
-**2026-09-21:** **§9 added — shared EKS cluster, namespace tenancy (#27–#38).** It withdraws nine of the requirements below and re-scopes two. **Where §9 and §§2–8 differ, §9 governs.**
+**2026-09-21:** **§9 added — shared EKS cluster, namespace tenancy (#27–#39).** It withdraws nine of the requirements below and re-scopes two. **Where §9 and §§2–8 differ, §9 governs.**
 
 ---
 
@@ -69,7 +69,7 @@ to provide.
 | 24 | Confirm the VPC is **not RAM-shared** — **answered (assumed) 2026-09-09, defused by §9; still open as R-3** for what we create *beside* the cluster | 1 | none |
 | 25 | ECR account topology — **answered: central shared services, af-south-1.** The pull grant **re-scopes to #38** (your node role, not ours) | 1 | none |
 | ~~26~~ | ~~An approved **build-and-push path outside the VPC**~~ **WITHDRAWN 2026-09-09** — your CI runners have egress | — | none |
-| **27–38** | **Shared EKS cluster, namespace tenancy — see §9 (2026-09-21).** Withdraws #4, #7, #9, #10, #12, #15, #16, #17; re-scopes #11 → #28 and #25 → #38 | see §9 | none |
+| **27–39** | **Shared EKS cluster, namespace tenancy — see §9 (2026-09-21).** Withdraws #4, #7, #9, #10, #12, #15, #16, #17; re-scopes #11 → #28 and #25 → #38; **#39** is the surviving half of #7 (IP headroom) | see §9 | none |
 
 ---
 
@@ -152,7 +152,7 @@ routine part of ledger operations, not a one-time provisioning step.
 ### 7. ~~Contiguous /20, carved from a reserved /18~~ — **WITHDRAWN under §9**
 
 Withdrawn 2026-09-21: we are a namespace tenant of your shared EKS cluster, not the
-builder of a cluster and 15 subnets. We no longer lay out subnets, so there is no address space for us to size. Our footprint is ~20 pods, 6 load-balancer interfaces and 1 administrative instance, taken from **your** subnets — stated as a quota in §9.1 and as a headroom question in §9.3 #34. Appendix A is withdrawn with this, and so is the 2026-09-09 CIDR allocation review.
+builder of a cluster and 15 subnets. We no longer lay out subnets, so there is no address space for us to size. Our footprint is ~20 pods, 6 load-balancer interfaces and 1 administrative instance, taken from **your** subnets — stated as a quota in §9.1 and as a headroom question in §9.3 **#39**. Appendix A is withdrawn with this, and so is the 2026-09-09 CIDR allocation review.
 
 Full sizing calculation is in **Appendix A**. Summary: peak demand is ~1,455
 addresses; a /20 provides 2,805 usable across the proposed subnet plan (~1.9x
@@ -294,7 +294,7 @@ in a same-VPC configuration.
 ### 17. ~~Associate `100.64.0.0/16` as a secondary VPC CIDR~~ — **WITHDRAWN under §9**
 
 Withdrawn 2026-09-21: we are a namespace tenant of your shared EKS cluster, not the
-builder of a cluster and 15 subnets. Secondary CIDRs and VPC CNI custom networking are your configuration. If address headroom is tight (#34), this remains a good remedy — but it is yours to choose, not ours to request.
+builder of a cluster and 15 subnets. Secondary CIDRs and VPC CNI custom networking are your configuration. If address headroom is tight (**#39**), this remains a good remedy — but it is yours to choose, not ours to request.
 
 **We are not asking to use this now.** We are asking for it to be associated at VPC
 creation and held in reserve.
@@ -703,10 +703,17 @@ re-scoped. Please treat the originals as closed.
 (both DNS attributes), **#3** (DHCP resolves AWS Private DNS), **#6** (we create our own
 security groups), **#18** (ECR in-region, in your shared-services account), **#20**, **#22**
 and **#23** (the three endpoint-policy checks that decide whether an image pull works at
-all), plus the **R-10** egress ticket and the new **#27–#38**. Everything else in §§3–5 is
+all), plus the **R-10** egress ticket and the new **#27–#39**. Everything else in §§3–5 is
 withdrawn, re-scoped or answered, and each one now says so at its own heading.
 
 ### 9.3 New requirements — Tier 1 unless marked
+
+> **The two asks that replace the whole of the old network request** are **#27** (namespaces,
+> with their Pod Security level and `ResourceQuota` — our numbers are in §9.1) and **#39**
+> (IP headroom in the subnets we are scheduled into). Everything else in this section is
+> either a confirmation of something you already run (#30, #31, #35, #36) or a single rule
+> or grant (#32, #33, #38). **#29 is the one that is not a configuration item at all.**
+
 
 As before, each states what breaks without it. Most cost nothing. **#29 is the one that
 is not a configuration item**, and we ask you to read it first.
@@ -895,6 +902,39 @@ repositories are managed centrally.
 **What breaks without it:** `ImagePullBackOff` on every pod, against a registry that
 looks fully populated.
 
+#### 39. IP headroom in the subnets we are scheduled into
+
+This is the one piece of the old /20 request (#7) that survives, and it is a **question
+for you rather than a request from us** — the subnets and the node groups are both yours.
+It needs asking because the thing that drives it is counter-intuitive.
+
+With the **AWS VPC CNI**, which EKS uses by default, **every pod receives a real VPC IP
+address**, and nodes do not request them one at a time: the CNI attaches a whole ENI's
+worth in advance so that pods can start without waiting on an EC2 API call. On an
+`m6i.xlarge`-class node that is roughly **30 addresses while idle and up to about 50 under
+load**, regardless of how many pods are actually running.
+
+So **our ~20 pods are not the measure of what we consume — the nodes we land on are.**
+Please confirm there is room for:
+
+* the **nodes** our ~20 pods will be scheduled onto, in whichever application subnets your
+  node group uses, alongside your other tenants;
+* **6 load-balancer interfaces** — two internal network load balancers, one per AZ across
+  three AZs — in whichever load-balancer subnet you want us to use;
+* **1 address** for our administrative instance, in whichever subnet you prefer for it.
+
+If headroom is tight, the remedies are all yours and all ordinary: a larger node subnet,
+`WARM_IP_TARGET` / `MINIMUM_IP_TARGET` tuning on the CNI, prefix delegation, or VPC CNI
+custom networking on a secondary CIDR (the old #17). **We are flagging it, not proposing
+it.** Note that prefix delegation allocates in /28 blocks per ENI, which makes consumption
+*worse* on a small subnet — it is the right tool for large subnets and the wrong one here.
+
+**What breaks without it:** pods stuck in `ContainerCreating` with an IP-allocation error,
+on a cluster that looks healthy from every other angle. It is not a clean "out of
+addresses" failure, and on a shared subnet it can arrive because of someone else's
+scaling rather than ours — which is why we would rather know the margin now than diagnose
+it later.
+
 ### 9.4 What we need you to send — three commands, then a few questions
 
 Most of §9.3 is answered by pasting three outputs. We ask for these rather than
@@ -918,6 +958,10 @@ kubectl -n kube-system get ds aws-node -o jsonpath='{.spec.template.spec.contain
 # 3 — the subnet rules our flows must pass (#34)
 aws ec2 describe-network-acls   --region af-south-1 --filters Name=association.subnet-id,Values=<node,lb,data subnet ids>
 aws ec2 describe-security-groups --region af-south-1 --group-ids <node sg id>
+
+# 4 — free addresses in the subnets we would land in (#39)
+aws ec2 describe-subnets --region af-south-1 --subnet-ids <node,lb,admin subnet ids> \
+    --query 'Subnets[].{subnet:SubnetId,az:AvailabilityZoneId,cidr:CidrBlock,free:AvailableIpAddressCount}'
 ```
 
 In words:
@@ -942,6 +986,7 @@ In words:
 | Namespaces, quotas, PSA labels, access entries | **Own** (#27, #32) | Request; verify |
 | Node security group rule for our NLBs, or SGP | **Own** (#33) | Send NLB SG IDs |
 | Subnet rules for F-1..F-9 | **Own** (#34) | Verify by preflight; cite the flow number on failure |
+| Free addresses in the node / LB / instance subnets | **Own the sizing** (#39) | State our footprint; verify the margin before deploying |
 | Everything inside our namespaces; NLBs, KMS, Secrets Manager, IAM roles, SNS/SQS, S3, the administrative instance | — | **Own** |
 | ECR repository policies for your node role (#38) | Add, if repositories are centrally managed | Request; verify from the runner |
 | ~~Interface endpoints, gateway endpoints, route tables, NACL rules, flow logs~~ | **Own — all of it, now without qualification** | Verify only |
@@ -955,6 +1000,8 @@ free, all about ten seconds:
    in #30, the StorageClass, our namespaces and their PSA labels, our access entry.
 2. **The subnet rules** — the NACLs and security groups on the node, load-balancer and
    administrative-instance subnets, evaluated against F-1..F-9.
+   The same pass reads `AvailableIpAddressCount` on those subnets and warns if the margin
+   is below what our node count needs (#39).
 3. **The registry** — `verify-images.sh` as in §8.6, now pulling as *your* node role's
    peer (#38).
 

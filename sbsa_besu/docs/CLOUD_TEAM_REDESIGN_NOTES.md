@@ -1235,6 +1235,7 @@ models role-separated subnets, which is what the cloud team described.
 | Q-13 | **PSA level** on our namespaces | D-33 | #27 |
 | Q-14 | Which of the **four add-ons** exist, at which versions | D-24 | #30 |
 | Q-15 | **Node-rotation policy** — do they ever force past a PDB | D-27 | #29 |
+| Q-16 | **Do their node / LB / instance subnets have free addresses** for ~20 pods' worth of nodes, 6 NLB interfaces and 1 instance? | The surviving half of CT-4. Under the VPC CNI a node holds ~30–50 addresses regardless of pod count, so our pod count is not the measure; and on a shared subnet the margin can be consumed by another tenant's scaling | **#39** (added 2026-10-08, after it was found to be referenced but never asked — #11's free-IP floor lost its home when #11 was re-scoped into #28) |
 
 All of these are answered by the three command outputs in §9.4 of the requirements
 addendum, plus the questions listed there in words. **Ask for observable strings** (the
