@@ -418,7 +418,7 @@ than being refused.** This is the defining operational hazard of the design.
 | Cluster builds fine; the SWIFT NLB never appears | `kubernetes.io/role/internal-elb=1` missing — fails at **Service-creation time**, days later |
 | Generic `ImagePullBackOff`, no useful signal | Three endpoint-policy causes, all silent: the S3 gateway endpoint policy must allow `prod-<region>-starport-layer-bucket/*` (ECR serves manifests, but **layers come from S3**); Private DNS must be on for `ecr.api`/`ecr.dkr`; and the ECR endpoint policy must not be scoped to one account (the addons pull cross-account). All three are caught by `verify-endpoints.sh` (policy-level, before anything is applied) and `verify-images.sh -e <env>` (an actual pull), both run **from the runner** — never from the laptop. |
 | Ledger subnets black-hole everything | a NACL was created without explicit allow rules — **an empty NACL denies all traffic** |
-| `apply` fails authorizing the S3 endpoint | no permission to associate a gateway endpoint to the route tables (#10). S3 carries **container image layers** — nothing starts without it |
+| `apply` fails authorizing the S3 endpoint | ~~no permission to associate a gateway endpoint to the route tables (#10)~~ — **CT-5: we associate nothing; #10 is withdrawn.** The S3 *policy* trap remains and is the one that matters: it must admit `prod-af-south-1-starport-layer-bucket/*` (#20), or image pulls stall part-way through a layer |
 | Validator pods unschedulable after an app team scales | ledger and applications share a subnet (#11) |
 
 ### Design invariants — do not "fix" these

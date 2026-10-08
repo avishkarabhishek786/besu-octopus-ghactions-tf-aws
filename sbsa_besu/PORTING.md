@@ -49,6 +49,10 @@ cites the requirement number so it can be quoted back to the cloud team.
 7. Region portability — the `az_ids` are valid in the deploy region AND match the subnets' actual AZs
 8. Region agreement — `deploy_region == network_region` (the hand-over carries the region it was emitted from)
 
+*(**CT-5:** gates 2, 3, 5 and 6 concern subnets and a cluster that are no longer ours and
+become conditional or move to `modules/cluster-contract`; 1, 4, 7 and 8 stay. The code
+still has all eight — see the banner above.)*
+
 ---
 
 ## Remaining — in dependency order

@@ -16,6 +16,33 @@ silently diverging.
 
 ---
 
+> ## ⚠️ CT-5 — 2026-09-21: the platform is now a NAMESPACE TENANT, and this mimic gains a sibling
+>
+> The cloud team also runs the **EKS cluster**; `sbsa_besu` is allotted a **namespace** in it,
+> and their VPC has **role-separated subnets with security rules they define**. Full record:
+> `../sbsa_besu/docs/CLOUD_TEAM_REDESIGN_NOTES.md` §12. **Not yet confirmed in writing**, so
+> nothing here has been rebuilt. Three consequences for this project:
+>
+> 1. **This project does not change shape.** It still builds only the network, and rule #2
+>    (no IGW / NAT / default route) is untouched. Its 15-subnet, role-separated layout turns
+>    out to match what the cloud team described, so it is **more** faithful than before, not
+>    less.
+> 2. **§3.5's permissive NACL baseline must flip to deny-by-default** (D-32). It currently
+>    ships allow-all "because Phase 2/3 owns the rules" — but under CT-1a the *cloud team*
+>    owns the rules and ours is to conform, so an allow-all mimic hides exactly the failure
+>    class they described. The replacement must permit the nine flows in §12.4 of the redesign
+>    notes (requirement #34) and nothing else, and the platform's `verify-subnet-rules.sh`
+>    must be tested against a deliberately broken copy first — the B12 lesson.
+> 3. **A third mimic, `mimic_eks`, is to be built** from the platform's `modules/eks`
+>    (D-32). The cluster is *not* added here: different lifetime and different cost — this
+>    VPC is free and stays up for weeks, a cluster bills per hour.
+>
+> **Requirement numbers:** several the platform withdrew as *asks* (#4, #7, #10, #12, #16,
+> #17) are still built here, correctly — the cloud team really does create those things, so a
+> faithful mimic still reproduces them. Withdrawing an ask does not withdraw the reality.
+
+---
+
 ## 0. Prime directives (read first)
 
 1. **FIDELITY OVER CONVENIENCE. This project impersonates another team.** Its only

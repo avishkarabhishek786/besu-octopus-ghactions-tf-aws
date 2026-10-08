@@ -19,6 +19,16 @@ the design notes win — raise it with the human rather than silently diverging.
 
 ---
 
+> **CT-5 — 2026-09-21: nothing in this project changes.** The cloud team now also provides the
+> **EKS cluster** and a **namespace** in it (`../sbsa_besu/docs/CLOUD_TEAM_REDESIGN_NOTES.md`
+> §12). The egress path is unaffected: the runner still exists, it is still the only host that
+> can reach the private cluster endpoint, and the Tentacle still polls Octopus Cloud through
+> the proxy. If anything the runner matters **more** — it is the only place the cluster-side
+> contract gates can run. The one knock-on is that its EKS access becomes a namespace-scoped
+> access entry the cloud team creates, which is the platform's concern, not this project's.
+
+---
+
 ## 0. Prime directives (read first)
 
 1. **FIDELITY OVER CONVENIENCE.** Phase 2/3 must not be able to tell this proxy from the

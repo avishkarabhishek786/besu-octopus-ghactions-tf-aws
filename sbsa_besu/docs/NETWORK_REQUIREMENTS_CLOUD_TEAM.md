@@ -46,29 +46,29 @@ to provide.
 | 1 | VPC `instance_tenancy = default` | 1 | none |
 | 2 | `enableDnsSupport` **and** `enableDnsHostnames` = true | 1 | none |
 | 3 | DHCP option set resolves AWS endpoint **Private DNS** (see also #22) | 1 | none |
-| 4 | Subnet tag `kubernetes.io/role/internal-elb=1`; permission to tag | 1 | none |
+| ~~4~~ | ~~Subnet tag `kubernetes.io/role/internal-elb=1`; permission to tag~~ **WITHDRAWN §9** | — | none |
 | 5 | 3 AZs, identified by **AZ ID** ~~; both clusters and endpoints co-located~~ — under §9 the cluster is yours; we still need our pods spread across 3 AZs for QBFT | 1 | none |
 | 6 | Permission to create and manage security groups | 1 | none |
-| 7 | Contiguous **/20**, carved from a reserved /18 | 1 | address space |
+| ~~7~~ | ~~Contiguous **/20**, carved from a reserved /18~~ **WITHDRAWN §9** — a quota, not address space (§9.1) | — | none |
 | 8 | **WITHDRAWN under §8** (was: route and DNS to an external registry host) | — | none |
-| 9 | Confirm EKS service CIDR (`172.20.0.0/16`) does not collide | 1 | none |
-| 10 | Permission to associate **gateway** endpoints (S3, DynamoDB) to the route tables — or you create them | 1 | none |
-| 11 | Dedicated subnets for the ledger, separate from applications | 2 | none |
-| 12 | Dedicated route tables for the ledger subnets | 2 | none |
-| 13 | Permission to manage NACL rules on the ledger subnets | 2 | none |
-| 14 | Subnet-level VPC Flow Logs on ledger subnets to our destination | 2 | minimal |
-| 15 | Permission to create interface endpoints (min. 8 services) | 2 | none |
-| 16 | Dedicated endpoint subnets, separate from load-balancer subnets | 2 | none |
-| 17 | Associate `100.64.0.0/16` as a secondary CIDR (unused, held in reserve) | 3 | none |
-| 18 | Private ECR mirror in our account — **promoted from fallback to primary registry (§8)** | 1 | ~$1–2/mo |
+| ~~9~~ | ~~Confirm EKS service CIDR (`172.20.0.0/16`) does not collide~~ **WITHDRAWN §9** — your cluster | — | none |
+| ~~10~~ | ~~Permission to associate **gateway** endpoints to the route tables~~ **WITHDRAWN §9** — yours; but **#20 stands** (the S3 policy must admit the ECR layer bucket) | — | none |
+| ~~11~~ | ~~Dedicated subnets for the ledger~~ **RE-SCOPED §9 → #28** (a dedicated node group) | 2 | none |
+| ~~12~~ | ~~Dedicated route tables for the ledger subnets~~ **WITHDRAWN §9** — folded into #28 | — | none |
+| ~~13~~ | ~~Permission to manage NACL rules on the ledger subnets~~ **WITHDRAWN 2026-09-09** — security groups instead; §9 #34 verifies your rules | — | none |
+| ~~14~~ | ~~Subnet-level VPC Flow Logs on ledger subnets~~ **WITHDRAWN 2026-09-09** — ENI-level instead | — | none |
+| ~~15~~ | ~~Permission to create interface endpoints~~ **WITHDRAWN §9** — yours; but **#22/#23 stand** as checks | — | none |
+| ~~16~~ | ~~Dedicated endpoint subnets, separate from load-balancer subnets~~ **WITHDRAWN §9** — the PrivateLink path it protected is gone | — | none |
+| ~~17~~ | ~~Associate `100.64.0.0/16` as a secondary CIDR~~ **WITHDRAWN §9** — your CNI configuration | — | none |
+| 18 | Private ECR registry **in-region** — the platform's primary registry (§8). *(Hosted in your central shared-services account, per #25 — not ours)* | 1 | ~$1–2/mo |
 | 19 | ~~Written exception for AWS-owned EKS addon images~~ — **WITHDRAWN under §8** | 3 | none |
 | 20 | S3 gateway endpoint policy must allow `prod-<region>-starport-layer-bucket/*` | 1 | none |
-| 21 | S3 gateway endpoint policy must allow the AL2023 repo bucket (only if we keep `dnf`) | 1 | none |
+| ~~21~~ | ~~S3 gateway endpoint policy must allow the AL2023 repo bucket~~ **NO LONGER NEEDED** — the instance ships static binaries, no package manager | — | none |
 | 22 | **Private DNS enabled** on the `ecr.api` and `ecr.dkr` interface endpoints | 1 | none |
 | 23 | ECR endpoint policy **not** scoped to a single AWS account | 1 | none |
-| 24 | Confirm the VPC is **not RAM-shared** — if it is, you must create the endpoints | 1 | none |
-| 25 | ECR account topology, and cross-account pull granted to our node roles | 1 | none |
-| 26 | An approved **build-and-push path outside the VPC** (CodeBuild with no VPC config) | 1 | pennies |
+| 24 | Confirm the VPC is **not RAM-shared** — **answered (assumed) 2026-09-09, defused by §9; still open as R-3** for what we create *beside* the cluster | 1 | none |
+| 25 | ECR account topology — **answered: central shared services, af-south-1.** The pull grant **re-scopes to #38** (your node role, not ours) | 1 | none |
+| ~~26~~ | ~~An approved **build-and-push path outside the VPC**~~ **WITHDRAWN 2026-09-09** — your CI runners have egress | — | none |
 | **27–38** | **Shared EKS cluster, namespace tenancy — see §9 (2026-09-21).** Withdraws #4, #7, #9, #10, #12, #15, #16, #17; re-scopes #11 → #28 and #25 → #38 | see §9 | none |
 
 ---
@@ -113,7 +113,10 @@ This now carries the entire container supply chain as well as the AWS APIs — s
 **Impact if not met:** identical symptoms to #2, from a different cause. This is
 the most common failure mode in air-gapped enterprise VPCs.
 
-### 4. Subnet tag `kubernetes.io/role/internal-elb=1`, plus permission to tag
+### 4. ~~Subnet tag `kubernetes.io/role/internal-elb=1`, plus permission to tag~~ — **WITHDRAWN under §9**
+
+Withdrawn 2026-09-21: we are a namespace tenant of your shared EKS cluster, not the
+builder of a cluster and 15 subnets. We bind our pods into NLB target groups we create ourselves (`TargetGroupBinding`), so the AWS Load Balancer Controller never creates a load balancer and never discovers a subnet. Nothing depends on the tag any more. *(Note: `modules/network-contract` still asserts it today — that assertion becomes conditional when the code is updated, which is why the requirement is withdrawn here rather than deleted.)*
 
 The AWS Load Balancer Controller discovers eligible subnets **by tag**. This tag is
 required on the load-balancer subnets.
@@ -146,7 +149,10 @@ SWIFT RPC pool, application RPC pool, explorer, application workloads) if every 
 change must route through an external change queue. Security group changes are a
 routine part of ledger operations, not a one-time provisioning step.
 
-### 7. Contiguous /20, carved from a reserved /18
+### 7. ~~Contiguous /20, carved from a reserved /18~~ — **WITHDRAWN under §9**
+
+Withdrawn 2026-09-21: we are a namespace tenant of your shared EKS cluster, not the
+builder of a cluster and 15 subnets. We no longer lay out subnets, so there is no address space for us to size. Our footprint is ~20 pods, 6 load-balancer interfaces and 1 administrative instance, taken from **your** subnets — stated as a quota in §9.1 and as a headroom question in §9.3 #34. Appendix A is withdrawn with this, and so is the 2026-09-09 CIDR allocation review.
 
 Full sizing calculation is in **Appendix A**. Summary: peak demand is ~1,455
 addresses; a /20 provides 2,805 usable across the proposed subnet plan (~1.9x
@@ -167,7 +173,10 @@ This removes what would have been the longest-lead item in this document for you
 **Replaced by** #20, #22 and #23, which are endpoint-policy and DNS settings rather
 than network plumbing.
 
-### 9. Confirm the EKS service CIDR does not collide
+### 9. ~~Confirm the EKS service CIDR does not collide~~ — **WITHDRAWN under §9**
+
+Withdrawn 2026-09-21: we are a namespace tenant of your shared EKS cluster, not the
+builder of a cluster and 15 subnets. Your cluster, your service CIDR. We ask only for the cluster's version and endpoint configuration (#32).
 
 EKS assigns Kubernetes Service IPs from a CIDR that is **not** part of the VPC —
 default `172.20.0.0/16`. It must not overlap with anything reachable over the
@@ -178,7 +187,10 @@ collision discovered later requires rebuilding the cluster.
 
 ---
 
-### 10. Permission to associate gateway endpoints to the route tables
+### 10. ~~Permission to associate gateway endpoints to the route tables~~ — **WITHDRAWN under §9**
+
+Withdrawn 2026-09-21: we are a namespace tenant of your shared EKS cluster, not the
+builder of a cluster and 15 subnets. Your cluster's nodes already need S3 for image layers, so the endpoint exists and is associated. We create nothing and verify instead — **#20 still stands**, because the S3 endpoint *policy* must admit the ECR layer bucket or every image pull stalls part-way through.
 
 Creating an S3 or DynamoDB **gateway** endpoint adds a prefix-list route to every
 route table it is associated with. Because the route tables are yours (#12), we need
@@ -199,7 +211,9 @@ VPC-level boundary that previously separated them. **We are not asking to revers
 that decision.** The requirements in this section rebuild the equivalent boundary
 inside the shared VPC, at no additional address cost.
 
-### 11. Dedicated subnets for the ledger, separate from application subnets
+### 11. ~~Dedicated subnets for the ledger, separate from application subnets~~ — **RE-SCOPED under §9 into #28** (2026-09-21)
+
+A tenant does not place its own subnets. The intent — validators not sharing infrastructure with application workloads — is now asked for as a **dedicated, tainted node group**, in dedicated ledger subnets if you can provide them. If that is refused, `NetworkPolicy` default-deny is the compensating control and we record the posture change.
 
 The ledger's IP pool must not be consumable by application workloads.
 
@@ -211,12 +225,17 @@ this structurally impossible rather than a matter of operational discipline.
 
 This costs no additional address space: it is the same /20, divided differently.
 
-### 12. Dedicated route tables for the ledger subnets
+### 12. ~~Dedicated route tables for the ledger subnets~~ — **WITHDRAWN under §9**
+
+Withdrawn 2026-09-21: we are a namespace tenant of your shared EKS cluster, not the
+builder of a cluster and 15 subnets. Route tables are not a tenant's to own. The isolation this asked for is now part of #28 (a dedicated ledger node group, in dedicated subnets if you can) — and if you grant it, the route tables come with it, on your side.
 
 **Impact if not met:** a routing change made on behalf of an application can alter
 the ledger's reachability. The ledger subnets must never acquire a default route.
 
-### 13. Permission to manage NACL rules on the ledger subnets
+### 13. ~~Permission to manage NACL rules on the ledger subnets~~ — **WITHDRAWN 2026-09-09**
+
+You told us we are a tenant in your account, and NACLs are not a tenant's to manage. We fall back to security groups, which cover the same ground with nothing needed from you. Under §9 (#34) what replaces this is a *verification*: we check that your subnet rules permit the nine flows our design needs, and cite the flow number if one is blocked.
 
 **Rationale:** a NACL provides a **stateless L3 boundary that does not depend on
 security-group correctness** — defence in depth for a system carrying SWIFT traffic,
@@ -226,7 +245,9 @@ equivalent to the VPC boundary that consolidation removed.
 We are asking to manage the **rules** on ledger subnets only; the NACLs themselves
 can remain your resources.
 
-### 14. Subnet-level VPC Flow Logs on the ledger subnets, delivered to our destination
+### 14. ~~Subnet-level VPC Flow Logs on the ledger subnets, delivered to our destination~~ — **WITHDRAWN 2026-09-09**
+
+Same reason as #13 — not a tenant's to configure. We self-serve at **ENI level** on the interfaces we own, needing nothing from you. If #28 grants a dedicated ledger node group in dedicated subnets, subnet-level logs become available again *on your side*, which would be a bonus rather than a request.
 
 Either grant us permission to create subnet-level flow logs on the ledger subnets,
 or deliver a copy of the relevant records to our log destination.
@@ -235,7 +256,10 @@ or deliver a copy of the relevant records to our log destination.
 flow logs exist only under another team's ownership, we cannot answer "which hosts
 connected to the validators, and when" during a security investigation.
 
-### 15. Permission to create interface VPC endpoints
+### 15. ~~Permission to create interface VPC endpoints~~ — **WITHDRAWN under §9**
+
+Withdrawn 2026-09-21: we are a namespace tenant of your shared EKS cluster, not the
+builder of a cluster and 15 subnets. All 15 services are ones your cluster's tenants already need, so the endpoints exist and are yours. We create none and verify them read-only from inside the VPC. **#22 and #23 still stand** — they are checks on endpoints you already have, not requests to change them.
 
 At minimum, for these services:
 `kms`, `secretsmanager`, `sts`, `ecr.api`, `ecr.dkr`, `ssm`, `ssmmessages`, `ec2messages`
@@ -252,7 +276,10 @@ At minimum, for these services:
 If you operate **centralised endpoints** in a shared-services VPC, we would prefer to
 consume those for the non-critical services. Please see Q-2.
 
-### 16. Dedicated endpoint subnets, separate from load-balancer subnets
+### 16. ~~Dedicated endpoint subnets, separate from load-balancer subnets~~ — **WITHDRAWN under §9**
+
+Withdrawn 2026-09-21: we are a namespace tenant of your shared EKS cluster, not the
+builder of a cluster and 15 subnets. This existed to keep endpoint interfaces away from the NLB nodes on a PrivateLink path between our two clusters. There is one cluster now and that path is gone, so the constraint has no subject.
 
 Endpoint network interfaces must not share a subnet with the Network Load Balancer
 nodes they front.
@@ -264,7 +291,10 @@ in a same-VPC configuration.
 
 ## 5. Tier 3 — zero-cost options we ask you to take now
 
-### 17. Associate `100.64.0.0/16` as a secondary VPC CIDR
+### 17. ~~Associate `100.64.0.0/16` as a secondary VPC CIDR~~ — **WITHDRAWN under §9**
+
+Withdrawn 2026-09-21: we are a namespace tenant of your shared EKS cluster, not the
+builder of a cluster and 15 subnets. Secondary CIDRs and VPC CNI custom networking are your configuration. If address headroom is tight (#34), this remains a good remedy — but it is yours to choose, not ours to request.
 
 **We are not asking to use this now.** We are asking for it to be associated at VPC
 creation and held in reserve.
@@ -324,24 +354,33 @@ to a single AWS account, because those addon pulls are cross-account by construc
 
 ## 7. Shared responsibility — proposed split
 
+> **SUPERSEDED 2026-09-21 — read §9.5 instead.** This table was written when we would
+> build two EKS clusters and the endpoint layer. Under §9 the cloud team owns the
+> cluster, the node groups, every addon, all the endpoints and the subnet rules, and we
+> own what is inside our namespaces plus the AWS resources beside the cluster. The rows
+> that inverted are struck below; §9.5 is the current split. (#13 and #14 were already
+> withdrawn on 2026-09-09.)
+
 | Resource | Cloud Platform Team | Ledger Platform Team |
 |---|---|---|
 | VPC, CIDR associations | Create, own | Read only |
-| Subnets | Create, own | Consume; request tags (#4) |
-| Route tables | Create, own — dedicated per tier (#12) | Read only |
+| Subnets | Create, own | Consume ~~; request tags (#4)~~ — #4 withdrawn |
+| Route tables | Create, own ~~— dedicated per tier (#12)~~ | Read only |
 | NACLs (ledger subnets) | Own the resource | **Manage rules** (#13) |
 | Security groups | — | **Create and manage** (#6) |
-| Interface VPC endpoints | Central ones, if operated (Q-2) | **Create in endpoint subnets** (#15) |
-| Gateway endpoints (S3, DynamoDB) | — | Create — no charge |
+| Interface VPC endpoints | **Own — all of them** (Q-2 answered by §9) | ~~Create in endpoint subnets (#15)~~ → **verify only** |
+| Gateway endpoints (S3, DynamoDB) | **Own** | ~~Create~~ → **verify only; #20 is the live ask** |
 | Transit Gateway + attachments | Own | Consume |
 | DNS / Route 53 Resolver rules | Own | Consume; require AWS endpoint Private DNS (#3, #22) |
 | VPC Flow Logs | VPC-level | **Subnet-level on ledger subnets** (#14) |
 | Container registry (ECR) | See #25 / §8.5 | See #25 / §8.5 |
 | IPAM | Own | — |
-| EKS clusters, node groups, launch templates | — | Own |
-| Internal load balancers | — | Own (via AWS Load Balancer Controller) |
-| PrivateLink endpoint service | — | Own |
+| EKS clusters, node groups, launch templates | **OWN — this is the CT-5 change** | ~~Own~~ → consume a **namespace**; assert via preflight (#30, #32) |
+| Internal load balancers | Provide the **AWS Load Balancer Controller** (#30); add the node-SG rule (#33) | Own the NLBs and target groups; bind pods with `TargetGroupBinding` |
+| ~~PrivateLink endpoint service~~ | — | ~~Own~~ → **deleted; one cluster, so no cross-cluster path** |
 | Kubernetes workloads, secrets, KMS keys | — | Own |
+| Namespaces, quotas, Pod Security labels, cluster access entries | **Own** (#27, #32) | Request; verify |
+| Node maintenance on validator nodes | **Own the tooling — honour #29** | Provide the health check; attend the window |
 
 ---
 
@@ -430,9 +469,14 @@ addons. Nothing starts.
 > This requirement already applies today for the AWS-owned addon images. Moving to ECR
 > makes it total rather than partial.
 
-#### 21. The S3 gateway endpoint policy must allow the AL2023 repository bucket
+#### 21. ~~The S3 gateway endpoint policy must allow the AL2023 repository bucket~~ — **NO LONGER NEEDED (2026-09-07)**
 
-*Conditional — only if we retain OS package installation on our instances.*
+We said below that we would prefer to remove this dependency, and we have: our
+administrative instance now receives **static tool binaries in an S3 bundle** and runs no
+package manager at all. **Nothing to grant.** Kept because the dual-stack note at the end
+is a real trap if anyone ever re-introduces `dnf` on an instance in this VPC.
+
+*Was: conditional — only if we retain OS package installation on our instances.*
 
 Amazon Linux 2023 serves its `dnf` repositories from a regional S3 bucket
 (`al2023-repos-<region>-…`), reachable through the same gateway endpoint.
@@ -483,7 +527,9 @@ ecr:GetDownloadUrlForLayer
 **Impact if not met:** `vpc-cni`, `coredns` and `kube-proxy` fail to start; the cluster
 never becomes ready.
 
-#### 24. Please confirm the VPC is not RAM-shared
+#### 24. ~~Please confirm the VPC is not RAM-shared~~ — **ANSWERED (assumed) 2026-09-09; still open as R-3**
+
+The working assumption is single-account tenancy: our credentials resolve to the account that owns the VPC. **§9 largely defuses this question** — we create no endpoints, route tables, NACLs or subnet flow logs either way, so the RAM restrictions have nothing left to forbid. What the answer still decides is what we may create *beside* the cluster: KMS keys, Secrets Manager secrets, NLBs, IAM roles and S3 buckets. One command settles it (`aws sts get-caller-identity`).
 
 AWS: *"You can't create, describe, modify, or delete VPC endpoints in subnets that are
 shared with you. However, you can use the VPC endpoints in subnets that are shared with
@@ -505,7 +551,9 @@ workable, but it changes the operational agreement and we need to know before we
 **Impact if not met (i.e. if it is RAM-shared and undeclared):** our provisioning fails
 with an authorization error, and the endpoint ownership model in §7 has to be renegotiated.
 
-#### 25. ECR account topology, and cross-account pull for our node roles
+#### 25. ~~ECR account topology, and cross-account pull for our node roles~~ — **ANSWERED 2026-09-09; the pull grant is RE-SCOPED to #38**
+
+Answered: a **central shared-services account**, in **af-south-1**, with tag immutability on and no lifecycle expiry — thank you, those are the right defaults and the last two were the ones we expected to have to argue for. What changes under §9 is *whose* role needs the pull grant: images are pulled by **your** cluster's nodes now, so the repository policies must admit **your node group's IAM role**, not ours. That is #38.
 
 Please tell us which you intend:
 
@@ -522,7 +570,9 @@ We would also ask that the repositories are configured with **tag immutability e
 and **no lifecycle expiry policy**. A validator node replaced eight months from now must
 still be able to pull the exact image digest the network was reviewed and approved on.
 
-#### 26. An approved build-and-push path outside the VPC
+#### 26. ~~An approved build-and-push path outside the VPC~~ — **WITHDRAWN 2026-09-09**
+
+You confirmed your self-hosted CI runners have internet egress, so the mirror runs there and we are not asking you to permit GitHub-hosted runners or to create an OIDC identity provider. Nothing inside the VPC ever contacts a public registry; this requirement existed only to establish that the push happens outside it.
 
 Something must fetch upstream artefacts and push them to ECR. It cannot live in this VPC,
 by design.
@@ -649,7 +699,12 @@ re-scoped. Please treat the originals as closed.
 | **#11** | Dedicated ledger *subnets* | **#28** — a dedicated ledger *node group*, in dedicated subnets if you can |
 | **#25** | Cross-account ECR pull for *our* node roles | **#38** — pull for *your* cluster's node role on our repositories |
 
-Still standing, unchanged: **#1, #2, #3, #6, #18, #20–#24**, and the R-10 egress ticket.
+**What is still live, and it is a short list:** **#1** (`instance_tenancy = default`), **#2**
+(both DNS attributes), **#3** (DHCP resolves AWS Private DNS), **#6** (we create our own
+security groups), **#18** (ECR in-region, in your shared-services account), **#20**, **#22**
+and **#23** (the three endpoint-policy checks that decide whether an image pull works at
+all), plus the **R-10** egress ticket and the new **#27–#38**. Everything else in §§3–5 is
+withdrawn, re-scoped or answered, and each one now says so at its own heading.
 
 ### 9.3 New requirements — Tier 1 unless marked
 

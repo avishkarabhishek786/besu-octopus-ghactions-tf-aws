@@ -258,6 +258,14 @@ Every assertion maps to a numbered requirement in
 `NETWORK_REQUIREMENTS_CLOUD_TEAM.md`. Cite the number in the failure message so the
 human can quote it straight back to the cloud team.
 
+> **CT-5 (D-30):** four of these go when the code is updated — AZ placement, the
+> `internal-elb` tag (#4, withdrawn), free-IP capacity and the service-CIDR overlap (#9,
+> withdrawn) all concern subnets and a cluster that are no longer ours. The VPC
+> attributes, the no-default-route check and the two region gates stay. The subnet
+> inputs move to the **cluster** hand-over, and a new `modules/cluster-contract` carries
+> the cluster-side gates (§12.5 of the redesign notes). **The code still has all eight**
+> — nothing is removed until §9.4 is answered.
+
 ---
 
 ## 4. Build phases
@@ -685,6 +693,10 @@ questions CQ-1..CQ-8, R-1..R-10). Load it before touching a workflow or an Octop
 
 ## 11. Open questions inherited from the design phase
 
+> **2026-09-21:** every row below is answered, moot or re-scoped by CT-5. **The live
+> questions are Q-8..Q-15** in `docs/CLOUD_TEAM_REDESIGN_NOTES.md` §12.11, and they are
+> answered by the three command outputs in `docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.4.
+
 These are **parameters, not structural forks**. Build with the air-gapped assumption
 as the default and capture each unknown as an explicit variable plus a preflight
 assertion.
@@ -693,8 +705,8 @@ assertion.
 |---|---|---|
 | ~~Q-0~~ | **ANSWERED: `af-south-1`.** Opt-in region — enable on the account first. Exactly 3 AZs, all consumed by the design. Verify `m6i.xlarge` is offered in **all three** AZs before committing the node group. | RESOLVED |
 | ~~Q-1~~ | **ANSWERED (assumed): our own account, not RAM-shared.** ~~PrivateLink is unconstrained; Stage 3.0 remains a gate.~~ **CT-5: PrivateLink and Stage 3.0 are deleted (D-28).** The tenancy question itself still matters — it decides what we may create *beside* the cluster (KMS, NLBs, IAM) — and is tracked as R-3. | RESOLVED (assumption) |
-| Q-2 | Do centralised interface endpoints exist? | Whether `shared` creates ~15 endpoints or consumes theirs. |
-| Q-2a | **Which AWS account OWNS the VPC** (i.e. is it RAM-shared into ours)? | Load-bearing. In a RAM-shared VPC, participants **cannot create** interface or gateway endpoints, route tables, NACLs, subnet flow logs, or modify subnet attributes — so `shared` cannot build the endpoint layer at all, D-11 is void, and requirements #4/#10/#13/#14 move to the cloud team. Security groups stay ours. Distinct from CT-1's "shared VPC", which is shared *usage* and already settled. |
+| ~~Q-2~~ | ~~Do centralised interface endpoints exist?~~ | **ANSWERED by CT-5.** Their cluster's tenants need the same endpoints, so they exist and are theirs; `shared` creates none in the bank (CD-39 already made this the production setting). Requirement #15 withdrawn; **#20/#22/#23 remain as verifications.** |
+| Q-2a | **Which AWS account OWNS the VPC** (i.e. is it RAM-shared into ours)? | **Largely defused by CT-5** — we create no endpoints, route tables, NACLs or subnet flow logs either way, so the RAM restrictions have nothing left to forbid and #4/#10/#13/#14 have all moved to the cloud team regardless. What the answer still decides is what we may create **beside** the cluster — KMS keys, Secrets Manager, NLBs, IAM roles, S3 — which is why it stays open as **R-3**. Security groups stay ours. |
 | ~~Q-3~~ | **ANSWERED 2026-09-14: a shared, LB-fronted egress proxy exists (option 1, CD-55).** Design for air-gap STANDS (D-3): the ONLY consumer of the proxy is the Tentacle's polling channel on the runner. No proxy plumbing in containerd, kubelet, the SDKs or any pod — a specific-prefix route in the ledger tables, never a default route. | RESOLVED |
-| Q-4 | ECR account topology (our account, or central shared services?), any mandated CVE gate before promotion, and who owns the mirror pipeline. | Blocks §5.3 and the repository policies. |
-| Q-5 | Golden AMI mandated, and which OS family? | RHEL means custom AMI construction and loss of EKS-managed AMI patching. Also pin `ami_type` explicitly — leaving it unset lets AWS shift the node OS underneath us. |
+| ~~Q-4~~ | **ANSWERED 2026-09-09: a central shared-services account, in `af-south-1`, with tag immutability on and no lifecycle expiry** (CD-27, CD-28). CVE gating and pipeline ownership are still unconfirmed — tracked as Q-4c/Q-4d in the requirements document §8.4. **CT-5 adds #38:** the repository policies must grant pull to **their** node role, not ours. | RESOLVED (topology) |
+| ~~Q-5~~ | ~~Golden AMI mandated, and which OS family?~~ | **MOOT under CT-5** — the nodes are the cloud team's, so the AMI, its patching and `ami_type` are all theirs. What replaces it is **#36**: their Kubernetes version and upgrade cadence, because Besu must be compatibility-tested before each of their upgrades. |

@@ -29,7 +29,7 @@ and between them supersede CT-4 outright; see §12.)*
 
 | # | Change |
 |---|---|
-| CT-1 | **One VPC only.** Besu and the applications share a single VPC. The **cloud team creates the VPC and subnets**; our Terraform is limited to what we build *inside* those subnets (EKS and above). |
+| CT-1 | **One VPC only.** Besu and the applications share a single VPC. The **cloud team creates the VPC and subnets**; our Terraform is limited to what we build *inside* those subnets ~~(EKS and above)~~ — **since CT-5, namespace contents and the AWS resources beside the cluster; the cluster itself is theirs too.** |
 | CT-2 | **Private subnets only.** No public subnets, therefore no Internet Gateway. |
 | CT-3 | **All container images from a private registry**, not public ones. Settled as **Amazon ECR** 2026-09-04 — see §11. |
 | ~~CT-4~~ | ~~**VPC CIDR may be smaller than /16.** Determine the ideal size, accounting for a future estate of ~a dozen applications competing for IPs with Besu at peak.~~ **SUPERSEDED 2026-09-21 by CT-1a + CT-5 (D-30).** The task was to size a VPC *we* would lay out with 15 subnets and two clusters. We lay out nothing: the cloud team's VPC already has role-separated subnets and our pods take addresses from their node subnets. **The `/20` ask is withdrawn in all three environments** — §5 is kept as the record, `CIDR_ALLOCATION_REVIEW.md` is marked DO NOT SEND, and the Confluence page "Finalizing CIDR Range" (Question 3) is closed as withdrawn. **What survives is one question, not an ask:** do their node, load-balancer and administrative-instance subnets have headroom for our ~20 pods, 6 NLB interfaces and 1 instance (requirements §9.1, #34)? |
