@@ -22,24 +22,32 @@ project's `CLAUDE.md` can be written from it without re-deriving anything.
 
 ---
 
-## 1. The four changes requested by the cloud team
+## 1. The changes requested by the cloud team
+
+*(Four at the 2026-08-18 meeting — CT-1..CT-4. CT-1a and CT-5 were added on 2026-09-21
+and between them supersede CT-4 outright; see §12.)*
 
 | # | Change |
 |---|---|
 | CT-1 | **One VPC only.** Besu and the applications share a single VPC. The **cloud team creates the VPC and subnets**; our Terraform is limited to what we build *inside* those subnets (EKS and above). |
 | CT-2 | **Private subnets only.** No public subnets, therefore no Internet Gateway. |
 | CT-3 | **All container images from a private registry**, not public ones. Settled as **Amazon ECR** 2026-09-04 — see §11. |
-| CT-4 | **VPC CIDR may be smaller than /16.** Determine the ideal size, accounting for a future estate of ~a dozen applications competing for IPs with Besu at peak. |
+| ~~CT-4~~ | ~~**VPC CIDR may be smaller than /16.** Determine the ideal size, accounting for a future estate of ~a dozen applications competing for IPs with Besu at peak.~~ **SUPERSEDED 2026-09-21 by CT-1a + CT-5 (D-30).** The task was to size a VPC *we* would lay out with 15 subnets and two clusters. We lay out nothing: the cloud team's VPC already has role-separated subnets and our pods take addresses from their node subnets. **The `/20` ask is withdrawn in all three environments** — §5 is kept as the record, `CIDR_ALLOCATION_REVIEW.md` is marked DO NOT SEND, and the Confluence page "Finalizing CIDR Range" (Question 3) is closed as withdrawn. **What survives is one question, not an ask:** do their node, load-balancer and administrative-instance subnets have headroom for our ~20 pods, 6 NLB interfaces and 1 instance (requirements §9.1, #34)? |
 | CT-1a | **2026-09-21.** The cloud team's VPC has **separate subnets per role** (application, data, …), each with **security rules the cloud team defines**. A refinement of CT-1: we no longer choose or size subnets, and our flows must pass rules we did not write. See §12.4. |
 | CT-5 | **2026-09-21. We do not build EKS.** A **shared EKS cluster** exists; we are allotted a **namespace** and the cloud team runs the cluster and its maintenance. See §12. |
 
 ### Risk ranking (highest first)
 
+*(As ranked on 2026-08-18. Kept as written; the 2026-09-21 note below re-ranks it.)*
+
 1. **CT-2** — by far the biggest. It does not merely remove a resource; it removes
    the entire software supply chain. This is a new workstream, not a config flip.
-2. **CT-4** — has a defensible quantitative answer, but depends on a decision the
-   cloud team must take with us.
+2. ~~**CT-4** — has a defensible quantitative answer, but depends on a decision the
+   cloud team must take with us.~~ **Moot: CT-4 is superseded (D-30).** The decision
+   was taken *for* us, by CT-5 — there is no allocation to argue about.
 3. **CT-1** — technically easy; the risk is *contract drift* with another team, not code.
+   **CT-1a raised this**: their subnets carry rules we did not write, so contract drift
+   now has a silent failure mode (§12.4).
 4. **CT-3** — mostly mechanical. One genuine trap, and a supply chain that must be
    deliberately mirrored rather than proxied.
 
@@ -545,7 +553,7 @@ advise-only deployment mode; per-environment state; tag-everything via `default_
 
 | Section | Purpose |
 |---|---|
-| **Shared-responsibility matrix** | The single highest-value new document. Who owns VPC / subnets / tags / routes / DNS / endpoints / SG rules, and what we are forbidden to touch. Every one of CT-1..CT-4 routes through this table. |
+| **Shared-responsibility matrix** | The single highest-value new document. Who owns VPC / subnets / tags / routes / DNS / endpoints / SG rules, and what we are forbidden to touch. Every one of CT-1..CT-5 routes through this table. |
 | **Network contract + preflight** | The §2.4 assertions, as a gate before any apply. |
 | **Air-gapped supply chain** | New build stage: the ECR mirror pipeline (images **and** Helm charts), the Terraform provider `filesystem_mirror`, the three endpoint-policy traps (§11.3), and `verify-images.sh` run from the runner. |
 | **IP budget** | §5 tables kept current, plus the free-IP CloudWatch alarm, so exhaustion is noticed before a validator fails to schedule. |

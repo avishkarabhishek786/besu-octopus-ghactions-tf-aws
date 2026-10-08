@@ -4,6 +4,16 @@ A permissioned **Hyperledger Besu (QBFT)** ledger for a bank on AWS EKS, in a VP
 the bank's cloud team owns, with no internet egress; built by GitHub Actions and
 Octopus Deploy. One repository, three projects, since 2026-09-18.
 
+> **CT-5 — 2026-09-21: the EKS cluster is not ours either.** The cloud team runs a
+> **shared cluster** and allots us a **namespace**; their VPC has **role-separated
+> subnets with rules they define**. Recorded from a verbal update, **not yet confirmed
+> in writing**, so the code still builds a cluster. Design record:
+> [`sbsa_besu/docs/CLOUD_TEAM_REDESIGN_NOTES.md` §12](sbsa_besu/docs/CLOUD_TEAM_REDESIGN_NOTES.md);
+> the asks to the cloud team are §9 (#27–#38) of
+> [`NETWORK_REQUIREMENTS_CLOUD_TEAM.md`](sbsa_besu/docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md).
+> A fourth project, `mimic_eks`, is to be built. Work happens on branch
+> `shared-eks-namespace`; the own-cluster design is frozen on `own-eks-cluster-design`.
+
 | Directory | What it is | Ships to production? |
 |---|---|---|
 | [`sbsa_besu/`](sbsa_besu/) | **The platform.** Terraform roots (`shared` → `runner` → `chain` → `app`), Helm charts, scripts, and the full design record in `docs/`. | Yes |

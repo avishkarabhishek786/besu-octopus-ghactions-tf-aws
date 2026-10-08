@@ -645,4 +645,4 @@ stops it becoming three bespoke codebases with three different bugs.
 - [AWS PrivateLink — VPC endpoints for SQS / SNS](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-internetwork-traffic-privacy.html)
 - [Hyperledger Besu — QBFT consensus (immediate finality)](https://besu.hyperledger.org/private-networks/how-to/configure/consensus/qbft)
 - [Hyperledger Besu — `eth_getLogs` / `--rpc-max-logs-range`](https://besu.hyperledger.org/public-networks/reference/api)
-- `CLOUD_TEAM_REDESIGN_NOTES.md` (this repo) — CT-1..CT-4, D-1..D-9, Q-1..Q-5
+- `CLOUD_TEAM_REDESIGN_NOTES.md` (this repo) — CT-1..CT-5 (CT-5 = §12, the shared cluster), D-1..D-34, Q-1..Q-15
