@@ -6,9 +6,27 @@ Amazon MSK (Kafka) retained as documented option 2.**
 **Scope:** Companion to `CLOUD_TEAM_REDESIGN_NOTES.md`. Seeds the **NEW, SEPARATE git project**.
 The current `besu-aws` repository is **unchanged**; nothing here is to be applied to this repo.
 **Standing constraints inherited:** single VPC (CT-1), private subnets / air-gap (CT-2, D-3),
-all images from a private ECR registry (CT-3/CT-3a), `/20` CIDR (D-7), dedicated chain EKS cluster (D-4),
-PrivateLink retained (D-1), NetworkPolicy default-deny mandatory (D-9).
+all images from a private ECR registry (CT-3/CT-3a), ~~`/20` CIDR (D-7), dedicated chain EKS
+cluster (D-4), PrivateLink retained (D-1)~~, NetworkPolicy default-deny mandatory (D-9).
 **Hard constraint from the human: NO Lambda functions anywhere.**
+
+> **⚠️ CT-5, 2026-09-21 — three of the inherited constraints are gone, and E-14 changes with
+> them.** The cloud team provides a **shared EKS cluster** and allots us a **namespace**; we
+> build no cluster (`CLOUD_TEAM_REDESIGN_NOTES.md` §12, D-23). So:
+>
+> - **There is no "CHAIN EKS" and no "APP EKS"** — one cluster, two namespaces requested
+>   (#27). The §2 diagram's two boxes become two namespaces in one cluster.
+> - **E-14 is re-scoped, not reversed.** The listener still runs **apart from the
+>   validators** — that was always the point — but in the **application namespace**, reaching
+>   the chain **in-cluster** rather than over PrivateLink (D-28). The isolation it relied on
+>   (D-4) is re-requested as a dedicated, tainted **node group** (#28) and otherwise rests on
+>   `NetworkPolicy` default-deny (D-9, #35), which is now load-bearing rather than additive.
+> - **PrivateLink is no longer a data-path dependency**, which *removes* the risk this
+>   document flagged: §6a of the platform brief warned that E-14 made the unvalidated
+>   same-VPC PrivateLink path load-bearing. That concern is void, along with the Stage 3.0 gate.
+> - **Unchanged:** everything that matters here — E-1..E-13 and E-15..E-20, the cursor
+>   semantics, the event ID, the FIFO dedupe, single-writer nonce management, no Lambda. The
+>   `sqs`/`sns` endpoints are now the cloud team's to provide (D-11), not ours to create.
 
 **Revision note (2026-08-18):** the first draft of this document was written Kinesis-first, as
 briefed. The human selected **SQS FIFO + SNS**, with Kafka kept open as option 2. This revision
@@ -63,11 +81,11 @@ disqualifier. It is also why the reconciliation job (§4.1) is non-optional.
 ## 2. Reference architecture
 
 ```
- CHAIN EKS (dedicated, D-4)                APP EKS
+ LEDGER NAMESPACE (was: CHAIN EKS, D-4)    APP NAMESPACE (was: APP EKS)   [CT-5]
  ┌──────────────────────────┐              ┌────────────────────────────────────────┐
  │ validators (QBFT x4)     │              │  chain-tailer (Deployment, leader-     │
  │ swift-rpc pool (mTLS) <──┼── SWIFT      │   elected via k8s Lease)               │
- │ app-rpc pool ────────────┼─PrivateLink──┤   eth_getLogs(from,to) loop            │
+ │ app-rpc pool ────────────┼─in-cluster───┤   eth_getLogs(from,to) loop            │
  └──────────────────────────┘              │   cursor -> DynamoDB (only after ACK)  │
                                            └───────────────┬────────────────────────┘
                                                            │ Publish
@@ -437,7 +455,7 @@ Cross-references `CLOUD_TEAM_REDESIGN_NOTES.md`.
 | E-11 | **Archive branch = dedicated `archive` SQS FIFO queue + archiver pods -> S3 Parquet.** Firehose is unusable here (no SQS source, no SNS FIFO subscription) — §2.4. | **REVISED** 2026-08-18 |
 | E-12 | **Scheduled chain-vs-archive-vs-downstream reconciliation is mandatory**, and is load-bearing given SQS has no post-consumption replay. | DECIDED |
 | E-13 | **Transport = SNS FIFO + SQS FIFO.** Chosen over Kinesis for ordering-per-payment with far fewer moving parts and no language constraint. | **DECIDED** 2026-08-18 |
-| E-14 | **The listener runs in APP EKS** (not the chain cluster), reaching the chain via PrivateLink — preserves D-4 isolation and keeps chain node groups free of app-team churn. | DECIDED |
+| E-14 | ~~**The listener runs in APP EKS** (not the chain cluster), reaching the chain via PrivateLink — preserves D-4 isolation~~ → **RE-SCOPED by CT-5/D-28 (2026-09-21): the listener runs in the APPLICATION NAMESPACE**, reaching the chain **in-cluster**. The intent is unchanged — the tailer never shares a failure domain or a node with the validators — but it is now enforced by namespace + `NetworkPolicy` (D-9) and, if #28 is granted, by a validator taint, instead of by a cluster boundary. Keeping app-team churn off the validator nodes becomes the substance of #28. | **RE-SCOPED** |
 | E-15 | **No Lambda anywhere.** All consumers are EKS pods; the archive path is a pod, not Firehose. | DECIDED (human constraint) |
 | E-16 | **SNS FIFO is used for fan-out only**, because SQS FIFO has no consumer-group concept. Each independent consumer gets its own queue + subscription. | DECIDED |
 | E-17 | **SQS FIFO deduplication (5-minute window) does NOT satisfy the idempotency requirement.** Application-level event-ID idempotency is mandatory in every consumer and at the bank adapter. | DECIDED |

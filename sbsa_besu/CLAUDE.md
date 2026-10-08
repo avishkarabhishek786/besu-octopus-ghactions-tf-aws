@@ -38,6 +38,7 @@ When in doubt about *why* something is the way it is, the answer is in that repo
 > - **§6 isolation** — the validator node group and per-tier SGs become an *ask* (#28, D-26); NetworkPolicy default-deny is now load-bearing. **§7's EKS version ladder** is theirs; what remains is a compatibility gate (#36).
 > - **Node maintenance is theirs and can halt the chain** — H1's rolling rule now depends on a written operating agreement (#29, D-27), not on our tooling.
 > - **The subnet security rules are a gate** (D-29): the flow table in §12.4 must pass rules we did not write, asserted by a read-only preflight before anything billable.
+> - **§6a event pipeline** — E-14 is re-scoped, not reversed: the listener runs in the application *namespace*, in-cluster (D-28). Everything else about the pipeline stands, and PrivateLink is no longer a data-path dependency.
 > - **Do not start PORTING items 5 or 6 on the old premise.** Item 4's remaining work (OCI charts, chart-image overrides) mostly disappears if #30 confirms the add-ons are provided.
 >
 > Branches: this work is on **`shared-eks-namespace`**; the own-cluster design is frozen on **`own-eks-cluster-design`** (`3af66e8`).
@@ -149,9 +150,10 @@ consumer is **SWIFT**, reaching **JSON-RPC** over SWIFT's private **MV-SIPN** ne
 - **No NAT/IGW.** Air-gapped supply chain (§5) is a first-class build stage.
 - **Images from a private ECR registry** (CT-3), mirrored in from outside the VPC.
   One registry, no carve-out: the AWS-owned EKS addon images arrive by the same path.
-- **PrivateLink is retained** for the application→ledger path even within the single
+- ~~**PrivateLink is retained** for the application→ledger path even within the single
   VPC — but same-VPC endpoint behaviour is **unvalidated** and must be smoke-tested
-  early (§4, Phase 3).
+  early (§4, Phase 3).~~ **DELETED by CT-5 (D-28)** — one cluster, so ledger↔app is
+  in-cluster traffic. No consumer endpoint, no Stage 3.0.
 
 ---
 
@@ -465,9 +467,13 @@ archive. Load these rules before touching any of it:
 - **No transport-specific concepts in the envelope schema or consumer logic
   (E-5).** Amazon MSK is retained as option 2 (E-19); keeping the seam clean means
   switching stays a decision rather than a rebuild.
-- **The listener runs in the APPLICATION cluster (E-14)**, reaching the chain over
-  PrivateLink. This makes PrivateLink a **data-path** dependency, not an app
-  convenience — which raises the stakes on the Stage 3.0 same-VPC smoke test.
+- ~~**The listener runs in the APPLICATION cluster (E-14)**, reaching the chain over
+  PrivateLink. This makes PrivateLink a **data-path** dependency.~~ **RE-SCOPED by CT-5
+  (D-28):** the listener runs in the **application namespace**, reaching the chain
+  **in-cluster**. The intent — never sharing a failure domain or a node with the
+  validators — is unchanged, but it now rests on `NetworkPolicy` (H6/D-9) and the #28 node
+  taint rather than on a cluster boundary. **PrivateLink is no longer a data-path
+  dependency, so the Stage 3.0 risk this raised is void.**
 
 ---
 
@@ -686,7 +692,7 @@ assertion.
 | # | Question | What changes |
 |---|---|---|
 | ~~Q-0~~ | **ANSWERED: `af-south-1`.** Opt-in region — enable on the account first. Exactly 3 AZs, all consumed by the design. Verify `m6i.xlarge` is offered in **all three** AZs before committing the node group. | RESOLVED |
-| ~~Q-1~~ | **ANSWERED (assumed): our own account, not RAM-shared.** PrivateLink is unconstrained; Stage 3.0 remains a gate for the *same-VPC* question, which is separate. Re-open if the cloud team says otherwise. | RESOLVED (assumption) |
+| ~~Q-1~~ | **ANSWERED (assumed): our own account, not RAM-shared.** ~~PrivateLink is unconstrained; Stage 3.0 remains a gate.~~ **CT-5: PrivateLink and Stage 3.0 are deleted (D-28).** The tenancy question itself still matters — it decides what we may create *beside* the cluster (KMS, NLBs, IAM) — and is tracked as R-3. | RESOLVED (assumption) |
 | Q-2 | Do centralised interface endpoints exist? | Whether `shared` creates ~15 endpoints or consumes theirs. |
 | Q-2a | **Which AWS account OWNS the VPC** (i.e. is it RAM-shared into ours)? | Load-bearing. In a RAM-shared VPC, participants **cannot create** interface or gateway endpoints, route tables, NACLs, subnet flow logs, or modify subnet attributes — so `shared` cannot build the endpoint layer at all, D-11 is void, and requirements #4/#10/#13/#14 move to the cloud team. Security groups stay ours. Distinct from CT-1's "shared VPC", which is shared *usage* and already settled. |
 | ~~Q-3~~ | **ANSWERED 2026-09-14: a shared, LB-fronted egress proxy exists (option 1, CD-55).** Design for air-gap STANDS (D-3): the ONLY consumer of the proxy is the Tentacle's polling channel on the runner. No proxy plumbing in containerd, kubelet, the SDKs or any pod — a specific-prefix route in the ledger tables, never a default route. | RESOLVED |

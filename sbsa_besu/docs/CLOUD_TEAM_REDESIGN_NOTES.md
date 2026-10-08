@@ -78,11 +78,19 @@ VPC rather than co-tenanting with a dozen applications. A second control plane i
 ~$73/mo — trivial next to a bank ledger sharing a kube-apiserver, CNI and node pool
 with unrelated workloads. A shared VPC does not imply a shared cluster.
 
-**→ ACCEPTED (see D-4).**
+**→ ACCEPTED (see D-4).** *(CT-5, 2026-09-21: D-4 is superseded — there is no cluster of ours to dedicate. The argument below is why #28 now asks for a dedicated node group instead.)*
 
-### 2.3 PrivateLink is RETAINED
+### 2.3 ~~PrivateLink is RETAINED~~ — DELETED by CT-5
 
-**→ DECIDED (D-1):** PrivateLink stays, even within the single VPC.
+> **SUPERSEDED 2026-09-21 (D-28).** PrivateLink was the boundary between *our two
+> clusters*. Under CT-5 there is one cluster, it is not ours, and ledger↔application
+> traffic never leaves it — so the consumer endpoint, and the Stage 3.0 same-VPC smoke
+> test that gated it, are both deleted. The boundary is now namespaces plus
+> `NetworkPolicy` (D-9, #35) and, if granted, a dedicated node group (#28).
+> Kept because the same-VPC endpoint question below is genuinely undocumented by AWS
+> and may resurface if anything ever needs a cross-VPC path again.
+
+**→ ~~DECIDED (D-1)~~:** ~~PrivateLink stays, even within the single VPC.~~
 
 **Validation required before committing the design.** The AWS endpoint-service
 [considerations](https://docs.aws.amazon.com/vpc/latest/privatelink/create-endpoint-service.html)
@@ -484,15 +492,15 @@ nodes of capacity at 110 pods/node, with a spare /18 for a fourth AZ.
 
 | ID | Decision | Status |
 |---|---|---|
-| D-1 | **PrivateLink is retained** even within the single VPC; `full-delete.sh` updated per §2.5. Same-VPC endpoint behaviour to be smoke-tested in the first deploy-test. | DECIDED |
+| D-1 | ~~**PrivateLink is retained** even within the single VPC; same-VPC endpoint behaviour to be smoke-tested in the first deploy-test.~~ | **SUPERSEDED by D-28 (CT-5, 2026-09-21)** — PrivateLink existed to bridge *our two clusters*. There is one cluster, it is not ours, and ledger↔app is in-cluster traffic under `NetworkPolicy`. The Stage 3.0 smoke test is deleted with it. The `full-delete.sh` edits in §2.5 still stand |
 | D-2 | `modules/network` becomes **`modules/network-contract`** — creates nothing, asserts everything (§2.4). | DECIDED |
 | D-3 | **Design for a true air-gap (b)**; centralised TGW egress permitted as a bonus, never a dependency. | DECIDED |
-| D-4 | **Dedicated EKS cluster for the chain** inside the shared VPC; apps run in their own cluster. | DECIDED |
+| D-4 | ~~**Dedicated EKS cluster for the chain** inside the shared VPC; apps run in their own cluster.~~ | **SUPERSEDED by D-23/D-28 (CT-5, 2026-09-21)** — **we do not build EKS at all.** The cloud team runs a **shared cluster** and allots us a **namespace**; they own the cluster and its maintenance. We ask for *two* namespaces (ledger, app — #27). The isolation this decision bought is re-requested as a dedicated, tainted **node group** (#28, D-26), and what remains of it in our hands is namespaces + `NetworkPolicy` (D-9) |
 | D-5 | ~~Split registry: ECR endpoints for AWS-owned addon images, a third-party repository for everything else.~~ | **SUPERSEDED by D-16** — one registry (ECR), no carve-out |
 | D-6 | ~~Runner source comes from a third-party mirror.~~ | **SUPERSEDED by D-21** — S3 source bundle |
-| D-7 | **CIDR ask = contiguous /20, no secondary CIDR.** Chain gets dedicated subnets (§5.5.1). Fallback `/21 + 100.64.0.0/16` documented in §5.6. | DECIDED |
-| D-8 | Pod subnets parameterised **separately** from node subnets from day one, even when identical. | DECIDED |
-| D-9 | NetworkPolicy default-deny becomes **mandatory** (currently H6, opt-in). | DECIDED |
+| D-7 | ~~**CIDR ask = contiguous /20, no secondary CIDR.** Chain gets dedicated subnets (§5.5.1).~~ | **WITHDRAWN by D-30 (CT-5, 2026-09-21)** — the cloud team's VPC already has **role-separated subnets with rules they define** (CT-1a) and we occupy them. Our ask is a `ResourceQuota` (requirements §9.1), not address space |
+| D-8 | ~~Pod subnets parameterised **separately** from node subnets from day one, even when identical.~~ | **WITHDRAWN by D-30 (CT-5)** — CNI addressing is the cloud team's configuration; we do not place nodes or pods |
+| D-9 | NetworkPolicy default-deny becomes **mandatory** (currently H6, opt-in). | DECIDED — **and load-bearing since CT-5.** On shared nodes it is the primary tenant boundary, not an addition to one (D-26). Requires the cluster's CNI to actually enforce it: #35 |
 
 ---
 
@@ -500,11 +508,13 @@ nodes of capacity at 110 pods/node, with a spare /18 for a fourth AZ.
 
 | # | Question | Impact if unanswered |
 |---|---|---|
-| Q-1 | Egress model: TGW-proxied, or true air-gap? | Determines proxy plumbing vs full offline bootstrap. Mitigated by D-3 (design for air-gap). |
-| Q-2 | Do **centralised VPC endpoints** already exist in a shared-services VPC we can consume? | ~$350/mo. |
-| Q-3 | May we **create VPC endpoints** in their subnets, or is that their side of the line? | Ownership of ~16 endpoints. |
-| Q-4 | Is `100.64.0.0/10` free on the bank's network? | Only matters if the /20 is refused (fallback path). |
+| ~~Q-1~~ | ~~Egress model: TGW-proxied, or true air-gap?~~ | **ANSWERED 2026-09-14 (R-9 / CD-55)** — a shared central egress exists and the only consumer is the Octopus Tentacle's polling channel. D-3 stands: the design is air-gapped regardless. |
+| ~~Q-2~~ | ~~Do **centralised VPC endpoints** already exist we can consume?~~ | **ANSWERED by CT-5 (2026-09-21)** — their cluster's own tenants need ECR, STS, KMS and SSM, so the endpoints exist and are theirs. `central_interface_endpoints = true` was already the production setting (CD-39). The ~$350–400/mo is not on our bill either way; we verify (`verify-endpoints.sh`), we create nothing. |
+| ~~Q-3~~ | ~~May we **create VPC endpoints** in their subnets?~~ | **MOOT under CT-5** — theirs, as D-11 and D-14 now record. |
+| ~~Q-4~~ | ~~Is `100.64.0.0/10` free on the bank's network?~~ | **MOOT under CT-5 (D-30)** — secondary CIDRs and CNI custom networking are the cloud team's configuration. |
 | Q-5 | ~~Third-party repository specifics.~~ **Replaced by Q-4a..Q-4e** (§11 / `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §8.4): ECR account topology, CVE gating, and who owns the mirror pipeline. | Blocks the supply-chain stage. |
+
+*(Every row above is now closed or moot; the live questions are **Q-8..Q-15 in §12.11**.)*
 
 **None of these block drafting the new `CLAUDE.md`** — they are parameters, not
 structural forks. Write it with the air-gapped assumption as the default and capture each
@@ -569,11 +579,11 @@ engineering rather than on their landing-zone standard.
 
 | ID | Decision | Status |
 |---|---|---|
-| D-10 | **Restore in-VPC isolation by ask, not by concession:** dedicated ledger subnets, dedicated route tables, NACL rule management on ledger subnets, and subnet-level flow logs delivered to us. | DECIDED |
-| D-11 | **We own the 8 critical interface endpoints** (`kms`, `secretsmanager`, `sts`, `ecr.api`, `ecr.dkr`, `ssm`, `ssmmessages`, `ec2messages`). Rationale: `kms` is on the validator-startup critical path (C12) and the SSM trio is the only runner access path — neither may depend on another team's change queue. | DECIDED |
-| D-12 | **Request `100.64.0.0/16` associated at VPC creation but held UNUSED.** Free, consumes no RFC 1918, and converts a future rolling node replacement into a config change. Supersedes the §5.6 framing of the secondary CIDR as fallback-only. | DECIDED |
+| D-10 | **Restore in-VPC isolation by ask, not by concession:** dedicated ledger subnets, dedicated route tables, NACL rule management on ledger subnets, and subnet-level flow logs delivered to us. | **RE-SCOPED by D-26 (CT-5, 2026-09-21)** — the *intent* stands and is the reason #28 exists, but a namespace tenant manages none of these. If a dedicated ledger node group in dedicated subnets is granted, the subnets, route tables, ACL rules and flow logs come back **in the cloud team's hands, not ours**. #13/#14 were already withdrawn on 2026-09-09 |
+| D-11 | **We own the 8 critical interface endpoints** (`kms`, `secretsmanager`, `sts`, `ecr.api`, `ecr.dkr`, `ssm`, `ssmmessages`, `ec2messages`). Rationale: `kms` is on the validator-startup critical path (C12) and the SSM trio is the only runner access path — neither may depend on another team's change queue. | **MOOT since CT-5 (D-30, 2026-09-21)** — the cloud team's cluster needs every one of these endpoints for its own tenants, so they exist and are theirs; CD-39 had already made `central_interface_endpoints = true` the production setting. `terraform/shared` creates nothing in the bank and `verify-endpoints.sh` is the check. The *rationale* was right and is why we still verify rather than assume: `kms` is on the validator-startup path (C12) and the SSM trio is the only runner access path |
+| D-12 | **Request `100.64.0.0/16` associated at VPC creation but held UNUSED.** Free, consumes no RFC 1918, and converts a future rolling node replacement into a config change. Supersedes the §5.6 framing of the secondary CIDR as fallback-only. | **WITHDRAWN by D-30 (CT-5)** — secondary-CIDR association and CNI custom networking are the cloud team's call. `mimic_vpc` still associates `100.64.0.0/16` because it mimics *their* VPC, not our ask |
 | D-13 | **Private ECR mirror in our account** (~$1-2/mo). Rationale: validator node replacement must not depend on any service outside AWS. | **PROMOTED by D-16** from fallback to the primary registry |
-| D-14 | **Interface endpoint count trimmed 16 → 14.** `eks-auth` dropped (we use IRSA, not Pod Identity); `autoscaling` dropped (no Cluster Autoscaler or Karpenter deployed). `monitoring` retained as insurance — in an air-gapped VPC a missing endpoint hangs rather than errors. | DECIDED |
+| D-14 | **Interface endpoint count trimmed 16 → 14.** `eks-auth` dropped (we use IRSA, not Pod Identity); `autoscaling` dropped (no Cluster Autoscaler or Karpenter deployed). `monitoring` retained as insurance — in an air-gapped VPC a missing endpoint hangs rather than errors. | **MOOT with D-11 (CT-5)** — we size no endpoint list. Kept because the *reasoning* still applies to what we verify: no `eks-auth` unless the cluster uses Pod Identity (#31 — if it does, that endpoint IS needed), and no `autoscaling` unless they run an autoscaler |
 | D-15 | **VPC `instance_tenancy` must be `default`** — asserted in the network-contract preflight (D-2) *and* stated as a provisioning requirement. Forced dedicated tenancy is irreversible on an existing VPC and adds ~$1,460/mo. | DECIDED |
 
 ### 10.2 Additional open questions
