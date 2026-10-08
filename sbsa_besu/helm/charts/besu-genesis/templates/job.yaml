@@ -65,7 +65,7 @@ spec:
         # extraData from freshly-generated keys that the validator pods never load,
         # and the on-chain validator set mismatches the pods → QBFT can't reach quorum.
         - name: fetch-provided-keys
-          image: {{ .Values.images.tools | quote }}
+          image: {{ required "images.tools is required (Terraform: var.container_images.tools)" .Values.images.tools | quote }}
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -85,7 +85,7 @@ spec:
             - { name: work, mountPath: /work }
         {{- end }}
         - name: generate
-          image: {{ .Values.images.besu | quote }}
+          image: {{ required "images.besu is required (Terraform: var.container_images.besu)" .Values.images.besu | quote }}
           command: ["/bin/bash", "-c"]
           args:
             - |
@@ -168,7 +168,7 @@ spec:
             - { name: qbft-config, mountPath: /config }
       containers:
         - name: publish
-          image: {{ .Values.images.tools | quote }}
+          image: {{ required "images.tools is required (Terraform: var.container_images.tools)" .Values.images.tools | quote }}
           command: ["/bin/sh", "-c"]
           args:
             - |

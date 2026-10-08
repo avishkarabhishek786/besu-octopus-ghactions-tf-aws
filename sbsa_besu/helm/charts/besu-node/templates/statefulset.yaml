@@ -108,7 +108,7 @@ spec:
         # No deadlock: the headless Service publishes not-ready addresses, so
         # each pod's own DNS record exists while it sits in THIS init phase.
         - name: wait-peer-dns
-          image: {{ .Values.toolsImage | quote }}
+          image: {{ required "toolsImage is required (Terraform: var.container_images.tools)" .Values.toolsImage | quote }}
           # H14: this init only resolves peer DNS — run it fully locked down (non-root,
           # no caps, no privilege escalation) so a compromised tools image gets no foothold.
           securityContext:
@@ -162,7 +162,7 @@ spec:
               done
         {{- end }}
         - name: build-config
-          image: {{ .Values.toolsImage | quote }}
+          image: {{ required "toolsImage is required (Terraform: var.container_images.tools)" .Values.toolsImage | quote }}
           # H14: build-config stays root ONLY to prepare files it hands to besu (uid 1000): it
           # chown's the accounts-allowlist to 1000 (CHOWN), chmod's that now-1000-owned file
           # (FOWNER — root can't chmod a file it doesn't own), and on a RESTART overwrites the
@@ -256,7 +256,7 @@ spec:
             {{- end }}
       containers:
         - name: besu
-          image: {{ .Values.besuImage | quote }}
+          image: {{ required "besuImage is required (Terraform: var.container_images.besu)" .Values.besuImage | quote }}
           # H14: harden the long-running consensus/RPC container — non-root (uid 1000 =
           # the besu user), no privilege escalation, drop ALL Linux capabilities,
           # RuntimeDefault seccomp. NOT readOnlyRootFilesystem (Besu writes scratch

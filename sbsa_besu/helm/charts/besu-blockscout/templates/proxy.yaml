@@ -75,7 +75,7 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: {{ .Values.proxy.image | quote }}
+          image: {{ required "proxy.image is required (Terraform: var.container_images.proxy)" .Values.proxy.image | quote }}
           ports:
             - { name: http, containerPort: {{ .Values.proxy.port }} }
           volumeMounts:

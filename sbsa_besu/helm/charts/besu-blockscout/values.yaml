@@ -9,6 +9,25 @@
 # NEXT_PUBLIC_API_HOST origin/CORS pain. All services are ClusterIP; the human
 # reaches the UI via port-forward (from the in-VPC runner) or SSM. No Ingress, no
 # public LB, ALL external egress disabled — consistent with "nothing public".
+#
+# IMAGES: every `image:` key below is DELIBERATELY EMPTY. Terraform owns them —
+# `var.container_images` in terraform/chain/variables.tf is the single source of
+# truth, resolved through `local.image_ref` (which applies registry_host, the
+# per-upstream repository prefix and the H38 digest pin) and passed in by the
+# helm_release in modules/blockscout.
+#
+# They held literal ghcr.io / docker.io references until 2026-10-08. Terraform
+# always overrode them, so nothing deployed was ever wrong — but they were a
+# SECOND PLACE A VERSION WAS WRITTEN, free to disagree with mirror.manifest and
+# the tfvars. That is the B11 defect exactly (the Besu tag, written twice), and
+# `mirror.sh --check-drift` would not have caught it: it compares the manifest
+# against Terraform, and never against a chart's values.
+#
+# Empty rather than deleted, so a bare `helm install` of this chart FAILS on the
+# `required` in the template. The old defaults made it pull from a public
+# registry instead — which in this air-gapped VPC does not error, it hangs until
+# timeout and surfaces as an ImagePullBackOff naming nothing. A value that stops
+# the install beats a plausible one that hangs the cluster.
 # =============================================================================
 
 namespace: besu
@@ -38,7 +57,7 @@ blockscout:
   # (`/v2/blockscout/blockscout/tags/list`), never from the repo release page.
   # The migrate eval task `Explorer.ReleaseTasks.create_and_migrate()` is
   # confirmed valid on 9.0.2. API-only: the UI is the separate `frontend` below.
-  image: ghcr.io/blockscout/blockscout:9.0.2
+  image: "" # Terraform: var.container_images.blockscout (see IMAGES note at top)
   port: 4000
   replicas: 1
   resources:
@@ -54,7 +73,7 @@ frontend:
   # (e.g. v2.8.x) are NOT image tags — ghcr `frontend` tops out at v2.3.x. Resolve
   # from `/v2/blockscout/frontend/tags/list`. Independent version track from the
   # backend. Runtime-configured (NEXT_PUBLIC_* read at startup).
-  image: ghcr.io/blockscout/frontend:v2.3.5
+  image: "" # Terraform: var.container_images.frontend (see IMAGES note at top)
   port: 3000
   replicas: 1
   # The host:port the BROWSER uses to reach the explorer — i.e. the local end of
@@ -78,7 +97,7 @@ frontend:
 # Routes /api, /socket, etc. -> backend:4000 and everything else -> frontend:3000,
 # so frontend + API are same-origin. This is the service you port-forward.
 proxy:
-  image: nginx:1.27-alpine
+  image: "" # Terraform: var.container_images.proxy (see IMAGES note at top)
   port: 80
   replicas: 1
   resources:
@@ -91,7 +110,7 @@ proxy:
 # by its own port-forward. ghcr.io tag (repo tags != image tags — see backend).
 stats:
   enabled: true
-  image: ghcr.io/blockscout/stats:v2.16.0
+  image: "" # Terraform: var.container_images.stats (see IMAGES note at top)
   port: 8050
   database: stats # created in the bundled Postgres (STATS__CREATE_DATABASE)
   resources:
@@ -103,7 +122,7 @@ stats:
 # external egress. ClusterIP; reached by its own port-forward.
 visualizer:
   enabled: true
-  image: ghcr.io/blockscout/visualizer:v0.2.1
+  image: "" # Terraform: var.container_images.visualizer (see IMAGES note at top)
   port: 8050
   resources:
     requests: { cpu: "50m", memory: "128Mi" }
@@ -111,7 +130,7 @@ visualizer:
 
 # --- PostgreSQL (bundled, in-cluster, gp3 PVC) -------------------------------
 postgres:
-  image: postgres:16-alpine
+  image: "" # Terraform: var.container_images.postgres (see IMAGES note at top)
   storageClassName: besu-gp3
   storageSize: 10Gi
   database: blockscout

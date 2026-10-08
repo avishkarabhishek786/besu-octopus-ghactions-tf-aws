@@ -39,11 +39,11 @@ spec:
       # Wait for Postgres before the stats migrations run.
       initContainers:
         - name: wait-postgres
-          image: {{ .Values.postgres.image | quote }}
+          image: {{ required "postgres.image is required (Terraform: var.container_images.postgres)" .Values.postgres.image | quote }}
           command: ["sh", "-c", "until pg_isready -h {{ include "blockscout.pgHost" . }} -p {{ .Values.postgres.port }} -U {{ .Values.postgres.username }}; do echo waiting-for-postgres; sleep 3; done"]
       containers:
         - name: stats
-          image: {{ .Values.stats.image | quote }}
+          image: {{ required "stats.image is required (Terraform: var.container_images.stats)" .Values.stats.image | quote }}
           ports:
             - { name: http, containerPort: {{ .Values.stats.port }} }
           env:

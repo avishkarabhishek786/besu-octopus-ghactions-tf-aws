@@ -37,7 +37,7 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: {{ .Values.postgres.image | quote }}
+          image: {{ required "postgres.image is required (Terraform: var.container_images.postgres)" .Values.postgres.image | quote }}
           # Raise max_connections: the Blockscout backend pool alone can exhaust
           # the default 100, leaving none for the stats microservice ("too many
           # clients already"). First arg MUST be "postgres" so the image

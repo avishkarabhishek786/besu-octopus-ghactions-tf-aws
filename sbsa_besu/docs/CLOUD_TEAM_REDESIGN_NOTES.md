@@ -226,17 +226,59 @@ Correct call, and it aligns with **H38** (digest pinning) already on the hardeni
 > for the mechanism, the blockers and decisions D-16..D-22. This section states the
 > constraint and the two traps that pre-date the registry choice.
 
-### 4.1 Current state is worse than it looks
+### 4.1 ~~Current state is worse than it looks~~ — CLOSED 2026-10-08
 
-- **Parameterised (good):** Besu, via `besu_image_repository` (`terraform/variables.tf:264`).
-- **Hardcoded (must change):** `alpine/k8s:1.30.13` in the besu-node values; and in
+> **This section's list was the 2026-08-18 survey and is kept as the record.** The paths
+> in it are stale (`terraform/variables.tf` became `terraform/chain/variables.tf` in the
+> four-root split) and the work is done. Status below.
+
+- ~~**Parameterised (good):** Besu, via `besu_image_repository` (`terraform/variables.tf:264`).~~
+- ~~**Hardcoded (must change):** `alpine/k8s:1.30.13` in the besu-node values; and in
   `helm/charts/besu-blockscout/values.yaml` — four `ghcr.io/blockscout/*` images plus
-  `nginx:1.27-alpine` and `postgres:16-alpine`.
-- **Plus** every image inside the five upstream Helm charts.
+  `nginx:1.27-alpine` and `postgres:16-alpine`.~~
+- **Plus** every image inside the five upstream Helm charts. — **STILL OPEN: B13.**
 
-Under the project's **no-hardcoding rule**, all of these become
-`registry_host` + `repository` + `digest` variables, with a single registry root
-threaded from the root module.
+**✅ The 8 platform images — DONE in two stages.**
+
+*2026-08-30 (PORTING item 4):* every image became one row of `var.container_images`
+(`host` / `repository` / `tag` / optional `digest`), resolved through `local.image_ref`,
+which applies `registry_host`, the per-upstream repository prefix and the H38 digest pin.
+Three images turned out never to have been parameterised at all (**B9** — `stats`,
+`visualizer` and the nginx `proxy`), and `tools_image` was declared but never passed
+(**B10**).
+
+*2026-10-08:* the chart `values.yaml` files still carried the literals — **ten of them**,
+two more than this section lists, because `besuImage` appeared in `besu-node` *and*
+`besu-genesis` as well. Terraform overrode all ten on every apply, so **nothing deployed
+was ever wrong**; what they were was a **second place a version was written**, free to
+disagree with `mirror.manifest` and the tfvars. That is the **B11** defect precisely — the
+Besu tag, written twice — and `mirror.sh --check-drift` could not have caught it, because
+it compares the manifest against Terraform and never against a chart's values. The Besu
+tag was in fact written in **four** places.
+
+All ten are now `""`, and every template reference is wrapped in Helm's `required` naming
+the Terraform variable that feeds it. **Empty, not deleted, and that is the point:** a
+bare `helm install` now fails with `besuImage is required (Terraform:
+var.container_images.besu)`, where before it silently reached for `ghcr.io` — which in
+this VPC does not error, it hangs until timeout as an `ImagePullBackOff` naming nothing.
+Verified both directions with `helm template`: all three charts fail bare, and all ten
+render correctly in digest-pinned form when Terraform supplies them. `--check-drift`
+still passes.
+
+**❌ The 15 chart-carried images — still open, and deliberately not touched.** They are
+hardcoded *inside upstream charts we do not author*, so they cannot be parameterised the
+way ours were; each needs a values override in the module that installs the chart, under
+that chart's own key (`image.repository`, `global.imageRegistry`, `prometheus.image`, …).
+See `../../CHART_IMAGES.md` and PORTING item 4. **CT-5 is the reason to wait:** four of
+the five charts are cluster-scoped add-ons that, under §9 #30, the cloud team provides and
+we never install — so the overrides would likely be written and then deleted. Revisit when
+#30 is answered.
+
+**Non-image hardcoding: swept 2026-10-08, clean.** No literal CIDR, AWS account ID, region
+or AZ ID in any `.tf` or chart outside `variables.tf` defaults and the `*.tfvars.example`
+templates. The two apparent hits are a comment explaining `cidrsubnet()` arithmetic in
+`modules/runner/main.tf`, and Ethereum addresses in the genesis ConfigMap — the zero
+coinbase and the funded-account map, neither of which is an AWS identifier.
 
 ### 4.2 The trap that will cost a deploy-test
 

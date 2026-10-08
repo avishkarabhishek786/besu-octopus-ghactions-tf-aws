@@ -44,11 +44,11 @@ spec:
       # Wait for Postgres before running migrations.
       initContainers:
         - name: wait-postgres
-          image: {{ .Values.postgres.image | quote }}
+          image: {{ required "postgres.image is required (Terraform: var.container_images.postgres)" .Values.postgres.image | quote }}
           command: ["sh", "-c", "until pg_isready -h {{ include "blockscout.pgHost" . }} -p {{ .Values.postgres.port }} -U {{ .Values.postgres.username }}; do echo waiting-for-postgres; sleep 3; done"]
       containers:
         - name: blockscout
-          image: {{ .Values.blockscout.image | quote }}
+          image: {{ required "blockscout.image is required (Terraform: var.container_images.blockscout)" .Values.blockscout.image | quote }}
           # Run DB create+migrate, then start the server. The eval task
           # `Explorer.ReleaseTasks.create_and_migrate()` is confirmed valid on the
           # pinned 9.0.2 image (verified 2026-06-26); re-verify if the pin changes.

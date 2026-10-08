@@ -158,6 +158,15 @@ set it, so it silently used the module default.
 Also removed the duplicate Besu version: the tag was written both in
 `local.besu_pinned_version`'s fallback and in the image list, free to disagree.
 
+**Completed 2026-10-08 — the chart values.** The parameterisation above covered
+Terraform; the chart `values.yaml` files still held the literals (ten, across
+`besu-blockscout`, `besu-node` and `besu-genesis`). Terraform overrode every one, so
+nothing deployed was wrong — but they were a second place each version was written, and
+`--check-drift` compares the manifest to Terraform only, never to a chart. All ten are now
+`""` with Helm `required` guards naming the Terraform variable, so a bare `helm install`
+fails loudly instead of reaching for a public registry and hanging. Verified with
+`helm template` in both directions. Design record: `docs/CLOUD_TEAM_REDESIGN_NOTES.md` §4.1.
+
 Three plan-time guards (`terraform_data.image_supply_chain`), all behaviour-tested
 via `terraform console`:
 - `require_image_digests` — refuses tag-pinned images, naming them (H38)

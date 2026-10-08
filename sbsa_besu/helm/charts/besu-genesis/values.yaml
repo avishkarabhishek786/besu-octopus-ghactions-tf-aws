@@ -10,12 +10,31 @@
 # ConfigMap/SA metadata where templates reference it explicitly.
 namespace: besu
 
-# --- Images (PINNED) ---------------------------------------------------------
+# --- Images -----------------------------------------------------------------
+# DELIBERATELY EMPTY. Terraform owns every image reference: `var.container_images`
+# in terraform/chain/variables.tf is the single source of truth, resolved through
+# `local.image_ref` (which applies registry_host, the per-upstream repo prefix and
+# the H38 digest pin) and passed in by the helm_release.
+#
+# These were literal `ghcr.io/...` / `docker.io/...` references until 2026-10-08.
+# Terraform always overrode them, so nothing deployed was wrong — but they were a
+# SECOND PLACE A VERSION WAS WRITTEN, free to disagree with the manifest and the
+# tfvars (the B11 defect, which was exactly this for the Besu tag), and
+# `mirror.sh --check-drift` compares the manifest against Terraform only, so a
+# stale literal here would not be caught.
+#
+# They are empty rather than deleted so that a bare `helm install` of this chart
+# FAILS LOUDLY on the `required` in the template. The old defaults made it pull
+# from a public registry instead, which in this air-gapped VPC (CT-2) does not
+# error — it hangs until timeout and surfaces as an ImagePullBackOff naming
+# nothing. An empty value that stops the install is strictly better than a
+# plausible one that hangs the cluster.
 images:
-  # Official Besu image. Tag must match the besu-node chart's image tag.
-  besu: hyperledger/besu:26.6.1
+  # Official Besu image. Terraform passes the SAME resolved reference the
+  # besu-node chart gets, so the two cannot drift apart any more.
+  besu: "" # Terraform: var.container_images.besu
   # Multi-tool image with kubectl + aws-cli + jq for the publish step.
-  tools: alpine/k8s:1.30.13
+  tools: "" # Terraform: var.container_images.tools
 
 # --- Chain / QBFT ------------------------------------------------------------
 chainId: 1337

@@ -37,7 +37,7 @@ spec:
     spec:
       containers:
         - name: visualizer
-          image: {{ .Values.visualizer.image | quote }}
+          image: {{ required "visualizer.image is required (Terraform: var.container_images.visualizer)" .Values.visualizer.image | quote }}
           ports:
             - { name: http, containerPort: {{ .Values.visualizer.port }} }
           env:

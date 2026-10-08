@@ -16,9 +16,27 @@ fullnameOverride: ""
 # namespaces live on the validator-internal opsRpc listener.
 role: validator
 
-# --- Images (PINNED, must match the genesis chart) ---------------------------
-besuImage: hyperledger/besu:26.6.1
-toolsImage: alpine/k8s:1.30.13
+# --- Images -----------------------------------------------------------------
+# DELIBERATELY EMPTY. Terraform owns every image reference: `var.container_images`
+# in terraform/chain/variables.tf is the single source of truth, resolved through
+# `local.image_ref` (which applies registry_host, the per-upstream repo prefix and
+# the H38 digest pin) and passed in by the helm_release.
+#
+# These were literal `ghcr.io/...` / `docker.io/...` references until 2026-10-08.
+# Terraform always overrode them, so nothing deployed was wrong — but they were a
+# SECOND PLACE A VERSION WAS WRITTEN, free to disagree with the manifest and the
+# tfvars (the B11 defect, which was exactly this for the Besu tag), and
+# `mirror.sh --check-drift` compares the manifest against Terraform only, so a
+# stale literal here would not be caught.
+#
+# They are empty rather than deleted so that a bare `helm install` of this chart
+# FAILS LOUDLY on the `required` in the template. The old defaults made it pull
+# from a public registry instead, which in this air-gapped VPC (CT-2) does not
+# error — it hangs until timeout and surfaces as an ImagePullBackOff naming
+# nothing. An empty value that stops the install is strictly better than a
+# plausible one that hangs the cluster.
+besuImage: "" # Terraform: var.container_images.besu
+toolsImage: "" # Terraform: var.container_images.tools
 
 # --- Network / ports ---------------------------------------------------------
 chainId: 1337

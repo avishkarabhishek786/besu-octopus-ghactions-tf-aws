@@ -39,7 +39,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: {{ .Values.frontend.image | quote }}
+          image: {{ required "frontend.image is required (Terraform: var.container_images.frontend)" .Values.frontend.image | quote }}
           ports:
             - { name: http, containerPort: {{ .Values.frontend.port }} }
           env:
