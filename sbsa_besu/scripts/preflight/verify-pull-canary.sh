@@ -34,6 +34,16 @@
 #
 # Usage:
 #   scripts/preflight/verify-pull-canary.sh -n <namespace> -i <image-ref> [-t secs]
+#       [--check-policy <node-role-arn> -R <repo> [-R <repo> ...]]
+#
+# --check-policy reads our ECR repository policies and reports whether they name
+# the cloud team's node role with all three pull actions. It runs BEFORE the
+# canary, because it names the likely CAUSE while the canary proves the VERDICT.
+# It lives here rather than in modules/cluster-contract because THERE IS NO
+# `aws_ecr_repository_policy` DATA SOURCE — a Terraform plan cannot read an
+# existing repository policy at all, and declaring one as a resource would mean
+# this project started owning a central registry's policies. One `aws ecr
+# get-repository-policy` call answers it instead.
 #
 # The image ref should be one we already mirror — a tools/busybox-class image is
 # ideal because it is small and we are testing the PATH, not the image. Take it
@@ -41,14 +51,16 @@
 # =============================================================================
 set -euo pipefail
 
-NS=""; IMAGE=""; TIMEOUT=120
-while getopts "n:i:t:h" opt; do
-  case "$opt" in
-    n) NS="$OPTARG" ;;
-    i) IMAGE="$OPTARG" ;;
-    t) TIMEOUT="$OPTARG" ;;
-    h) sed -n '2,45p' "$0"; exit 0 ;;
-    *) exit 2 ;;
+NS=""; IMAGE=""; TIMEOUT=120; NODE_ROLE=""; REPOS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -n) NS="$2"; shift 2 ;;
+    -i) IMAGE="$2"; shift 2 ;;
+    -t) TIMEOUT="$2"; shift 2 ;;
+    -R) REPOS+=("$2"); shift 2 ;;
+    --check-policy) NODE_ROLE="$2"; shift 2 ;;
+    -h|--help) sed -n '2,56p' "$0"; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
@@ -70,6 +82,56 @@ note() { printf '        %s\n' "$*"; }
 # live incident rather than the residue of a test.
 cleanup() { kubectl -n "$NS" delete pod "$POD" --ignore-not-found --wait=false >/dev/null 2>&1 || true; }
 trap cleanup EXIT INT TERM
+
+# -----------------------------------------------------------------------------
+# #38, first half — do our repository policies name THEIR node role?
+# -----------------------------------------------------------------------------
+# kubelet's ECR credential provider needs all three actions. Granting two of the
+# three is worse than granting none: the pull fails partway through with no
+# message that names a policy.
+POLICY_FAIL=0
+if [[ -n "$NODE_ROLE" ]]; then
+  if [[ ${#REPOS[@]} -eq 0 ]]; then
+    echo "--check-policy needs at least one -R <repository>" >&2; exit 2
+  fi
+  command -v aws >/dev/null || { echo "aws CLI required for --check-policy" >&2; exit 1; }
+  command -v jq  >/dev/null || { echo "jq required for --check-policy" >&2; exit 1; }
+  printf '\n=== #38 repository policies (cause) ===\n'
+  note "node role: $NODE_ROLE"
+  for repo in "${REPOS[@]}"; do
+    pol="$(aws ecr get-repository-policy --repository-name "$repo" \
+             --query policyText --output text 2>/dev/null || true)"
+    if [[ -z "$pol" || "$pol" == "None" ]]; then
+      bad "$repo has NO repository policy — their node role cannot pull (#38)"
+      note "A repository with no policy is private to its owning account. Cross-account"
+      note "pull is granted by the repository policy and nothing else."
+      POLICY_FAIL=1; continue
+    fi
+    # One jq pass: is there an Allow statement naming this principal with all three?
+    if jq -e --arg r "$NODE_ROLE" '
+          ([.Statement] | flatten)
+          | map(select(.Effect == "Allow"))
+          | map(select(
+              ((.Principal.AWS? // .Principal? // []) | if type=="string" then [.] else . end)
+              | index($r) != null))
+          | map([ (.Action | if type=="string" then [.] else . end) ] | flatten)
+          | map(. as $a
+                | ["ecr:BatchGetImage","ecr:GetDownloadUrlForLayer","ecr:BatchCheckLayerAvailability"]
+                | all(. as $need | ($a | index($need) != null) or ($a | index("ecr:*") != null) or ($a | index("*") != null)))
+          | any' >/dev/null 2>&1 <<<"$pol"; then
+      ok "$repo grants $NODE_ROLE all three pull actions"
+    else
+      bad "#38: $repo does NOT grant $NODE_ROLE all of BatchGetImage, GetDownloadUrlForLayer, BatchCheckLayerAvailability"
+      note "Every pod will ImagePullBackOff against a registry that looks fully populated."
+      POLICY_FAIL=1
+    fi
+  done
+  note "This covers only the half a repository policy can express. The node role ALSO"
+  note "needs ecr:GetAuthorizationToken in its own IDENTITY policy, which no repository"
+  note "policy can grant and which we cannot read cross-account. The canary below is the"
+  note "only check that exercises both halves, because it is the only one that pulls as"
+  note "that role."
+fi
 
 printf '\n=== #38 registry pull canary ===\n'
 note "namespace: $NS"
@@ -116,6 +178,12 @@ if [[ "$PULLED" -eq 1 ]]; then
   ok "the cluster pulled $IMAGE"
   note "This is the only check that proves the NODE ROLE can pull (#38)."
   note "It does not prove the other images are mirrored — that is verify-images.sh."
+  if [[ "$POLICY_FAIL" -eq 1 ]]; then
+    bad "...but a repository policy check above FAILED. The canary image is pullable and"
+    note "at least one other repository is not, so some pods will ImagePullBackOff. Fix"
+    note "the policy before deploying; do not read this PASS as the supply chain being proven."
+    exit 1
+  fi
   exit 0
 fi
 

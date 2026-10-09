@@ -1324,7 +1324,7 @@ ask); `D` = post-deploy assertion in `scripts/validation/`; `A` = standing alarm
 | #35 | the API accepts policies nothing enforces | `K` + `D` | `aws-node` env, then an **active two-pod deny-probe** (D-37) |
 | #36 | their upgrade breaks our *next* apply, not their change | `P` | `cluster_version_max_tested` upper bound (D-41) |
 | #37 | Blockscout connection timeouts | — | the F-9 row of #34 |
-| #38 | our check passes as the wrong principal | `P` + `D` | repository policy names their node role ARN with the three pull actions; node-role identity policy carries `ecr:GetAuthorizationToken`; **canary pod** as the only real proof (D-38) |
+| #38 | our check passes as the wrong principal | ~~`P`~~ `K` + `D` | **Re-assigned 2026-10-09 while implementing:** the repository-policy assertion CANNOT be plan-time — there is no `aws_ecr_repository_policy` **data** source, so a plan cannot read an existing policy at all, and declaring one as a resource would make this project the owner of a central registry's policies. Moved to `verify-pull-canary.sh --check-policy`, which names the cause before the canary proves the verdict. What stays at plan time is the `ecr:GetAuthorizationToken` **attestation**, which is all Terraform can do with a role in another account |
 | #39 | `ContainerCreating` / `failed to assign an IP address`, on a shared subnet, possibly from someone else's scaling | `K` + `A` | margin = node count × ~50, pre-deploy; alert on `FailedCreatePodSandbox` in our namespace; the alarm ask is theirs (D-43) |
 
 #### 12.13.3 Files this produces
@@ -1385,10 +1385,69 @@ as B12 and the `jq '// "absent"'` bug, now for the third time:
 
 | Item | Blocked on |
 |---|---|
-| `modules/cluster-contract` (D-41 plan-time ceiling, #38 repository-policy assertion, #31 trust-policy `sub`/`aud` assertion) | Not blocked by a decision — D-25 fixed the hand-over shape — but it needs `eks-handover.auto.tfvars` to exist, and its data sources need a live cluster, so it cannot be exercised until `mimic_eks` (D-32) does. Next in line |
+| ~~`modules/cluster-contract`~~ | **BUILT 2026-10-09.** See §12.13.6 |
 | `verify-subnet-rules.sh` (D-29, #34) | Writable now, and deliberately not written blind. Ordered NACL evaluation is the most intricate logic in the set, and §9.4 command 3 produces the real rule dumps to test it against. Writing it against imagined input is how the `jq '//'` bug happened |
 | D-42 / D-43 alarms | Genuinely blocked on **#30**: whether we get `PrometheusRule` on their operator or run our own Prometheus decides where the rules live |
 
 **What has not changed:** the chart and script work above is all read-only or
 scheduling-only, so none of it pre-empts a §9.4 answer. The moment an answer arrives it
 changes *values* in a hand-over file, not the gates.
+
+#### 12.13.6 `modules/cluster-contract` and the cluster hand-over — built 2026-10-09
+
+`terraform/contract/eks-handover.tf` (27 variables, D-25's shape from §12.5) and
+`terraform/modules/cluster-contract/` (11 gates, creates nothing). Both validate; every
+gate was driven to failure, not read.
+
+**The hand-over file is NOT symlinked into the roots yet**, deliberately. The CT-5 banner
+in `CLAUDE.md` §3 says nothing is removed until §9.4 is answered, so `lb_subnet_ids` and
+the other subnet inputs still exist in `contract/handover.tf`. An unprefixed
+`lb_subnet_ids` in the cluster hand-over would therefore be a **duplicate variable** in
+any root loading both files. The cluster-side copies are prefixed `cluster_` so the
+overlap is visible instead of fatal; at cutover the network copies are deleted and the
+prefix can go. Do not tidy it away early.
+
+**The gates, and what each refuses:**
+
+| Gate | Refuses |
+|---|---|
+| **CG-0** hand-over coherence | A region mismatch, and IRSA/Pod Identity being both or neither (#31). **Variables only, in its own block** — see below |
+| **CG-1** staleness | A hand-over whose endpoint or version disagrees with the live cluster — the #29-item-3 upgrade nobody mentioned |
+| **CG-2** endpoint access | Private access off (no path at all, D-34), or public access **on** — the one cluster attribute whose wrongness is invisible from inside, because a public endpoint behaves identically from within the VPC (#32) |
+| **CG-3** version | Live version below the floor **or above the ceiling** (#36, D-41) |
+| **CG-4** OIDC provenance | An OIDC provider belonging to a *different* cluster — which would also silently trust that cluster's pods (#31) |
+| **CG-5** IRSA scoping | **Our own** trust policies missing a `:sub` or `:aud` condition, or permitting service accounts outside our namespaces. On a shared cluster a policy conditioned only on the provider is assumable by **any pod in any namespace**, and it fails open (#31) |
+| **CG-6** registry | The `ecr:GetAuthorizationToken` attestation (#38). The policy read moved out — see §12.13.2 |
+| **CG-7** add-ons | No load-balancer controller, or no StorageClass. The two with no fallback (#30) |
+| **CG-8** Pod Security | `restricted` while the F32 init container still runs as uid 0 (#27, D-33) |
+| **CG-9** **the isolation floor** | `node_group_dedicated = false` **and** `network_policy_enforced = false` together; and a dedicated group with no taint or label, which leaves the group empty while our pods schedule onto the shared nodes anyway (#28, #35) |
+| **CG-10** access | No access entry, no namespace, or a namespace that is cluster-owned (#32, #27) |
+| **CG-11** placement | Subnets outside the cluster's VPC, or an AZ-ID-keyed map whose keys disagree with the subnets' actual zones |
+
+**CG-9 is the one worth reading twice.** It is the only gate about a *combination* rather
+than a value. Each half is a recorded trade-off on its own — D-26 explicitly makes
+NetworkPolicy default-deny the compensating control when #28 is refused. Both absent is a
+payment ledger's validators sharing a kernel with arbitrary tenants while our default-deny
+policies are accepted by the API server and enforced by nothing, and **no other gate
+catches it**, because each half looks like an accepted answer.
+
+**A third bug found by driving gates to failure rather than reading them.** Two gates did
+not fire at all: the region mismatch and the IRSA/Pod-Identity exclusivity check.
+**Terraform does not evaluate a resource's preconditions when something that resource
+depends on failed to resolve** — so a precondition reading only variables is silently
+skipped if it shares a `terraform_data` block with one reading
+`data.aws_eks_cluster.this`. That is not academic: a region mismatch is exactly what makes
+the cluster lookup fail, so the operator saw
+
+```
+Error: reading EKS Cluster (shared-eks): couldn't find resource
+```
+
+instead of being told they were pointing at the wrong region — a cause that was computable
+without calling AWS at all. **The diagnostic has to survive the failure it diagnoses.**
+Every variables-only precondition now lives in CG-0, which touches no data source, and the
+module header says never to add one that does.
+
+**`gates_skipped` is an output, not a comment.** Terraform cannot warn from a module, so
+the roots must print it and the RUNBOOK must say to read it. A gate that could not run
+reading as a gate that passed is precisely how this module would become decorative.
