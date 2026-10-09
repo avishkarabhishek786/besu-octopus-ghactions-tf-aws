@@ -84,10 +84,16 @@ locals {
 # The mimic gets the same courtesy the platform does: fail at plan time with a
 # message, not twenty minutes into an apply with an AWS error. mimic_vpc's
 # equivalent gate is on its own inputs.
+data "aws_region" "current" {}
+
 resource "terraform_data" "region_agreement" {
   input = var.region
 
   lifecycle {
+    precondition {
+      condition     = data.aws_region.current.name == var.region
+      error_message = "PROVIDER REGION MISMATCH (B25): var.region is '${var.region}' but the AWS provider is operating in '${data.aws_region.current.name}'. Every resource would be created in the wrong region and the apply would fail late on InvalidVpcID.NotFound."
+    }
     precondition {
       condition     = var.region == var.network_region
       error_message = "REGION MISMATCH: this root deploys into '${var.region}' but the network hand-over describes a VPC in '${var.network_region}'. Subnet IDs do not travel between regions — re-run mimic_vpc/scripts/emit-handover.sh for '${var.region}'."

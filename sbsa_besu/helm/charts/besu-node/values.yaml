@@ -225,6 +225,18 @@ resources:
   requests: { cpu: "250m", memory: "1Gi" }
   limits: { memory: "4Gi" }
 
+# P-1 (2026-10-09, first run against a namespace with a ResourceQuota): the two
+# init containers (wait-peer-dns, build-config) declared NO resources. Under a
+# compute ResourceQuota every container — init containers included — must declare
+# each quota'd resource, so the quota we ask the cloud team for (requests cpu/memory
+# + limits memory, shared-cluster requirements point 2) refused EVERY validator pod
+# at admission. Never seen on our own cluster, which had no quota. Both inits only
+# resolve DNS / copy files; these figures are generous. Deliberately no CPU limit,
+# matching `resources` above.
+initResources:
+  requests: { cpu: "50m", memory: "64Mi" }
+  limits: { memory: "256Mi" }
+
 # Spread pods of the same role across nodes/AZs (best-effort).
 topologySpread:
   enabled: true

@@ -104,28 +104,51 @@ submit() {
 }
 
 classify() {
-  local text="$1"
-  case "$text" in
-    *PodSecurity*|*"violate PodSecurity"*|*privileged*|*runAsNonRoot*|*allowPrivilegeEscalation*)
+  # Every matching cause is named, not just the first (B29: this was a `case`,
+  # so a manifest refused for BOTH Pod Security and a missing CRD was reported
+  # as Pod Security only, and the #30 half — the one with no fallback when the
+  # CRD is TargetGroupBinding — went unmentioned).
+  local text="$1" hit=0
+  if grep -qiE 'PodSecurity|privileged|runAsNonRoot|allowPrivilegeEscalation' <<<"$text"; then hit=1
       note "-> #27: Pod Security. Our F32 ownership-fix init container runs as uid 0, which"
       note "   'restricted' refuses. Ask for 'baseline' on this namespace, or rework the init"
       note "   container non-root first (D-33). NOTE: PSA can also be enforced CLUSTER-WIDE via"
-      note "   AdmissionConfiguration, which does not appear in the namespace labels (question K)." ;;
-    *"exceeded quota"*|*"forbidden: exceeded"*)
+      note "   AdmissionConfiguration, which does not appear in the namespace labels (question K)."
+  fi
+  if grep -qiE 'exceeded quota|forbidden: exceeded|failed quota' <<<"$text"; then hit=1
       note "-> #27: ResourceQuota. Compare hard-minus-used against the footprint table in shared-cluster requirements §1."
       note "   Remember admission tests ONE pod: a quota that admits three validators and refuses"
-      note "   the fourth passes here and still leaves QBFT one failure from a halt (D-36)." ;;
-    *LimitRange*|*"minimum memory usage"*|*"maximum cpu usage"*)
-      note "-> #27: LimitRange defaults or maxima sit below/above our requests (shared-cluster requirements §1)." ;;
-    *"no matches for kind"*|*"could not find the requested resource"*)
+      note "   the fourth passes here and still leaves QBFT one failure from a halt (D-36)."
+      if grep -qiE 'must specify limits' <<<"$text"; then
+        note "   'must specify limits.X': the quota sets limits.X, so EVERY container must declare"
+        note "   one. Our charts set no CPU limits — ask for a quota without limits.cpu"
+        note "   (shared-cluster requirements point 2 asks for requests + MEMORY limits only)."
+      fi
+  fi
+  if grep -qiE 'LimitRange|minimum memory usage|maximum cpu usage' <<<"$text"; then hit=1
+      note "-> #27: LimitRange defaults or maxima sit below/above our requests (shared-cluster requirements §1)."
+  fi
+  # kubectl apply says "resource mapping not found … ensure CRDs are installed
+  # first"; kubectl create says "no matches for kind". Both mean the same thing.
+  if grep -qiE 'no matches for kind|could not find the requested resource|resource mapping not found|ensure CRDs are installed' <<<"$text"; then hit=1
       note "-> #30: the CRD is not installed on this cluster. Which one is named above."
       note "   TargetGroupBinding has NO fallback (the RPC endpoints cannot be exposed without"
-      note "   it); SecretProviderClass, PodMonitor and PrometheusRule each have one (D-24)." ;;
-    *[Ff]orbidden*|*"cannot create"*)
+      note "   it); SecretProviderClass, PodMonitor and PrometheusRule each have one (D-24)."
+  fi
+  # RBAC only on an RBAC denial ("User … cannot …"). A bare "forbidden" also
+  # appears on PSA and quota refusals and on a missing ServiceAccount, and B29
+  # was exactly that: a missing SA reported as an RBAC grant to ask for.
+  if grep -qiE 'forbidden: User .* cannot |cannot (create|get|list|patch|update) resource' <<<"$text"; then hit=1
       note "-> #32: RBAC. AmazonEKSEditPolicy follows the built-in 'edit' role, which enumerates"
       note "   BUILT-IN kinds — our four custom resources are covered only if the add-on ships a"
-      note "   ClusterRole labelled aggregate-to-edit. Ask for an explicit Role." ;;
-  esac
+      note "   ClusterRole labelled aggregate-to-edit. Ask for an explicit Role."
+  fi
+  if grep -qiE 'error looking up service account' <<<"$text"; then hit=1
+      note "-> NOT a cluster finding: the ServiceAccount does not exist yet (Terraform creates it"
+      note "   at apply). If this appears on a bare-Pod probe the probe is broken — it should run"
+      note "   as 'default' (B29)."
+  fi
+  [[ $hit -eq 1 ]] || note "-> unclassified refusal: read the server's message above."
 }
 
 # -----------------------------------------------------------------------------
@@ -163,7 +186,23 @@ for f in "${FILES[@]}"; do
               labels: (.spec.template.metadata.labels // {}),
               annotations: (.spec.template.metadata.annotations // {})
             },
-            spec: .spec.template.spec
+            # The ServiceAccount admission plugin runs BEFORE Pod Security and
+            # rejects a Pod whose SA does not exist yet — which, before the first
+            # apply, is every one of ours. That masked the PSA verdict this probe
+            # exists to obtain (B29). PSA does not depend on the SA, so the probe
+            # runs as the namespace default and mounts no token.
+            #
+            # The volumeClaimTemplates of a StatefulSet become volumes only when the
+            # controller creates the Pod, so a bare Pod referencing them is
+            # INVALID before PSA runs (found on the same run). Each claim template
+            # is stood in for by an emptyDir, which every PSA level permits, so
+            # the substitution cannot change the verdict.
+            spec: ((.spec.volumeClaimTemplates // []) as $vct
+                   | .spec.template.spec
+                   | .serviceAccountName = "default"
+                   | del(.serviceAccount)
+                   | .automountServiceAccountToken = false
+                   | .volumes = ((.volumes // []) + [$vct[] | {name: .metadata.name, emptyDir: {}}]))
           }' 2>/dev/null \
     | while IFS= read -r obj; do
         [[ -n "$obj" ]] || continue

@@ -222,7 +222,12 @@ resource "terraform_data" "pod_identity" {
 
   lifecycle {
     precondition {
-      condition     = var.pod_identity || var.oidc_issuer_url == "" || trimsuffix(var.oidc_issuer_url, "/") == trimsuffix(data.aws_eks_cluster.this.identity[0].oidc[0].issuer, "/")
+      # B28 (2026-10-09, first live run): compare WITHOUT the scheme. EKS reports
+      # the issuer as `https://oidc.eks…`; IRSA trust conditions — and so
+      # mimic_eks's hand-over — use the bare `oidc.eks…` form. Both are correct and
+      # the cloud team may paste either, so trimming only the trailing `/` made a
+      # correct issuer fail with a message blaming a different cluster.
+      condition     = var.pod_identity || var.oidc_issuer_url == "" || trimprefix(trimsuffix(var.oidc_issuer_url, "/"), "https://") == trimprefix(trimsuffix(data.aws_eks_cluster.this.identity[0].oidc[0].issuer, "/"), "https://")
       error_message = "#31 VIOLATED: the hand-over's OIDC issuer '${var.oidc_issuer_url}' is not this cluster's issuer ('${data.aws_eks_cluster.this.identity[0].oidc[0].issuer}'). The IAM OIDC provider belongs to a DIFFERENT cluster, so AssumeRoleWithWebIdentity will reject every token our pods present — and worse, a trust policy built on it would silently also trust that other cluster's pods."
     }
   }

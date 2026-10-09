@@ -346,8 +346,16 @@ sec "#35  NetworkPolicy enforcement"
 if AWSNODE="$(kubectl -n kube-system get ds aws-node -o json 2>/dev/null)"; then
   NPENV="$(jq -r '[.spec.template.spec.containers[]?.env[]? | select(.name|test("NETWORK_POLICY|POD_ENI"))
                    | "\(.name)=\(.value)"] | join(" ")' <<<"$AWSNODE")"
+  # B31 (2026-10-09, first live run): on current VPC CNI add-ons the switch is the
+  # aws-eks-nodeagent container's ARGUMENT `--enable-network-policy=true`; aws-node's
+  # env carries only NETWORK_POLICY_ENFORCING_MODE, which is present whether policy
+  # is on or off. Reading the env alone failed a compliant cluster. Accept either
+  # the older env form or the node-agent argument; an explicit `=false` still fails.
+  NPARG="$(jq -r '[.spec.template.spec.containers[]? | select(.name=="aws-eks-nodeagent")
+                   | .args[]? | select(startswith("--enable-network-policy"))] | join(" ")' <<<"$AWSNODE")"
   note "aws-node: ${NPENV:-<neither NETWORK_POLICY nor POD_ENI set>}"
-  if [[ "$NPENV" == *"ENABLE_NETWORK_POLICY=true"* ]]; then
+  note "aws-eks-nodeagent: ${NPARG:-<no --enable-network-policy argument>}"
+  if [[ "$NPENV" == *"ENABLE_NETWORK_POLICY=true"* || "$NPARG" == "--enable-network-policy=true" ]]; then
     ok "VPC CNI network policy is enabled"
   else
     bad "#35: the VPC CNI does not have network policy enabled"

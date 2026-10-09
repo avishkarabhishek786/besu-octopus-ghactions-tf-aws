@@ -58,7 +58,9 @@ each environment is built.
 
 **We would ask for a `ResourceQuota` of roughly 8 vCPU / 24 GiB requests, 48 GiB limits,
 40 pods, 12 PVCs / 300 GiB** — the table plus ~30 % headroom, so a routine change does
-not hit the ceiling. An application namespace (#27) is sized separately, later.
+not hit the ceiling. In quota keys: `requests.cpu`, `requests.memory`, `limits.memory`,
+`pods`, `persistentvolumeclaims`, `requests.storage` — **and no `limits.cpu`** (#27 says
+why). An application namespace (#27) is sized separately, later.
 
 **Two settled points that do not change:** (1) **no internet egress** — nothing in our
 namespaces reaches the internet; images come from ECR over your endpoints (§7); (2) the
@@ -166,9 +168,17 @@ One detail we would not otherwise think to ask: Pod Security can also be enforce
 in a namespace's labels. If that is how it is set here, please tell us the cluster default
 as well as any namespace label, because the label alone would mislead us.
 
+**Please do not put `limits.cpu` in the quota.** A `ResourceQuota` that names a resource
+makes Kubernetes refuse any pod with a container — init containers included — that
+does not declare it. Our charts set CPU **requests** but no CPU **limits**, so a quota
+with `limits.cpu` refuses every validator pod at admission (`failed quota: must specify
+limits.cpu`). We found this by testing against a namespace configured that way. If your
+standard quota template includes `limits.cpu`, tell us and we will discuss it rather than
+quietly add limits.
+
 **What breaks without it:** at `restricted`, every validator pod is refused before it
-starts; a quota below the table makes the fourth validator unschedulable — and QBFT with
-three of four is one failure from a halt.
+starts; a quota with `limits.cpu` refuses them too; a quota below the table makes the
+fourth validator unschedulable — and QBFT with three of four is one failure from a halt.
 
 ### 28. A dedicated, tainted node group for the ledger — Tier 2, and it matters
 
@@ -308,6 +318,22 @@ should use.
 *(This table is the single source of truth for the flow list: our preflight check and
 our design record both cite `#34 F-n` rather than restating it.)*
 
+**The table lists only our flows. The cluster's own flows must keep working too** in
+whatever rules apply to the subnets you place us in. They are yours, and on a cluster
+you already run they work today; we state them because a NACL written for one tenant's
+subnet can remove them, and nothing we deploy could then tell why. In our own test
+environment, with NACLs limited to the table above, a node in the one AZ without a
+control-plane interface **never joined the cluster**:
+
+| Flow | Port / protocol | Between |
+|---|---|---|
+| Nodes → cluster API (control-plane ENIs) | 443 TCP | every node subnet → every subnet holding a control-plane ENI, **across AZs** |
+| Control plane → kubelet, and to webhook / metrics-server pods | 10250 and the webhook ports, TCP | control-plane ENI subnets → node subnets |
+| Pods → CoreDNS | 53 UDP **and** TCP | node subnet ↔ node subnet, **across AZs** (CoreDNS replicas sit on some nodes, not all) |
+| Pod ↔ pod, node ↔ node (CNI, kube-proxy) | as your CNI requires | node subnet ↔ node subnet |
+
+If the rules are NACLs this adds rules to the count in point 1 below.
+
 **Two things we found while building the checker for this, and you should know both
 before committing to the table above.**
 
@@ -346,8 +372,12 @@ built, not diagnose them after.
 ### 35. `NetworkPolicy` enforcement in the CNI
 
 With shared nodes, Kubernetes `NetworkPolicy` is our primary tenant boundary. Please
-confirm the cluster enforces it — VPC CNI with network policy enabled
-(`enable-network-policy=true` on `aws-node`), or Calico / Cilium.
+confirm the cluster enforces it — VPC CNI with network policy enabled, or Calico /
+Cilium. On current VPC CNI versions the setting is the add-on configuration
+`enableNetworkPolicy: "true"`, and it shows as the argument
+`--enable-network-policy=true` on the **`aws-eks-nodeagent`** container of the
+`aws-node` DaemonSet — not as an environment variable on the `aws-node` container
+(command 2 in §4 prints both).
 
 **What breaks without it:** our default-deny policies are accepted by the API and
 enforced by nothing; every pod in the cluster can reach the validators' privileged RPC.
@@ -442,6 +472,8 @@ kubectl get storageclass
 kubectl get ns <our-namespace> --show-labels
 kubectl get resourcequota,limitrange -n <our-namespace>
 kubectl -n kube-system get ds aws-node -o jsonpath='{.spec.template.spec.containers[?(@.name=="aws-node")].env}' | tr ',' '\n' | grep -iE 'NETWORK_POLICY|POD_ENI'
+kubectl -n kube-system get ds aws-node -o jsonpath='{.spec.template.spec.containers[?(@.name=="aws-eks-nodeagent")].args}' | tr ',' '\n' | grep -i 'enable-network-policy'
+aws eks describe-addon --cluster-name <cluster> --addon-name vpc-cni --region af-south-1 --query 'addon.{version:addonVersion,config:configurationValues}'
 kubectl get deploy -A -l app.kubernetes.io/name=aws-load-balancer-controller
 kubectl get storageclass <class> -o jsonpath='{.volumeBindingMode}{" "}{.allowVolumeExpansion}{" "}{.parameters.kmsKeyId}{"\n"}'
 
