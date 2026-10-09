@@ -143,3 +143,71 @@ variable "flow_log_retention_days" {
   type        = number
   default     = 7
 }
+
+# =============================================================================
+# Subnet security rules (CT-1a, D-29, D-32) — added 2026-10-09
+# =============================================================================
+# The cloud team said their subnets have security rules defined. Until
+# 2026-10-09 this project shipped an allow-all NACL baseline on the ledger
+# subnets with a comment deferring the rules to the platform. That was wrong in
+# both directions — the rules are THEIRS under CT-1a, and an allow-all fixture
+# cannot reject anything, so the platform's verify-subnet-rules.sh would have
+# been written against a check that could never fail (B12).
+#
+# Full reasoning, including what a stateless ACL cannot protect: see
+# modules/subnets/nacl.tf.
+# =============================================================================
+
+variable "nacl_mode" {
+  description = "flows (default — deny by default, only #34's F-1..F-10) | permissive (the old allow-all baseline, for bisecting a connectivity problem) | none (no NACLs; models a security-groups-only cloud team, question C)."
+  type        = string
+  default     = "flows"
+}
+
+variable "nacl_break_flow" {
+  description = "Drop every NACL rule whose flow label contains this string, so the platform's checker is proven to detect an ABSENT rule. Try \"F-1 peer UDP\" (discovery dies while the chain looks fine), \"F-6\" (pulls stall mid-layer) or \"F-5\" (every AWS call hangs)."
+  type        = string
+  default     = ""
+}
+
+variable "s3_cidrs" {
+  description = "#34 F-6 — S3's regional prefixes. A NACL cannot reference a prefix list; empty falls back to 0.0.0.0/0, which is what a real cloud team would most likely do."
+  type        = list(string)
+  default     = []
+}
+
+variable "egress_proxy_cidr" {
+  description = "#34 F-8 — the egress proxy's prefix (mimic_egress emits it as egress_vpc_cidr). Empty omits the rule, modelling the R-10 ticket not yet being answered."
+  type        = string
+  default     = ""
+}
+
+variable "egress_proxy_port" {
+  description = "#34 F-8 — the proxy's CONNECT port."
+  type        = number
+  default     = 3128
+}
+
+variable "sipn_cidr" {
+  description = "The prefix SWIFT reaches the RPC NLBs from over MV-SIPN. Empty falls back to the VPC CIDR, which is what a mimic with no Transit Gateway can actually test."
+  type        = string
+  default     = ""
+}
+
+variable "nacl_source_mode" {
+  description = "summarised (default — fits AWS's 20-rule-per-direction NACL limit) | narrow (per-subnet sources everywhere; needs the quota raised to 40). See modules/subnets/variables.tf for the arithmetic."
+  type        = string
+  default     = "summarised"
+}
+
+variable "ledger_subnets_in_use" {
+  description = "#28 — true only when a dedicated ledger node group was granted AND our pods run in the ledger subnets. Under CT-5 the default is false: our pods land in the application subnets."
+  type        = bool
+  default     = false
+}
+
+variable "nacl_rule_limit" {
+  description = "AWS's per-NACL per-direction rule quota. 20 by default, 40 after a quota increase. The subnets module fails the PLAN rather than letting AWS reject a rule mid-apply."
+  type        = number
+  default     = 20
+}

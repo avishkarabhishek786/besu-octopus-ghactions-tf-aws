@@ -27,12 +27,19 @@ silently diverging.
 >    (no IGW / NAT / default route) is untouched. Its 15-subnet, role-separated layout turns
 >    out to match what the cloud team described, so it is **more** faithful than before, not
 >    less.
-> 2. **§3.5's permissive NACL baseline must flip to deny-by-default** (D-32). It currently
->    ships allow-all "because Phase 2/3 owns the rules" — but under CT-1a the *cloud team*
->    owns the rules and ours is to conform, so an allow-all mimic hides exactly the failure
->    class they described. The replacement must permit the nine flows in §12.4 of the redesign
->    notes (requirement #34) and nothing else, and the platform's `verify-subnet-rules.sh`
->    must be tested against a deliberately broken copy first — the B12 lesson.
+> 2. ~~**§3.5's permissive NACL baseline must flip to deny-by-default** (D-32).~~
+>    **DONE 2026-10-09** — `modules/subnets/nacl.tf`. A NACL on **every** role subnet,
+>    deny-by-default, permitting only #34's F-1..F-10, each rule carrying the flow it
+>    implements. `nacl_mode = "permissive"` survives for bisecting a connectivity problem;
+>    `"none"` models a security-groups-only cloud team (question C). `nacl_break_flow`
+>    drops one flow on purpose, which is how the platform's `verify-subnet-rules.sh` was
+>    proven to detect an **absent** rule — the B12 lesson, applied.
+>
+>    **Two findings came out of it, both now in #34:** the flow table does **not fit** in a
+>    default NACL (20 rules/direction; the table needs 26 in and 30 out, and granting #28
+>    exceeds it on its own — the module fails the plan with the arithmetic rather than
+>    letting AWS reject a rule mid-apply), and a NACL **cannot protect our service ports**,
+>    because stateless return rules over `1024-65535` cover every port we listen on.
 > 3. **A third mimic, `mimic_eks`, was BUILT on 2026-10-09** (D-32). It sources the
 >    platform's `modules/eks` in place rather than copying it, and consumes **this**
 >    project's hand-over — which makes it a fidelity check on that file too: if a cluster
@@ -196,14 +203,35 @@ production — the cloud team's Transit Gateway routes to on-premises destinatio
 In the mimic there is no TGW, so `local` is all there is. (The container registry
 needs no route at all: it is ECR, reached through VPC endpoints — CT-3a.)
 
-### 3.5 NACLs (#13)
+### 3.5 NACLs (#13, CT-1a) — IMPLEMENTED 2026-10-09 (D-32)
 
-Create NACLs on the **ledger** subnets. Ship them with a permissive baseline
-(allow-all in and out) and a prominent comment that **Phase 2/3 owns the rules**.
-The mimic's job is to prove the resource exists and is addressable by ID; it is not
-to guess the ruleset.
+~~Create NACLs on the **ledger** subnets with a permissive baseline; Phase 2/3 owns the
+rules.~~ Both halves of that were wrong: under CT-1a the **cloud team** owns the rules on
+every role-separated subnet, and an allow-all fixture cannot reject anything — so the
+platform's checker would have been written against something that could never fail.
 
-Export the NACL IDs in the hand-over contract.
+`modules/subnets/nacl.tf` now authors them. Three modes (`nacl_mode`):
+
+- **`flows`** (default) — a NACL on **every** role subnet, deny-by-default, permitting only
+  requirement #34's F-1..F-10. Every rule carries its flow label, so a
+  `verify-subnet-rules.sh` failure and a rule here can be matched by eye.
+- **`permissive`** — the old allow-all baseline. Retained for one legitimate use: deciding
+  whether the NACLs are the cause of a connectivity problem. Anything else returns the
+  fixture to a state where the platform's checker cannot fail.
+- **`none`** — no NACLs; the subnets fall back to the VPC default. Models a cloud team that
+  uses security groups only, which is a real possible answer to question C.
+
+`nacl_break_flow` drops every rule whose label matches a string — the fixture knob that
+proves the checker detects an **absent** rule. `"F-1 peer UDP"` is the most instructive:
+discovery dies while statically-configured peers still connect, so the chain looks fine.
+
+**Read the header of `nacl.tf` before changing any of it.** It records why return rules are
+scoped to the narrowest source that works, and why a stateless ACL cannot protect any
+service on a port above 1024 — which is all of ours.
+
+Export the NACL IDs in the hand-over contract, plus `nacl_rules_authored`, so the
+producer's statement of what it permitted can be compared with the consumer's reading of
+the live rules.
 
 ### 3.6 Gateway endpoints (#10) — DECISION REQUIRED
 

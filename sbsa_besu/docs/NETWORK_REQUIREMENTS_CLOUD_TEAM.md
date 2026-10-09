@@ -911,6 +911,33 @@ instance should use.
 *(This table is the single source of truth for the flow list: our preflight check and
 our design record both cite `#34 F-n` rather than restating it.)*
 
+**Two things we found while building the checker for this, and you should know both
+before committing to the table above.**
+
+**1. If these are NACLs, the flow list does not fit in one.** AWS allows **20 rules per
+network ACL per direction** by default. Expressing the table above with a per-AZ CIDR for
+each counterparty needs **26 inbound and 30 outbound** rules on the subnets our pods run
+in — before any of your other tenants' rules. The options are all ordinary, and they are
+yours: summarise the source CIDRs (which costs precision), raise the quota to 40 via
+Service Quotas (*"Rules per network ACL"*, with the documented network-performance
+caveat), or use **security groups**, which have no equivalent limit. **If you grant #28**
+(a dedicated ledger node group, so our pods peer across *two* subnet roles), it goes over
+the default limit on its own. We are not asking you to pick — we are flagging that
+"yes, those flows are permitted" may require a quota change you have not budgeted for,
+and we would rather surface it now than discover it in your change window.
+
+**2. A NACL cannot actually protect our service ports, and we would rather say so than
+over-claim the control.** NACLs are stateless, so every permitted flow needs a matching
+return rule over the ephemeral range, conventionally `1024-65535`. **Every port this
+platform listens on is inside that range** — Besu P2P 30303, JSON-RPC 8545, WebSocket
+8546, metrics 9545, Postgres 5432. So a NACL that permits ephemeral return traffic from a
+given subnet has, by construction, also permitted **inbound connections to every one of
+those services** from that subnet. It still separates subnet *roles* usefully, and it is
+still worth having; but it is not the tenant boundary, and we have stopped describing it
+as one. The controls we rely on are the **security groups** (#6, ours) and
+**`NetworkPolicy`** (#35, your CNI must enforce it). This is also why we withdrew #13 —
+asking to manage your NACL rules would have bought us less than it appeared to.
+
 **What breaks without it:** a blocked F-1 means the chain never reaches quorum and
 reports nothing except a peer count of zero — and note that F-1 needs **both** protocols:
 with 30303/TCP open and 30303/UDP closed, our statically-configured peers still connect and

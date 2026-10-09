@@ -41,6 +41,22 @@ module "subnets" {
   gateway_endpoints_created_here = var.gateway_endpoints_created_here
   simulate_central_endpoints     = var.simulate_central_endpoints
 
+  # CT-1a / D-32 — the cloud team's subnet security rules. Deny-by-default,
+  # permitting only requirement #34's F-1..F-10. The old allow-all baseline is
+  # still reachable as nacl_mode = "permissive", but it is no longer the default,
+  # because a fixture that cannot reject anything cannot prove a checker works.
+  vpc_cidr          = var.vpc_cidr
+  nacl_mode         = var.nacl_mode
+  nacl_break_flow   = var.nacl_break_flow
+  s3_cidrs          = var.s3_cidrs
+  egress_proxy_cidr = var.egress_proxy_cidr
+  egress_proxy_port = var.egress_proxy_port
+  sipn_cidr         = var.sipn_cidr
+
+  nacl_source_mode      = var.nacl_source_mode
+  ledger_subnets_in_use = var.ledger_subnets_in_use
+  nacl_rule_limit       = var.nacl_rule_limit
+
   tags = {}
 
   # The secondary CIDR association must exist before subnets are created, so

@@ -1387,7 +1387,7 @@ as B12 and the `jq '// "absent"'` bug, now for the third time:
 |---|---|
 | ~~`modules/cluster-contract`~~ | **BUILT 2026-10-09.** See §12.13.6 |
 | ~~`mimic_eks` (D-32)~~ | **BUILT 2026-10-09.** See §12.13.7 |
-| `verify-subnet-rules.sh` (D-29, #34) | Writable now, and deliberately not written blind. Ordered NACL evaluation is the most intricate logic in the set, and §9.4 command 3 produces the real rule dumps to test it against. Writing it against imagined input is how the `jq '//'` bug happened |
+| ~~`verify-subnet-rules.sh` (D-29, #34)~~ | **BUILT 2026-10-09.** See §12.13.8 |
 | D-42 / D-43 alarms | Genuinely blocked on **#30**: whether we get `PrometheusRule` on their operator or run our own Prometheus decides where the rules live |
 
 **What has not changed:** the chart and script work above is all read-only or
@@ -1515,3 +1515,68 @@ enforcement); EKS Pod Identity (always IRSA here, so #31's other branch is exerc
 editing the hand-over); the real #33 grant (it would reference our NLB security groups,
 which do not exist until the platform is deployed); and #29, which is an agreement between
 people and has no configuration to mimic.
+
+#### 12.13.8 `verify-subnet-rules.sh` and the `mimic_vpc` NACL flip — 2026-10-09
+
+Built together, because neither is worth much without the other: D-32's flip gave the
+checker something that can reject, and the checker gave the flip a consumer.
+
+**`mimic_vpc` §3.5 is implemented** (`modules/subnets/nacl.tf`). The permissive allow-all
+baseline is gone as the *default* — `nacl_mode = "flows"` now puts a NACL on **every** role
+subnet, deny-by-default, permitting only #34's F-1..F-10, with each rule carrying the flow
+it implements. `"permissive"` survives for one legitimate use (bisecting a connectivity
+problem) and `"none"` models a security-groups-only cloud team, which is a real answer to
+question C. `nacl_break_flow` drops every rule matching a string, which is how the checker
+is proven to detect an **absent** rule rather than merely to parse a present one.
+
+**Four findings, and two of them change what we tell the cloud team.**
+
+**1. The #34 flow table does not fit in a default NACL.** AWS allows 20 rules per NACL per
+direction; the table with per-AZ CIDRs needs **26 ingress and 30 egress** on the workload
+subnets. Granting **#28** pushes it over on its own (24 egress) because our pods then peer
+across two subnet roles. Options: summarise sources, raise the quota to 40, or use security
+groups. The module now **fails the plan** with the arithmetic rather than letting AWS
+reject a rule mid-apply with some NACLs already written — `nacl_source_mode`,
+`ledger_subnets_in_use` and `nacl_rule_limit` are the knobs, and the gate was verified to
+fire on each over-limit combination and to pass at `nacl_rule_limit = 40`. **Added to #34**,
+because it may require a quota change in their change window.
+
+**2. A NACL cannot protect our service ports at all, and the design had been over-claiming
+the control.** Stateless means every flow needs an ephemeral return rule, conventionally
+`1024-65535` — and **every port we listen on is inside it**: 30303, 8545, 8546, 9545, 5432.
+So permitting return traffic from a subnet also permits inbound connections to every one of
+those services from that subnet. The checker reports this as its own verdict — *"permitted
+INCIDENTALLY"* — because a flow that works only because of a return rule is one where
+tightening its own rule changes nothing. Consequences: return rules are scoped to the
+narrowest source that works, never the VPC CIDR; the real boundary is the security groups
+(#6) and `NetworkPolicy` (#35, D-9); and **withdrawing #13 cost less than it appeared to**.
+Said plainly in #34 rather than left as an internal note, because over-claiming a control
+to a bank's cloud team is worse than not having it.
+
+**3. The checker's first version reported F-1 UDP blocked against a correct fixture.** It
+applied an ephemeral-return test to every flow, but **devp2p discovery is symmetric** —
+Besu sends UDP from its own bound 30303 to the peer's 30303 — so the forward rules already
+carry the reply. RLPx over TCP is *not* symmetric and does need the ephemeral return. The
+fix is a return mode per flow (`eph` / `same` / `none`). A false positive here is as
+expensive as a false negative: it sends an operator to argue with the cloud team about a
+rule that is correct.
+
+**4. An unevaluable side was silently skipped.** When one subnet of a flow had no readable
+NACL, `check_flow` skipped that probe and the flow reported **PASS** on the strength of the
+other half. Now it is a counted WARN naming which direction went unchecked. Same defect
+class as `gates_skipped` in `cluster-contract` and the WARN discipline in
+`verify-deployed.sh`: *"we could not look" must never render as green.*
+
+**Tested against four fixtures generated from the mimic's own authored rules**, not
+imagined ones — healthy, F-1-UDP removed, F-5 removed, F-2 removed — plus 15 unit cases on
+the evaluator covering the **rule-order trap** (a `deny` at 90 beating an `allow` at 100,
+which is invisible in a console listing sorted any other way), protocol `-1` ignoring port
+ranges, partial CIDR coverage as its own verdict, port-range boundaries, direction
+isolation, and the implicit deny on an empty rule set.
+
+**One fixture-design note worth keeping:** with `s3_cidrs` left at its realistic default of
+`0.0.0.0/0`, removing the F-5 or F-2 rules did not change any verdict — the broad rule
+carried the traffic. That is the checker being right, but it makes the break knob useless,
+so the integration tests pass a narrow `s3_cidrs`. The checker also now warns when a pass
+rests on an `0.0.0.0/0` rule, for the same reason: it is permitted, but the run is not
+evidence about *that flow*.

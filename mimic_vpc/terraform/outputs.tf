@@ -45,3 +45,9 @@ output "subnet_cidrs_by_role" {
   description = "Informational — for security-group and NACL rule authoring in the platform."
   value       = module.subnets.subnet_cidrs_by_role
 }
+
+# CT-1a / D-32 — what the cloud team's subnet rules permit, as authored here.
+# The platform reads the LIVE rules (verify-subnet-rules.sh); this is the
+# producer's side of the same statement, so the two can be compared.
+output "nacl_rules_authored" { value = module.subnets.nacl_rules_authored }
+output "nacl_mode" { value = module.subnets.nacl_mode }

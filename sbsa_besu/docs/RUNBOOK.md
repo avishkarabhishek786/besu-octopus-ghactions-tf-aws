@@ -376,7 +376,20 @@ Only once the registry is populated and `scripts/preflight/verify-images.sh -e s
 > # 4. the endpoints — add --pod-identity if #31 answered Pod Identity, or eks-auth is
 > #    missing and the symptom is a credential call that HANGS
 > scripts/preflight/verify-endpoints.sh <vpc-id> af-south-1 --route-tables <ids> [--pod-identity]
+>
+> # 5. the cloud team's SUBNET RULES against our flow table (#34). Rule-order aware,
+> #    both protocols, and the stateless return path — which is where half the
+> #    failures in this class live.
+> scripts/preflight/verify-subnet-rules.sh --region af-south-1 \
+>     --node <node subnets> --lb <lb subnets> \
+>     [--endpoint <ids>] [--data <ids>] [--runner <id>] [--node-sg sg-xxx]
 > ```
+>
+> **Read its WARNs, not only its FAILs.** It distinguishes three things a pass/fail would
+> hide: a flow permitted only by a `0.0.0.0/0` rule (allowed, but the run is not evidence
+> about that flow); a flow permitted *incidentally* by a stateless return rule, because
+> every port we listen on is inside 1024-65535; and a flow where one direction could not be
+> evaluated at all.
 >
 > **After deploying**, the assertions that are only observable then — and three of which
 > look like success until asserted:

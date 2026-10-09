@@ -78,54 +78,22 @@ resource "aws_route_table_association" "this" {
 # -----------------------------------------------------------------------------
 # #13 — NACLs on the LEDGER subnets only.
 # -----------------------------------------------------------------------------
-# Consolidating the ledger and the application estate into one VPC removed the
-# VPC-level boundary between them. A NACL restores a STATELESS L3 boundary that
-# does not depend on security-group correctness — defence in depth for a system
-# carrying SWIFT traffic, and a control auditors ask about.
-#
-# THE BASELINE IS DELIBERATELY PERMISSIVE, AND THE EXPLICIT ALLOW RULES ARE NOT
-# OPTIONAL: an aws_network_acl with no rules DENIES ALL TRAFFIC. Shipping one
-# without these rules would black-hole the ledger subnets on creation.
-#
-# The platform (`sbsa_besu`) owns the real rules — the mimic's job is only to
-# prove the resource exists and is addressable by ID, not to guess the ruleset.
+# NACLs (#13, CT-1a) — MOVED to nacl.tf on 2026-10-09 (D-32).
 # -----------------------------------------------------------------------------
-locals {
-  ledger_subnet_keys = [for k, v in var.subnets : k if v.role == "ledger"]
-}
-
-resource "aws_network_acl" "ledger" {
-  for_each = toset(local.ledger_subnet_keys)
-
-  vpc_id     = var.vpc_id
-  subnet_ids = [aws_subnet.this[each.key].id]
-
-  tags = merge(var.tags, {
-    Name      = "${var.name_prefix}-nacl-${each.key}"
-    Component = "network"
-    Note      = "baseline allow-all; rules owned by the platform project"
-  })
-}
-
-resource "aws_network_acl_rule" "ledger_ingress_baseline" {
-  for_each       = toset(local.ledger_subnet_keys)
-  network_acl_id = aws_network_acl.ledger[each.key].id
-  rule_number    = 100
-  egress         = false
-  protocol       = "-1"
-  rule_action    = "allow"
-  cidr_block     = "0.0.0.0/0"
-}
-
-resource "aws_network_acl_rule" "ledger_egress_baseline" {
-  for_each       = toset(local.ledger_subnet_keys)
-  network_acl_id = aws_network_acl.ledger[each.key].id
-  rule_number    = 100
-  egress         = true
-  protocol       = "-1"
-  rule_action    = "allow"
-  cidr_block     = "0.0.0.0/0"
-}
+# Was: one NACL per LEDGER subnet with a permissive allow-all baseline, on the
+# reasoning that "Phase 2/3 owns the rules". Both halves of that are now wrong:
+#
+#   * under CT-1a the CLOUD TEAM owns the rules on every role-separated subnet,
+#     and ours is to conform — so the mimic must carry rules, not a placeholder;
+#   * an allow-all fixture cannot reject anything, so the platform's
+#     verify-subnet-rules.sh would have been written against a check that could
+#     not fail (B12, CICD §11.3).
+#
+# nacl.tf puts a NACL on EVERY role subnet, deny-by-default, permitting only
+# requirement #34's F-1..F-10 — with `nacl_mode = "permissive"` retained for
+# bisecting a connectivity problem, and `nacl_break_flow` to drop one flow on
+# purpose so the platform's checker is proven to detect an ABSENT rule.
+# -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
 # #10 — Gateway endpoints (S3, DynamoDB). FREE.
