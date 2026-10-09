@@ -1225,7 +1225,7 @@ models role-separated subnets, which is what the cloud team described.
 | **D-36** | **The silent-success class is the one that matters, and it needs positive assertions.** #27's quota and #28's co-location do not look like failures — they look like a healthy chain. A quota a few hundred millicores short admits three validators; QBFT's quorum is 3 of 4, so the ledger starts, produces blocks and reports healthy with **zero** fault tolerance, and the refusal is an event on the StatefulSet with no fourth pod to inspect. Gates for this class assert a **count** — four validators in the block-producing set, four distinct `spec.nodeName` — never the absence of errors. | DECIDED |
 | **D-37** | **A boundary is only proven by a check that asserts a negative.** #32 (scope of the access entry) and #35 (`NetworkPolicy` enforcement) both fail **open**: a cluster-wide grant works exactly as well as a scoped one, and the API server accepts `NetworkPolicy` objects whether or not the CNI enforces them. So the gates are `kubectl auth can-i create pods -n kube-system` → must be `no`, and an active two-pod deny-probe whose forbidden connection must be refused. Configuration is evidence; a refused connection is proof. | DECIDED |
 | **D-38** | **`verify-images.sh` does not and cannot satisfy #38 — principal mismatch.** It authenticates with `REGISTRY_USER`/`REGISTRY_PASS` (`scripts/preflight/verify-images.sh:93-101`), i.e. the runner's own credentials. Under CT-5 the pull is performed by **their** node role via kubelet's ECR credential provider. Different principals, different policies, and the script exits 0 either way — a check that cannot fail, in the CICD §11.3 sense. Closed by three things: a repository-policy assertion on their node role ARN, a check that the node role's **identity** policy carries `ecr:GetAuthorizationToken` (no repository policy can grant it), and a **canary pod** as the only authoritative proof. The script's banner says so, so nobody reads its exit 0 as "the cluster can pull". | DECIDED |
-| **D-39** | **Validator hostname spread becomes `DoNotSchedule`.** `helm/charts/besu-node/templates/statefulset.yaml:77-79` is `whenUnsatisfiable: ScheduleAnyway` — correct for a cluster we size ourselves, wrong on a shared one, because it lets two validators land on one node silently and a single drain then removes two of four. Implements the anti-affinity clause D-27 already stated. **Accepted trade-off:** with fewer than four schedulable nodes the fourth validator stays `Pending`. That is the point — a `Pending` pod is loud, a co-located pair is found during an incident. The zone constraint stays `ScheduleAnyway`. | DECIDED |
+| **D-39** | **One validator per node becomes a hard constraint — as required `podAntiAffinity`, NOT as a spread constraint.** `statefulset.yaml` carried `whenUnsatisfiable: ScheduleAnyway` on `kubernetes.io/hostname`: correct for a cluster we size, wrong on a shared one, because it lets two validators land on one node silently and a single drain then removes two of four. **Correction made while implementing (2026-10-09):** `DoNotSchedule` would NOT have fixed it. `maxSkew: 1` on hostname permits a 2/1/1 placement across three nodes, because a skew of 1 is exactly what `maxSkew: 1` allows — so no tuning of a spread constraint can express "never two on one node". Required `podAntiAffinity` is the only form that forbids it outright, which is what D-27 and §12.6 already said ("anti-affinity by hostname → `required`"); the first draft of this decision restated the mechanism wrongly. The **zone** constraint stays `ScheduleAnyway`: 4 validators over 3 AZs can never be evenly spread, so `DoNotSchedule` there would wedge the fourth pod permanently, and 2/1/1 still leaves a 2F+1 quorum when a zone is lost. **Accepted trade-off:** with fewer schedulable nodes than validators the last one stays `Pending`. That is the point — `Pending` is loud and arrives before go-live; co-location is found during an incident. | **IMPLEMENTED 2026-10-09** — role-gated on `role=validator`, escape hatch `antiAffinity.requireDistinctNodes` / `var.validator_require_distinct_nodes` |
 | **D-40** | **Admission is proven by dry-running a standalone Pod, and warnings are failures.** Pod Security evaluates a workload controller's pod template and returns a **warning**, not a rejection — enforcement happens when the controller creates the pod — so `helm template \| kubectl apply --dry-run=server` on the StatefulSet *passes* on a `restricted` namespace. The preflight therefore renders the pod template into a bare `Pod` and dry-runs **that**, and treats any admission warning on any object as exit non-zero. PSA may also be enforced cluster-wide via `AdmissionConfiguration`, which is invisible in namespace labels (#27, question K) — the dry-run is what catches that, not the label. | DECIDED |
 | **D-41** | **The cluster-version gate has an upper bound, not just a minimum** (#36). Their upgrade breaks nothing when it lands; it breaks on our next apply, when a removed API version stops a chart reconciling. `cluster_version_max_tested` fails the plan when the live version exceeds it, which turns an upgrade we were not told about into a plan-time citation of #36 instead of a mid-apply failure. | DECIDED |
 | **D-42** | **#29 has no preventive control, and the design stops implying it does.** A force-drain past the PDB is indistinguishable from ordinary maintenance until the second validator stops. Three detective controls instead: a validator absent from the block-producing set > 5 min, block height not advancing (the halt itself), and the one-line health check handed to the cloud team so their tooling can gate its own next step. This is the whole reason #29 is listed first and is addressed to people rather than to a config file. | DECIDED |
@@ -1332,15 +1332,15 @@ ask); `D` = post-deploy assertion in `scripts/validation/`; `A` = standing alarm
 | Path | Status | Contents |
 |---|---|---|
 | `terraform/modules/cluster-contract/` | **new** (already planned, §12.5) | The `P` rows: version floor **and ceiling**, private endpoint, OIDC-vs-Pod-Identity coherence, our trust policies' `sub`/`aud`, their node role in each ECR repository policy, the controller policy's tag condition. `terraform_data` + `lifecycle` preconditions, never `check` — these are gates, not advisories |
-| `scripts/preflight/verify-cluster.sh` | **new** | The `K` rows that are reads: CRDs **and** ready controllers, StorageClass fields, quota headroom, `auth can-i` positives and negatives, `aws-node` network-policy and `POD_ENI` env, node-SG evaluation |
-| `scripts/preflight/verify-admission.sh` | **new** | D-40: `helm template` → extract each pod template → submit as a bare `Pod` with `--dry-run=server` → any warning is a failure |
+| `scripts/preflight/verify-cluster.sh` | **BUILT 2026-10-09** | The `K` rows that are reads: CRDs **and** ready controllers, StorageClass fields, quota headroom, `auth can-i` positives and negatives, `aws-node` network-policy and `POD_ENI` env, node-SG evaluation |
+| `scripts/preflight/verify-admission.sh` | **BUILT 2026-10-09** | D-40: `helm template` → extract each pod template → submit as a bare `Pod` with `--dry-run=server` → any warning is a failure |
 | `scripts/preflight/verify-subnet-rules.sh` | **new** (D-29) | F-1..F-10 against live NACLs and SGs, ordered-rule evaluation, per-protocol, citing `#34 F-n` |
-| `scripts/preflight/verify-pull-canary.sh` | **new** (D-38) | One small image from our registry, one pod in our namespace, assert `Running`. The authoritative #38 gate |
-| `scripts/preflight/verify-images.sh` | **amend** | Banner states what it does **not** prove (D-38). Its exit 0 stops meaning "the cluster can pull" |
-| `scripts/validation/verify-deployed.sh` | **amend** | The `D` rows: 4 in the producing set, 4 distinct nodes, 4 healthy targets, caller identity per pod, pod-eni annotation, peer count, the NetworkPolicy deny-probe |
-| `helm/charts/besu-node/templates/statefulset.yaml` | **amend** | Hostname constraint → `DoNotSchedule` (D-39). Zone constraint unchanged |
+| `scripts/preflight/verify-pull-canary.sh` | **BUILT 2026-10-09** (D-38) | One small image from our registry, one pod in our namespace, assert `Running`. The authoritative #38 gate |
+| `scripts/preflight/verify-images.sh` | **AMENDED 2026-10-09** | Banner states what it does **not** prove (D-38). Its exit 0 stops meaning "the cluster can pull" |
+| `scripts/validation/verify-deployed.sh` | **BUILT 2026-10-09** (it did not exist) | The `D` rows: 4 in the producing set, 4 distinct nodes, 4 healthy targets, caller identity per pod, pod-eni annotation, peer count, the NetworkPolicy deny-probe |
+| `helm/charts/besu-node/templates/statefulset.yaml` | **DONE 2026-10-09** | Hostname constraint → `DoNotSchedule` (D-39). Zone constraint unchanged |
 | `modules/observability` | **amend** | D-42's two alarms and D-43's sandbox-failure alert |
-| `scripts/preflight/verify-endpoints.sh` | **amend, conditional** | `REQUIRED_INTERFACE` at line 73 is a static array with no `eks-auth`. If #31 answers Pod Identity, the list gains it — and a missing endpoint in this VPC hangs rather than errors (prime directive 2). Conditional on the hand-over's `pod_identity`, not edited by hand |
+| `scripts/preflight/verify-endpoints.sh` | **DONE 2026-10-09** (`--pod-identity`) | `REQUIRED_INTERFACE` at line 73 is a static array with no `eks-auth`. If #31 answers Pod Identity, the list gains it — and a missing endpoint in this VPC hangs rather than errors (prime directive 2). Conditional on the hand-over's `pod_identity`, not edited by hand |
 
 #### 12.13.4 The rule these are built under
 
@@ -1352,8 +1352,43 @@ undersized quota, a missing CRD, a node SG without the RPC rule and NACLs that d
 30303/udp, so each gate is proven to fire before it is trusted. A gate that has only ever
 been seen to pass is an assumption wearing a check's clothing.
 
-**Nothing here is implemented yet** (D-35..D-43 are decisions, not code), and nothing
-should be until §9.4 is answered — the answers decide which gates are assertions and which
-are deletions. What is implemented now is the writing-down, because the defect this audit
-found was not a missing script. It was thirteen requirements whose failure modes were
-described in prose and owned by nobody.
+#### 12.13.5 Implementation status — 2026-10-09
+
+The gates that depend on nothing the cloud team has yet to say were built the same day the
+audit landed. The ordering principle was **what can be exercised today**, because the
+defect this whole section exists to prevent is a check nobody has ever seen fail.
+
+| Decision | State | Evidence it works |
+|---|---|---|
+| **D-39** chart anti-affinity | **IMPLEMENTED** | `helm template` in three cases: validator renders required `podAntiAffinity` and no hostname spread; `role=rpc` renders both spread constraints and no affinity; the escape hatch renders neither. `helm lint` clean |
+| **D-38** `verify-images.sh` scope | **IMPLEMENTED** | The header now states what an exit 0 does *not* mean, and the success path prints it too — an operator reading PASS at 02:00 does not scroll up 40 lines |
+| **D-38** canary | **BUILT** — `verify-pull-canary.sh` | Classifies the four causes (`GetAuthorizationToken` → their identity policy; `denied` → the repository policy; `manifest unknown` → the mirror; *no authorisation error at all* → the network class, #20/#22/#23) because they land on different desks |
+| **D-40** admission | **BUILT** — `verify-admission.sh` | The pod-template → bare-`Pod` transform was run against the real rendered chart: it extracts the F32 init container with `runAsUser: 0`, which is the thing `restricted` refuses. Warnings are failures, by capturing stderr rather than trusting the exit code |
+| **D-37** negatives, **#27** arithmetic, **#30**, **#35**, **#36** | **BUILT** — `verify-cluster.sh` | Quantity and version helpers unit-tested (`1.9 <= 1.10` true — a string compare says false). The quota loop tested against a **deliberately short** quota and a healthy one, both directions |
+| **D-36** count, **D-39** spread, **#31**, **#33**, **#34 F-1** | **BUILT** — `scripts/validation/verify-deployed.sh` | Four fixtures: healthy; the quota case (3 Ready, 4th never created); the co-location case (4 Ready, 3 nodes); the D-39 designed failure (4th `Pending`). Each produces the intended verdict |
+| **#31** `eks-auth` | **IMPLEMENTED** | `verify-endpoints.sh --pod-identity` extends the list to 16; exercised both ways |
+
+**Two bugs were found in this code by testing it rather than reading it** — the same lesson
+as B12 and the `jq '// "absent"'` bug, now for the third time:
+
+1. `verify-cluster.sh`'s quota loop was written as `jq … | while read`. A pipe puts the
+   loop body in a **subshell**, so every `bad()` inside it incremented a copy of the
+   counter and the script exited **0 with quota failures printed above it**. Rewritten with
+   process substitution. This is exactly the defect class the section is about, authored
+   into the file meant to catch it.
+2. `verify-deployed.sh` counted distinct nodes with `.spec.nodeName // empty`. `//` fires
+   on `null`, not on `""`, so a pod with an empty `nodeName` counted as its own node and
+   the co-location check would have reported **"4 validators on 4 distinct nodes"** for
+   three scheduled pods — a false PASS on the one question being asked.
+
+**Still to build, and why each waits:**
+
+| Item | Blocked on |
+|---|---|
+| `modules/cluster-contract` (D-41 plan-time ceiling, #38 repository-policy assertion, #31 trust-policy `sub`/`aud` assertion) | Not blocked by a decision — D-25 fixed the hand-over shape — but it needs `eks-handover.auto.tfvars` to exist, and its data sources need a live cluster, so it cannot be exercised until `mimic_eks` (D-32) does. Next in line |
+| `verify-subnet-rules.sh` (D-29, #34) | Writable now, and deliberately not written blind. Ordered NACL evaluation is the most intricate logic in the set, and §9.4 command 3 produces the real rule dumps to test it against. Writing it against imagined input is how the `jq '//'` bug happened |
+| D-42 / D-43 alarms | Genuinely blocked on **#30**: whether we get `PrometheusRule` on their operator or run our own Prometheus decides where the rules live |
+
+**What has not changed:** the chart and script work above is all read-only or
+scheduling-only, so none of it pre-empts a §9.4 answer. The moment an answer arrives it
+changes *values* in a hand-over file, not the gates.

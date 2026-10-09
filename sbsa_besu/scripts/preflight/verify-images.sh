@@ -12,6 +12,29 @@
 #   Run this from somewhere that can reach the registry -- the in-VPC runner is ideal,
 #   since it proves reachability from where the pulls will actually happen.
 #
+# WHAT IT DOES **NOT** PROVE -- READ THIS BEFORE TRUSTING AN EXIT 0  (D-38, #38)
+#   It authenticates as ITSELF: REGISTRY_USER/REGISTRY_PASS below, or the ambient
+#   credentials of whoever runs it. Under CT-5 the pull that actually matters is
+#   kubelet's, performed with the CLOUD TEAM'S NODE ROLE via the ECR credential
+#   provider -- a different principal, evaluated against the repository policy
+#   plus that role's own identity policy, neither of which this script touches.
+#
+#   So this script exits 0 whether or not the cluster can pull. The sentence
+#   above ("the in-VPC runner is ideal") understated it: the RUNNER passes while
+#   the cluster still cannot pull. A check that cannot fail is worse than no
+#   check, because it is trusted (CICD design notes 11.3).
+#
+#   Its exit 0 means: "the images exist in the registry at these digests, and
+#   this host can reach them." Nothing more. #38 is closed by three other things:
+#     - the node role ARN present in each repository policy with
+#       ecr:BatchGetImage / GetDownloadUrlForLayer / BatchCheckLayerAvailability
+#       (asserted at plan time by modules/cluster-contract);
+#     - ecr:GetAuthorizationToken in that role's IDENTITY policy -- no repository
+#       policy can grant it, and one scoped to their own registry account refuses
+#       ours;
+#     - verify-pull-canary.sh -- one pod, one small image, in our namespace. The
+#       only authoritative proof, because it is the only one that pulls as them.
+#
 # WHAT IT DOES
 #   Resolves the image list from Terraform itself (so it can never disagree with
 #   what will be deployed), then for each one asks the registry for the manifest
@@ -33,7 +56,7 @@ ENV_NAME=""
 while getopts "e:h" opt; do
   case "$opt" in
     e) ENV_NAME="$OPTARG" ;;
-    h) sed -n '2,26p' "$0"; exit 0 ;;
+    h) sed -n '2,48p' "$0"; exit 0 ;;
     *) exit 2 ;;
   esac
 done
@@ -137,3 +160,16 @@ fi
 echo
 log "digests for container_images (pin these, then set require_image_digests = true):"
 printf '%s\n' "${RESOLVED[@]}"
+
+# D-38: say the limit out loud at the point of success, not only in the header.
+# An operator reading "PASS" at 2am does not scroll up 40 lines to find the caveat.
+cat <<'SCOPE'
+
+NOTE (#38): this proved the images exist at these digests and that THIS HOST can
+pull them. It did NOT prove the cluster can. Under CT-5 the pull is kubelet's,
+with the cloud team's node role against the repository policy -- a different
+principal this script never exercises. Before the first deploy, run:
+
+    scripts/preflight/verify-pull-canary.sh -n <our-namespace> -i <one image ref>
+
+SCOPE

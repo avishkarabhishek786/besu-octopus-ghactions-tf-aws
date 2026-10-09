@@ -593,8 +593,10 @@ Append a row to `docs/test-run-log.md` for every apply/destroy cycle.
 
 Code written and commented · `terraform fmt` and `validate` pass · docs updated ·
 `plan` shown to the human · `network-contract` assertions pass · `verify-images.sh`
-passes (**and, under CT-5, `cluster-contract` + the four new preflights — `verify-images.sh`
-alone no longer proves the supply chain, D-38**) · and, with human approval, verify-deployed and then torn down within the cost
+passes — **and, under CT-5, so do `verify-cluster.sh`, `verify-admission.sh` and
+`verify-pull-canary.sh`; `verify-images.sh` alone no longer proves the supply chain
+(D-38), and `scripts/validation/verify-deployed.sh` is the post-deploy half (D-36).
+A WARN from any of them is not a pass** · and, with human approval, verify-deployed and then torn down within the cost
 guardrail. Then — and only then — move to the next stage.
 
 ---

@@ -26,6 +26,7 @@
 # Usage:
 #   scripts/preflight/verify-endpoints.sh <vpc-id> [region] [--route-tables rtb-a,rtb-b]
 #                                                           [--addon-account <id>]
+#                                                           [--pod-identity]
 # Example:
 #   scripts/preflight/verify-endpoints.sh vpc-0abc123 af-south-1 \
 #       --route-tables rtb-011,rtb-022,rtb-033
@@ -39,11 +40,15 @@ ROUTE_TABLES=""
 ADDON_ACCOUNT=""
 
 # First positional after the VPC, if it does not look like a flag, is the region.
+POD_IDENTITY=0
 if [[ $# -gt 0 && "${1:0:2}" != "--" ]]; then REGION="$1"; shift; fi
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --route-tables)  ROUTE_TABLES="${2:?}"; shift 2 ;;
     --addon-account) ADDON_ACCOUNT="${2:?}"; shift 2 ;;
+    # #31: the cluster's pod-identity mechanism is the cloud team's choice, not
+    # ours. Pass this when the eks-handover says pod_identity = true.
+    --pod-identity)  POD_IDENTITY=1; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -78,6 +83,22 @@ REQUIRED_INTERFACE=(
   logs monitoring
   sns sqs
 )
+
+# -----------------------------------------------------------------------------
+# #31 / D-14 — eks-auth is CONDITIONAL, and the condition is not ours to set.
+# -----------------------------------------------------------------------------
+# D-14 dropped eks-auth on the reasoning "we use IRSA, not Pod Identity". Under
+# CT-5 we do not choose: the cluster is the cloud team's and so is the mechanism
+# (#31). If it is EKS Pod Identity, the agent on their nodes reaches the
+# eks-auth endpoint -- and in this VPC a missing endpoint does not error, it
+# HANGS until timeout (prime directive 2), presenting as pods that start and
+# then cannot obtain credentials for no stated reason.
+#
+# Driven by a flag rather than hand-edited into the array above, so the list
+# cannot drift from the hand-over value that decides it.
+if [[ "${POD_IDENTITY:-0}" -eq 1 ]]; then
+  REQUIRED_INTERFACE+=(eks-auth)
+fi
 
 # Endpoints whose Private DNS is not merely desirable but load-bearing: without
 # it the service hostname resolves to a PUBLIC address this VPC cannot route to.

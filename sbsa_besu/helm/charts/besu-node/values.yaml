@@ -229,6 +229,18 @@ resources:
 topologySpread:
   enabled: true
 
+# D-39: one validator per NODE, enforced by required podAntiAffinity rather than
+# by a spread constraint — maxSkew=1 on hostname permits 2/1/1 across three
+# nodes, so a spread constraint cannot express "never two on one node" however
+# it is tuned. Applies to role=validator only; the RPC/bootnode pools cast no
+# QBFT votes and must stay schedulable.
+#
+# Set false ONLY with the consequence understood: two validators may then share
+# a node, one drain removes 2 of 4, the chain HALTS (H1), and nothing reports the
+# co-location beforehand.
+antiAffinity:
+  requireDistinctNodes: true
+
 # --- RPC CORS (H23) ----------------------------------------------------------
 # Value for --rpc-http-cors-origins on every RPC listener (was hardcoded "*"). All
 # our RPC planes are reached SERVER-SIDE (SWIFT client, Blockscout backend, the app's

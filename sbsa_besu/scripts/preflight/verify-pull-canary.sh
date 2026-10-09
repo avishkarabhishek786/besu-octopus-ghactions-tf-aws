@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# =============================================================================
+# verify-pull-canary.sh — can THE CLUSTER pull from our registry?  (#38, D-38)
+# -----------------------------------------------------------------------------
+# READ-ONLY to everything that matters; creates and deletes exactly one Pod in
+# our own namespace. Free. About thirty seconds.
+#
+# WHY IT EXISTS
+#   verify-images.sh proves the images exist and that the HOST RUNNING IT can
+#   pull them. It authenticates as itself. Under CT-5 the pull that matters is
+#   kubelet's, with the cloud team's node role via the ECR credential provider:
+#   a different principal, evaluated against the repository policy and that
+#   role's own identity policy. verify-images.sh never exercises either, and
+#   exits 0 regardless — the exact "check that cannot fail" this programme has
+#   already been bitten by once (CICD design notes 11.3).
+#
+#   The only way to prove the cluster can pull is to make the cluster pull. One
+#   pod, one small image, our namespace, before anything expensive exists.
+#
+# WHAT A FAILURE MEANS
+#   Distinguishing the causes matters, because they land on different desks:
+#     - ImagePullBackOff with "no basic auth credentials" / "authorization
+#       token"  -> the node role lacks ecr:GetAuthorizationToken in its IDENTITY
+#       policy. No repository policy can grant this. Cloud team (#38).
+#     - ImagePullBackOff with "denied" / "not authorized to perform"
+#       -> the repository policy does not grant their node role. Ours to fix in
+#       the shared-services account (#38), or theirs if ECR is managed centrally.
+#     - ImagePullBackOff with "manifest unknown" -> the digest is not mirrored.
+#       Ours: run the mirror (D-18, by digest only).
+#     - The pull STALLS with no event text at all -> a network cause, not an
+#       authorisation one: the S3 layer-bucket policy (#20), Private DNS on
+#       ecr.api/ecr.dkr (#22), or the ECR endpoint policy scoped to one account
+#       (#23). Run verify-endpoints.sh. In this VPC these HANG, they do not error.
+#
+# Usage:
+#   scripts/preflight/verify-pull-canary.sh -n <namespace> -i <image-ref> [-t secs]
+#
+# The image ref should be one we already mirror — a tools/busybox-class image is
+# ideal because it is small and we are testing the PATH, not the image. Take it
+# from `verify-images.sh -e <env>` output so the two agree on the digest.
+# =============================================================================
+set -euo pipefail
+
+NS=""; IMAGE=""; TIMEOUT=120
+while getopts "n:i:t:h" opt; do
+  case "$opt" in
+    n) NS="$OPTARG" ;;
+    i) IMAGE="$OPTARG" ;;
+    t) TIMEOUT="$OPTARG" ;;
+    h) sed -n '2,45p' "$0"; exit 0 ;;
+    *) exit 2 ;;
+  esac
+done
+
+# No defaults for either. A defaulted namespace would test a namespace the
+# operator is not deploying into; a defaulted image would test an image we do
+# not ship. Both would produce a confident PASS about the wrong thing.
+[[ -n "$NS"    ]] || { echo "usage: verify-pull-canary.sh -n <namespace> -i <image-ref> [-t secs]" >&2; exit 2; }
+[[ -n "$IMAGE" ]] || { echo "usage: verify-pull-canary.sh -n <namespace> -i <image-ref> [-t secs]" >&2; exit 2; }
+
+command -v kubectl >/dev/null || { echo "kubectl is required" >&2; exit 1; }
+
+POD="pull-canary-$$"
+ok()   { printf '  \033[32mPASS\033[0m  %s\n' "$*"; }
+bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$*" >&2; }
+note() { printf '        %s\n' "$*"; }
+
+# Always remove the canary, including on Ctrl-C or a failed wait. A leaked pod in
+# ImagePullBackOff retries forever and would be read by the next operator as a
+# live incident rather than the residue of a test.
+cleanup() { kubectl -n "$NS" delete pod "$POD" --ignore-not-found --wait=false >/dev/null 2>&1 || true; }
+trap cleanup EXIT INT TERM
+
+printf '\n=== #38 registry pull canary ===\n'
+note "namespace: $NS"
+note "image:     $IMAGE"
+echo
+
+# `command: ["false"]` would make the pod Error after a SUCCESSFUL pull, which is
+# indistinguishable from what we want to measure. Sleep briefly instead: Running
+# (or Completed) both prove the image was pulled, which is the only question.
+if ! kubectl -n "$NS" run "$POD" \
+      --image="$IMAGE" --restart=Never \
+      --command -- /bin/sh -c 'exit 0' >/dev/null 2>&1; then
+  # A refusal HERE is admission, not the registry — PSA (#27) or RBAC (#32).
+  bad "the API server refused to create the canary pod. This is NOT a registry failure."
+  note "Most likely Pod Security (#27) or the access entry's RBAC (#32)."
+  note "Re-run with -v to see it:  kubectl -n $NS run $POD --image=$IMAGE --restart=Never"
+  exit 1
+fi
+
+# Wait for ANY terminal-for-our-purposes state. We cannot use `kubectl wait
+# --for=condition=Ready` alone: a pod that pulled and exited 0 is Succeeded and
+# never becomes Ready, and a pod stuck in ImagePullBackOff never becomes
+# anything — so wait on the pull, not on the pod.
+PULLED=0; REASON=""; MSG=""
+deadline=$(( $(date +%s) + TIMEOUT ))
+while [[ $(date +%s) -lt $deadline ]]; do
+  phase=$(kubectl -n "$NS" get pod "$POD" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+  REASON=$(kubectl -n "$NS" get pod "$POD" \
+            -o jsonpath='{.status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || echo "")
+  MSG=$(kubectl -n "$NS" get pod "$POD" \
+            -o jsonpath='{.status.containerStatuses[0].state.waiting.message}' 2>/dev/null || echo "")
+  case "$phase" in
+    Running|Succeeded) PULLED=1; break ;;
+  esac
+  # Terminal pull failures: stop waiting, we already have the answer.
+  case "$REASON" in
+    ImagePullBackOff|ErrImagePull|InvalidImageName|RegistryUnavailable) break ;;
+  esac
+  sleep 3
+done
+
+echo
+if [[ "$PULLED" -eq 1 ]]; then
+  ok "the cluster pulled $IMAGE"
+  note "This is the only check that proves the NODE ROLE can pull (#38)."
+  note "It does not prove the other images are mirrored — that is verify-images.sh."
+  exit 0
+fi
+
+bad "#38 VIOLATED: the cluster could NOT pull $IMAGE"
+note "waiting reason: ${REASON:-<none — the pull STALLED, which in this VPC is the network class>}"
+[[ -n "$MSG" ]] && note "kubelet said: $MSG"
+echo
+# Classify, because the three causes go to three different places.
+case "$MSG" in
+  *"no basic auth"*|*"authorization token"*|*"GetAuthorizationToken"*)
+    note "CAUSE: the node role lacks ecr:GetAuthorizationToken in its IDENTITY policy."
+    note "       No repository policy can grant this. -> cloud team, #38." ;;
+  *denied*|*"not authorized"*|*AccessDenied*)
+    note "CAUSE: the repository policy does not grant their node role pull."
+    note "       Needs ecr:BatchGetImage, GetDownloadUrlForLayer, BatchCheckLayerAvailability."
+    note "       -> our shared-services account, or theirs if ECR is central. #38." ;;
+  *"manifest unknown"*|*"not found"*|*MANIFEST_UNKNOWN*)
+    note "CAUSE: that digest is not in the registry. -> run the mirror (D-18, by digest)." ;;
+  *)
+    note "CAUSE: no authorisation error was reported, which points at the NETWORK, not the policy:"
+    note "       the S3 layer-bucket policy (#20), Private DNS on ecr.api/ecr.dkr (#22),"
+    note "       or an ECR endpoint policy scoped to one account (#23)."
+    note "       Next: scripts/preflight/verify-endpoints.sh <vpc-id> <region> --route-tables <ids>" ;;
+esac
+echo
+note "Recent events (the authoritative text):"
+kubectl -n "$NS" describe pod "$POD" 2>/dev/null | sed -n '/^Events:/,$p' | sed 's/^/        /' || true
+exit 1

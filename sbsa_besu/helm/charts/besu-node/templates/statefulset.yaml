@@ -63,10 +63,43 @@ spec:
         fsGroup: 1000 # besu runs as uid 1000; lets it read the CSI key + write the PVC
         seccompProfile:
           type: RuntimeDefault # H14: default syscall filter for all containers in the pod
+      {{- /* D-39: ONE VALIDATOR PER NODE IS A HARD CONSTRAINT, NOT A PREFERENCE.
+             A topologySpreadConstraint cannot express it. maxSkew=1 on
+             kubernetes.io/hostname permits a 2/1/1 placement across three nodes,
+             because a skew of 1 is exactly what maxSkew=1 allows — so even with
+             whenUnsatisfiable: DoNotSchedule, two validators can share a node.
+             Required podAntiAffinity is the only form that forbids it outright.
+
+             Why it matters: two validators on one node means a single drain
+             removes 2 of 4 and the chain HALTS (H1), and NOTHING REPORTS THE
+             CO-LOCATION. Four Running pods on three nodes looks exactly like
+             four Running pods on four nodes. Under CT-5 the nodes are the cloud
+             team's and we do not control how many we get (#28), which is what
+             turned this from a theoretical risk into a decision.
+
+             Accepted trade-off: with fewer schedulable nodes than validators the
+             last pod stays Pending forever. That is the point — Pending is loud
+             and arrives before go-live; co-location is found during an incident.
+             Escape hatch: antiAffinity.requireDistinctNodes=false (module var
+             validator_require_distinct_nodes), which re-opens exactly this gap. */ -}}
+      {{- $hardSpread := and (eq .Values.role "validator") .Values.antiAffinity.requireDistinctNodes }}
+      {{- if $hardSpread }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  besu.role: {{ .Values.role }}
+      {{- end }}
       {{- if .Values.topologySpread.enabled }}
       # Spread pods of the SAME role across AZs and nodes (matches across the
       # per-node releases via the besu.role label). Best-effort so scheduling
       # never blocks, but validators land in distinct AZs when capacity allows.
+      #
+      # The ZONE constraint stays best-effort on purpose: 4 validators over 3 AZs
+      # can never be evenly spread, so DoNotSchedule here would wedge the fourth
+      # pod permanently. Losing a zone still leaves a 2F+1 quorum at 2/1/1.
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
@@ -74,12 +107,17 @@ spec:
           labelSelector:
             matchLabels:
               besu.role: {{ .Values.role }}
+        {{- if not $hardSpread }}
+        # Subsumed by the required podAntiAffinity above when $hardSpread is set;
+        # rendering both would state the same intent in two mechanisms, one of
+        # which does not actually enforce it.
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
               besu.role: {{ .Values.role }}
+        {{- end }}
       {{- end }}
       volumes:
         - name: genesis

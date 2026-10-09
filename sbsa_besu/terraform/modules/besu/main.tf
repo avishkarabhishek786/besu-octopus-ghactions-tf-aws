@@ -125,6 +125,9 @@ locals {
         jwtPubkeySecret = var.ops_rpc_jwt_pubkey_secret_name
         allowNoJwt      = var.ops_rpc_allow_no_jwt # H6: escape hatch for the JWT precondition
       }
+      # D-39: hard one-validator-per-node. Role-gated in the chart, so passing it
+      # for every node keeps this map byte-identical across both node resources.
+      antiAffinity = { requireDistinctNodes = var.validator_require_distinct_nodes }
       # H6: per-role NetworkPolicy ingress lockdown (default disabled; see var.network_policy).
       networkPolicy = var.network_policy
       # Stage 9: explorer-rpc pool (only takes effect for role=explorer-rpc).

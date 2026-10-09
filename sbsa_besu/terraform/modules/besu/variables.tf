@@ -358,3 +358,26 @@ variable "network_policy" {
   })
   default = {}
 }
+
+# -----------------------------------------------------------------------------
+# D-39 — one validator per node, as a hard scheduling constraint.
+# -----------------------------------------------------------------------------
+# Rendered as required podAntiAffinity on kubernetes.io/hostname for role=validator.
+# NOT a topologySpreadConstraint: maxSkew=1 on hostname permits a 2/1/1 placement
+# across three nodes, so no tuning of a spread constraint can express "never two
+# on one node".
+#
+# Why it is a decision rather than a default: two validators on one node means a
+# single node drain removes 2 of 4 and the chain HALTS (H1) — and the co-location
+# is SILENT. Four Running pods on three nodes is indistinguishable from four on
+# four. Under CT-5 the node count is the cloud team's (#28), so we can no longer
+# make the co-location impossible by sizing.
+#
+# Leaving it true can leave the fourth validator Pending when fewer than four
+# nodes are schedulable. That is the intended failure: Pending is loud and shows
+# up before go-live, co-location is discovered during an incident.
+variable "validator_require_distinct_nodes" {
+  description = "D-39: require each validator on a distinct node (required podAntiAffinity on hostname). Setting false permits two validators per node, which makes a single drain a chain halt with no prior signal."
+  type        = bool
+  default     = true
+}

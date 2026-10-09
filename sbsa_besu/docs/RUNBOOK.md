@@ -349,6 +349,41 @@ Only once the registry is populated and `scripts/preflight/verify-images.sh -e s
 > and kubelet pulls as the cloud team's node role. `verify-images.sh` cannot see that
 > difference. The gate that can is a **canary pod** in our namespace (#38) — redesign notes
 > §12.13.
+>
+> **The CT-5 preflight sequence, all from the runner, all read-only, all free** (built
+> 2026-10-09; each failure cites a requirement number from
+> `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.3):
+>
+> ```bash
+> # 1. the cluster-side contract: version ceiling, CRDs + controllers, StorageClass,
+> #    quota headroom, access scope (including what we must NOT be able to do), CNI policy
+> scripts/preflight/verify-cluster.sh -n <ledger-ns> -a <app-ns> -s <storageclass>
+>
+> # 2. will the namespace actually ACCEPT our pods? (Pod Security, quota, LimitRange,
+> #    RBAC, missing CRDs — all in one server-side dry-run)
+> helm template <release> helm/charts/besu-node -f <values> > /tmp/rendered.yaml
+> scripts/preflight/verify-admission.sh -n <ledger-ns> -f /tmp/rendered.yaml
+>
+> # 3. can THE CLUSTER pull, as opposed to can WE pull? (#38 — the only authoritative form)
+> scripts/preflight/verify-pull-canary.sh -n <ledger-ns> -i <one mirrored image ref>
+>
+> # 4. the endpoints — add --pod-identity if #31 answered Pod Identity, or eks-auth is
+> #    missing and the symptom is a credential call that HANGS
+> scripts/preflight/verify-endpoints.sh <vpc-id> af-south-1 --route-tables <ids> [--pod-identity]
+> ```
+>
+> **After deploying**, the assertions that are only observable then — and three of which
+> look like success until asserted:
+>
+> ```bash
+> scripts/validation/verify-deployed.sh -n <ledger-ns> -N 4 \
+>     -R <our-irsa-role-arn-substring> -g <target-group-arn> -r <ops-rpc-url> -j <jwt> \
+>     --probe-netpol
+> ```
+>
+> **Do not read a skipped assertion as a pass.** `verify-deployed.sh` counts anything it
+> could not evaluate as a WARN and says so in its summary, because a check that cannot fail
+> is worse than no check (CICD §11.3).
 
 **Two decisions needed first:**
 
