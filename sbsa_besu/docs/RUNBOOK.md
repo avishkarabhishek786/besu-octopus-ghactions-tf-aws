@@ -1,8 +1,8 @@
 # RUNBOOK — building the SBSA Besu platform on a cloud-team VPC
 
 **Status:** 2026-09-21 · **CT-5: the cloud team provides a shared EKS cluster and a namespace — we no
-longer build EKS.** Design record `CLOUD_TEAM_REDESIGN_NOTES.md` §12; asks `NETWORK_REQUIREMENTS_CLOUD_TEAM.md`
-§9 (#27–#38). Phases B, C and E.1 (the R-9 mock) stand; **Phase D is paused at item 4** until §9 is answered
+longer build EKS.** Design record `CLOUD_TEAM_REDESIGN_NOTES.md` §12; asks `CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md`
+(#27–#38). Phases B, C and E.1 (the R-9 mock) stand; **Phase D is paused at item 4** until it is answered
 (see §2). Branch `shared-eks-namespace`; the own-cluster build is frozen on `own-eks-cluster-design`.
 The three projects live in one repository since 2026-09-18 (§1).
 **Audience:** the operator. Deployment is **advise-only** — this document tells
@@ -11,7 +11,7 @@ you what to run; nothing is executed for you.
 ---
 
 > **Looking for which script to run?** [`../scripts/README.md`](../scripts/README.md) is the
-> index: all 31, what each does, **where it has to run** (laptop vs in-VPC runner vs build
+> index: all 31, what each does, **where it has to run** (laptop vs In-VPC EC2 Runner vs build
 > host — not a preference; the API endpoint is private and the VPC has no egress), and
 > whether it is read-only, mutating, or irreversible. The detail is in each script's own
 > header, which `-h` prints.
@@ -101,8 +101,8 @@ cluster hand-over (`eks-handover.auto.tfvars`), a `modules/cluster-contract` tha
 a `verify-subnet-rules.sh` preflight for the nine flows in §12.4 of the redesign notes, and a
 third mimic, `mimic_eks`. The E.1 result (runner + Tentacle + egress) is unchanged and more
 important, not less: the runner is the only host that can ask the cluster-side questions.
-**Nothing is rebuilt until `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9 is answered** — the three
-command outputs in §9.4 decide which files are deleted versus made conditional. The one item
+**Nothing is rebuilt until `CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md` is answered** — the three
+command outputs in shared-cluster requirements §4 decide which files are deleted versus made conditional. The one item
 that is not configuration: **#29, a written node-maintenance agreement** — their node rotation
 can halt the chain (H1), and no setting on our side prevents it.
 
@@ -336,7 +336,7 @@ billable_endpoint_eni_count` states the number plainly.
 ## Phase E — First deploy-test (billable)
 
 Only once the registry is populated and `scripts/preflight/verify-images.sh -e sit` passes
-**from the in-VPC runner** (under CT-3a the registry is ECR, populated by an explicit
+**from the In-VPC EC2 Runner** (under CT-3a the registry is ECR, populated by an explicit
 `crane copy` mirror — ECR pull-through cache cannot work here, see D-17).
 
 > **`-e` is required** and takes `sit` | `uat` | `prod`. It lost its default on 2026-09-09:
@@ -358,7 +358,7 @@ Only once the registry is populated and `scripts/preflight/verify-images.sh -e s
 >
 > **The CT-5 preflight sequence, all from the runner, all read-only, all free** (built
 > 2026-10-09; each failure cites a requirement number from
-> `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.3):
+> `CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md` §3):
 >
 > ```bash
 > # 1. the cluster-side contract: version ceiling, CRDs + controllers, StorageClass,
@@ -526,7 +526,7 @@ more. Lead the next cloud-team conversation with it.
 | **Q-4a..Q-4e (ECR)** | ⬜ Blocks Phase D image work. Need written confirmation that ECR is the registry, the ECR account topology, any CVE-gating requirement, and who owns the mirror pipeline. See `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §8.4. |
 | ~~Q-5 golden AMI~~ | **Moot under CT-5** — the nodes are the cloud team's. |
 | ~~Q-2 central endpoints~~ | **Answered by CT-5** — their cluster already needs every endpoint we do; `shared` creates none in the bank (CD-39). The ~$400/mo is not ours either way. |
-| **Q-8..Q-18 (CT-5)** | ⬜ **Blocks the rebuild.** App estate in this cluster? IRSA or Pod Identity? NACLs or SGs? node-SG rule or SGP? PSA level? which add-ons exist? node-rotation policy? IP headroom? LBC policy tag condition? cluster-wide PSA? All answered by the four command outputs in `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.4. Record: `CLOUD_TEAM_REDESIGN_NOTES.md` §12.11; the per-requirement detection table is §9.6 / §12.13. |
+| **Q-8..Q-18 (CT-5)** | ⬜ **Blocks the rebuild.** App estate in this cluster? IRSA or Pod Identity? NACLs or SGs? node-SG rule or SGP? PSA level? which add-ons exist? node-rotation policy? IP headroom? LBC policy tag condition? cluster-wide PSA? All answered by the four command outputs in `CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md` §4. Record: `CLOUD_TEAM_REDESIGN_NOTES.md` §12.11; the per-requirement detection table is shared-cluster requirements §6 / §12.13. |
 
 ## 6. Quick reference
 

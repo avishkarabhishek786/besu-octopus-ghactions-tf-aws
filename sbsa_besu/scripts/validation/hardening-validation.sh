@@ -7,7 +7,7 @@
 #
 #   * It does NOT create infrastructure.
 #   * It does NOT tear anything down.
-#   * It discovers the live chain + the in-VPC runner, then runs the checks that
+#   * It discovers the live chain + the In-VPC EC2 Runner, then runs the checks that
 #     apply (gated off your tfvars) and prints a PASS/FAIL/SKIP summary.
 #
 # PROD-SAFE BY DEFAULT — nothing here mutates the running deployment:
@@ -185,7 +185,7 @@ _read_tfvar() { [ -f "$1" ] || return 1; grep -E "^[[:space:]]*$2[[:space:]]*=" 
 cfg() { local v=""; v="$(_read_tfvar "$OVERLAY" "$1" || true)"; [ -n "$v" ] || v="$(_read_tfvar "$TFVARS" "$1" || true)"; [ -n "$v" ] || v="${2:-}"; printf '%s' "$v"; }
 
 # ---------------------------------------------------------------------------
-# SSM runner driver.  ssm_run "<cmd>" [timeout] -> sets SSM_RC / SSM_OUT / SSM_ERR
+# In-VPC EC2 Runner driver.  ssm_run "<cmd>" [timeout] -> sets SSM_RC / SSM_OUT / SSM_ERR
 # ---------------------------------------------------------------------------
 SSM_RC=0; SSM_OUT=""; SSM_ERR=""
 ssm_run() {
@@ -251,7 +251,7 @@ discover_infra() {
   ok "cluster $CLUSTER is up"
 
   if [ -z "$RUNNER_ID" ]; then
-    step "discovering the in-VPC runner" "no runner => the private EKS plane is unreachable. Bring up terraform/runner, or pass --runner-id."
+    step "discovering the In-VPC EC2 Runner" "no runner => the private EKS plane is unreachable. Bring up terraform/runner, or pass --runner-id."
     RUNNER_ID="$(cd terraform/runner 2>/dev/null && terraform output -raw runner_instance_id 2>/dev/null || true)"
     [ -n "$RUNNER_ID" ] || RUNNER_ID="$(aws ec2 describe-instances --region "$REGION" \
       --filters "Name=instance-state-name,Values=running" "Name=tag:Name,Values=*runner*" \

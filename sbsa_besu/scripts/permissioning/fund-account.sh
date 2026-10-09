@@ -36,7 +36,7 @@
 #   NAMESPACE         k8s namespace (default besu); AWS_REGION for the secret
 #
 # Needs `cast` (Foundry) on the runner: curl -L https://foundry.paradigm.xyz | bash && foundryup
-# RUN FROM the in-VPC runner (private EKS endpoint). See _perm-lib.sh header.
+# RUN FROM the In-VPC EC2 Runner (private EKS endpoint). See _perm-lib.sh header.
 # =============================================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_perm-lib.sh"   # log/ok/err/die, need, valid_addr, cm_addrs, sm_get, NAMESPACE

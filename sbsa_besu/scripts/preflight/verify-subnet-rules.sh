@@ -334,7 +334,7 @@ else
     check_flow "F-5" "pods ${NODE_CIDRS[$i]} -> endpoints ${EP_CIDRS[0]}" \
       "${NODE_CIDRS[$i]}" "${NODE_IDS[$i]}" "${EP_CIDRS[0]}" "${EP_IDS[0]}" tcp 443 eph
   done
-  [[ -n "$RN_CIDR" ]] && check_flow "F-5" "admin instance -> endpoints" \
+  [[ -n "$RN_CIDR" ]] && check_flow "F-5" "In-VPC EC2 Runner -> endpoints" \
     "$RN_CIDR" "$RUNNER" "${EP_CIDRS[0]}" "${EP_IDS[0]}" tcp 443 eph
 fi
 
@@ -377,21 +377,21 @@ else
   done
 fi
 
-sec "F-8  administrative instance -> egress proxy (R-10)"
+sec "F-8  In-VPC EC2 Runner -> egress proxy (R-10)"
 if [[ -z "$PROXY" || -z "$RN_CIDR" ]]; then
   skip "F-8 — needs --proxy <cidr>:<port> and --runner <subnet>"
 else
   PC="${PROXY%%:*}"; PP="${PROXY##*:}"
   racl="$(nacl_of "$RUNNER")"
   if [[ -z "$racl" ]]; then
-    skip "F-8 — no NACL on the administrative instance's subnet"
+    skip "F-8 — no NACL on the In-VPC EC2 Runner's subnet"
   else
     r="$(nacl_eval "$racl" 1 tcp "$PP" "$PC")"
     IFS=$'\t' read -r v rule rc cov <<<"$r"
     if [[ "$v" == allow ]]; then
       ok "F-8 admin -> $PC:$PP (rule $rule, $cov coverage)"
     else
-      bad "#34 F-8 BLOCKED: admin instance cannot reach the egress proxy $PC:$PP ($v)"
+      bad "#34 F-8 BLOCKED: In-VPC EC2 Runner cannot reach the egress proxy $PC:$PP ($v)"
       note "Without it the Octopus polling Tentacle cannot register (CD-55/CD-57) and"
       note "every deployment stops — but the chain itself is unaffected, so this one"
       note "fails loudly in the pipeline rather than silently in the ledger."

@@ -35,7 +35,7 @@
 # reverted on the next `terraform apply`/`helm upgrade`. To persist an onboarding,
 # ALSO add the address to initial_account_allowlist in the env tfvars.
 #
-# RUN FROM the in-VPC runner (private EKS endpoint), repo root, after
+# RUN FROM the In-VPC EC2 Runner (private EKS endpoint), repo root, after
 #   `aws eks update-kubeconfig --name <cluster> --region <region>`.
 # =============================================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

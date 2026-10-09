@@ -3,7 +3,7 @@
 > **⚠️ WITHDRAWN 2026-09-21 — DO NOT SEND (CT-5, D-30).** The cloud team provides a shared
 > EKS cluster and a namespace, and their VPC already has role-separated subnets. We no
 > longer request or lay out address space: our ask is a `ResourceQuota`, not a CIDR
-> (`NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.1). CD-42..CD-45 are withdrawn with it.
+> (`CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md` §1). CD-42..CD-45 are withdrawn with it.
 >
 > **Kept as the single surviving record of the sizing analysis** — the arithmetic here is
 > still correct and still the best explanation of why EKS consumes addresses faster than

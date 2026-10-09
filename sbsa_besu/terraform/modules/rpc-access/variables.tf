@@ -66,7 +66,7 @@ variable "rpc_port" {
 }
 
 variable "swift_sipn_allowed_cidrs" {
-  description = "Source CIDRs permitted to reach the RPC NLB (SWIFT SIPN ranges; in non-prod set to the VPC CIDR so the in-VPC runner can test)."
+  description = "Source CIDRs permitted to reach the RPC NLB (SWIFT SIPN ranges; in non-prod set to the VPC CIDR so the In-VPC EC2 Runner can test)."
   type        = list(string)
   default     = []
 }

@@ -23,7 +23,7 @@ Not a preference. Three different hosts can each do things the others cannot:
 | Host | Can reach | Cannot reach |
 |---|---|---|
 | **Laptop** | AWS APIs, the internet, public registries | the **private EKS API**, and the registry *as the cluster sees it* |
-| **In-VPC runner** | the private EKS API, AWS via VPC endpoints, ECR over the endpoints | the internet (no IGW, no NAT) |
+| **In-VPC EC2 Runner** | the private EKS API, AWS via VPC endpoints, ECR over the endpoints | the internet (no IGW, no NAT) |
 | **Build host / CI** (outside the VPC) | public registries, ECR push | anything inside the VPC |
 
 So: anything using `kubectl` or `helm` **must** run on the runner, because the API
@@ -106,7 +106,7 @@ semantics. All of these run **on the runner** (private EKS endpoint) and all **m
 | `access/sign-client-csr.sh` | laptop | read-only (writes a cert locally) | Sign SWIFT's CSR with our CA. **The default flow:** SWIFT's private key never leaves SWIFT | §1 |
 | `access/make-join-pack.sh` | laptop | read-only | Build the bundle handed to SWIFT: CA cert, client cert, endpoint, permitted methods, a method-scoped JWT, and a README | §2.5 |
 
-## `runner/` — bootstrapping the in-VPC runner
+## `runner/` — bootstrapping the In-VPC EC2 Runner
 
 | Script | Run from | Effect | What it does | Record |
 |---|---|---|---|---|

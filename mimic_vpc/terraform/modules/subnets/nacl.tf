@@ -12,7 +12,7 @@
 #   because it is trusted (B12, CICD §11.3).
 #
 #   Deny-by-default, permitting only the flows in requirement #34 (F-1..F-10) —
-#   the canonical table in sbsa_besu/docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md.
+#   the canonical table in sbsa_besu/docs/CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md.
 #
 # -----------------------------------------------------------------------------
 # WHAT WE LEARNED BUILDING THIS, AND IT MATTERS FOR THE DESIGN
@@ -129,9 +129,9 @@ locals {
         [{ n = 170, proto = "udp", from = 53, to = 53, cidr = var.vpc_cidr, flow = "F-10 DNS" }],
         [{ n = 175, proto = "tcp", from = 53, to = 53, cidr = var.vpc_cidr, flow = "F-10 DNS over TCP" }],
         # F-7 and F-8 ride the workload subnets because that is where the
-        # administrative instance lives (CT-1a leaves its subnet to them).
-        [for c in(local.wide ? local.role_cidrs["app"] : [var.vpc_cidr]) : { n = 180, proto = "tcp", from = 443, to = 443, cidr = c, flow = "F-7 administrative instance -> cluster API (control-plane ENIs)" }],
-        var.egress_proxy_cidr == "" ? [] : [{ n = 190, proto = "tcp", from = var.egress_proxy_port, to = var.egress_proxy_port, cidr = var.egress_proxy_cidr, flow = "F-8 administrative instance -> egress proxy (R-10)" }],
+        # In-VPC EC2 Runner lives (CT-1a leaves its subnet to them).
+        [for c in(local.wide ? local.role_cidrs["app"] : [var.vpc_cidr]) : { n = 180, proto = "tcp", from = 443, to = 443, cidr = c, flow = "F-7 In-VPC EC2 Runner -> cluster API (control-plane ENIs)" }],
+        var.egress_proxy_cidr == "" ? [] : [{ n = 190, proto = "tcp", from = var.egress_proxy_port, to = var.egress_proxy_port, cidr = var.egress_proxy_cidr, flow = "F-8 In-VPC EC2 Runner -> egress proxy (R-10)" }],
       )
     }
 

@@ -172,7 +172,7 @@ else
   for m in "${MISSING[@]}"; do
     case "$m" in
       ssm|ssmmessages|ec2messages)
-        bad "  ^ '$m' is one of the SSM trio: Session Manager is the ONLY path to the admin instance, which is the only path into the cluster. Nothing can be bootstrapped without it." ;;
+        bad "  ^ '$m' is one of the SSM trio: Session Manager is the ONLY path to the In-VPC EC2 Runner, which is the only path into the cluster. Nothing can be bootstrapped without it." ;;
       ecr.api|ecr.dkr)
         bad "  ^ '$m' carries every container image pull. Every pod stays in ImagePullBackOff." ;;
       kms)

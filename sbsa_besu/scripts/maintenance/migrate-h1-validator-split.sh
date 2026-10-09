@@ -17,7 +17,7 @@
 # This script re-homes each validator release in STATE FIRST, so the subsequent
 # apply sees them as unchanged (moved, not recreated). It is:
 #   * STATE-ONLY — `terraform state list` / `state mv`; it makes NO cluster calls,
-#     so it can run from the laptop or the in-VPC runner (wherever the backend
+#     so it can run from the laptop or the In-VPC EC2 Runner (wherever the backend
 #     state is initialized).
 #   * IDEMPOTENT — a no-op when there are no legacy validator addresses (fresh
 #     state or already migrated). Non-validator releases (bootnode/rpc/app-rpc/

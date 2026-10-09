@@ -8,7 +8,7 @@
 #   EFFECTIVE permissions are the INTERSECTION of its identity policy and its
 #   boundary. Nothing here gives any role a permission it did not already have.
 #
-# WHY (the H5 finding): the in-VPC runner must be able to create IAM roles — it
+# WHY (the H5 finding): the In-VPC EC2 Runner must be able to create IAM roles — it
 #   runs `terraform apply` for the whole stack. Before this file, "can create a
 #   role" meant "can create an ADMIN role and pass it to EC2/Lambda", i.e. anyone
 #   with `ssm:StartSession` on the runner effectively had FULL ACCOUNT TAKEOVER

@@ -19,7 +19,7 @@
 #   It is sourced in place from sbsa_besu/terraform/modules/eks. §12.6 says that
 #   directory MOVES here and is deleted from the platform — but it has not moved
 #   yet, because sbsa_besu/terraform/chain/main.tf:101 still sources it and the
-#   CT-5 banner is explicit that nothing is removed until §9.4 is answered.
+#   CT-5 banner is explicit that nothing is removed until shared-cluster requirements §4 is answered.
 #   A copy would be a second source of truth and would drift. At cutover the
 #   directory moves and only the `source` below changes.
 #
@@ -198,7 +198,7 @@ resource "aws_security_group_rule" "node_rpc" {
 }
 
 # -----------------------------------------------------------------------------
-# #32 / D-34 — the access entry for the administrative instance.
+# #32 / D-34 — the access entry for the In-VPC EC2 Runner.
 # -----------------------------------------------------------------------------
 # hostile grants CLUSTER ADMIN. That is the silent direction of #32: it works
 # exactly as well as a scoped grant, so nothing ever reports it, and only a check

@@ -3,7 +3,7 @@
 > **Throwaway fixture.** Delete this project when the real shared cluster exists.
 > Produced for CT-5 / **D-32**; the design record is
 > `../sbsa_besu/docs/CLOUD_TEAM_REDESIGN_NOTES.md` **§12**, and the requirements it
-> reproduces are **§9.3 #27–#39** of `NETWORK_REQUIREMENTS_CLOUD_TEAM.md`.
+> reproduces are **§3 #27–#39** of `CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md`.
 
 ---
 
@@ -119,7 +119,7 @@ manifests/      generated, gitignored
 **The cluster module is NOT copied here.** It is sourced in place from
 `../sbsa_besu/terraform/modules/eks`. §12.6 says that directory moves here and is deleted
 from the platform — but it has not moved, because `sbsa_besu/terraform/chain/main.tf:101`
-still sources it and the CT-5 banner is explicit that **nothing is removed until §9.4 is
+still sources it and the CT-5 banner is explicit that **nothing is removed until shared-cluster requirements §4 is
 answered**. A copy would be a second source of truth and would drift. At cutover the
 directory moves and only the `source` line changes.
 

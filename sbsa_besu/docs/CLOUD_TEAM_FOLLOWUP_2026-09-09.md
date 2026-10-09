@@ -142,8 +142,8 @@ The deployment would then split:
 | Layer | Runs where | Loses anything? |
 |---|---|---|
 | AWS-API Terraform (network, EKS, IAM, KMS, secrets) | **Octopus Cloud hosted worker** | No |
-| In-cluster Helm releases, in-cluster Terraform | **In-VPC admin instance, by an operator** | Yes — see below |
-| **Validator upgrades** | **In-VPC admin instance, by an operator** | **Yes, and this is the one that matters** |
+| In-cluster Helm releases, in-cluster Terraform | **In-VPC In-VPC EC2 Runner, by an operator** | Yes — see below |
+| **Validator upgrades** | **In-VPC In-VPC EC2 Runner, by an operator** | **Yes, and this is the one that matters** |
 
 **The cost, stated plainly.** The chain runs QBFT with 4 validators. It needs 3 to produce
 blocks, so **exactly one may be down at a time**. Restart more than one and the ledger stops
@@ -363,7 +363,7 @@ against our controller version; if it holds, #4 goes away.
 | # | Ask | Priority |
 |---|---|---|
 | ~~**R-9**~~ | ~~How do your other teams deploy into private AWS environments from Octopus Cloud today?~~ **Answered 2026-09-14 — shared central egress behind a load balancer. Adopted.** | **Closed** |
-| **R-10** | **Egress configuration for the Octopus agent — a firewall/proxy ticket, six lines.** (1) The **proxy address** to configure, `host:port`, as seen from the ledger VPC. (2) **Source allowlist:** our administrative instance's fixed private IP (a **/32** — we will send it), or its subnet /24 if you allowlist by subnet. (3) **Destinations:** `<instance>.octopus.app` and `polling.<instance>.octopus.app`, **port 443, `CONNECT` only**, outbound only. Octopus publishes static IPs for the instance if your rules are IP-based. (4) **No TLS decryption** on those two destinations (§2.2 — protocol requirement, not preference). (5) A **route** from the *ledger* route tables to the egress VIP's prefix over the Transit Gateway — the ledger tables only, not the application/lb/endpoint/data tables. (6) Whether the proxy **requires credentials**; if so, a service credential for our instance. **We are not asking for:** general internet access, an Internet Gateway, a default route, a public cluster endpoint, any inbound rule, or any detail of how the egress is built | **High** |
+| **R-10** | **Egress configuration for the Octopus agent — a firewall/proxy ticket, six lines.** (1) The **proxy address** to configure, `host:port`, as seen from the ledger VPC. (2) **Source allowlist:** our In-VPC EC2 Runner's fixed private IP (a **/32** — we will send it), or its subnet /24 if you allowlist by subnet. (3) **Destinations:** `<instance>.octopus.app` and `polling.<instance>.octopus.app`, **port 443, `CONNECT` only**, outbound only. Octopus publishes static IPs for the instance if your rules are IP-based. (4) **No TLS decryption** on those two destinations (§2.2 — protocol requirement, not preference). (5) A **route** from the *ledger* route tables to the egress VIP's prefix over the Transit Gateway — the ledger tables only, not the application/lb/endpoint/data tables. (6) Whether the proxy **requires credentials**; if so, a service credential for our instance. **We are not asking for:** general internet access, an Internet Gateway, a default route, a public cluster endpoint, any inbound rule, or any detail of how the egress is built | **High** |
 | **R-3** | **Tenancy detail** — IAM path/prefix, permissions boundary, SCPs, quotas, CloudTrail read. **We now ask you for LESS than before: #23's principal-scoping request is withdrawn (§3.1)** | High |
 | **R-6** | The 16 endpoints — **SSM trio first**; read access; change notification | High |
 | **R-7** | Runner AWS identity — **OIDC or IRSA?** — plus ECR push, cross-account pull policy, runner labels, and whether GitHub-hosted is permitted for public-artefact jobs | High |

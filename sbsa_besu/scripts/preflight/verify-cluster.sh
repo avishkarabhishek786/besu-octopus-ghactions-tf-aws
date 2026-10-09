@@ -3,12 +3,12 @@
 # verify-cluster.sh — the cluster-side contract, from inside the VPC  (CT-5)
 # -----------------------------------------------------------------------------
 # READ-ONLY. Every call is a get or a SelfSubjectAccessReview. Free, ~15s.
-# MUST run from the in-VPC runner: the API endpoint is private, so a laptop
+# MUST run from the In-VPC EC2 Runner: the API endpoint is private, so a laptop
 # cannot ask these questions at all (D-34).
 #
 # WHY IT EXISTS
-#   We do not own this cluster. Thirteen requirements in §9.3 of
-#   NETWORK_REQUIREMENTS_CLOUD_TEAM.md describe things the cloud team configures
+#   We do not own this cluster. Thirteen requirements in §3 of
+#   CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md describe things the cloud team configures
 #   and we depend on, and almost every one of them fails SILENTLY — it hangs, or
 #   it looks like success. This is the Kubernetes-side half of the gate set
 #   (CLOUD_TEAM_REDESIGN_NOTES §12.13.2, class "K").
@@ -37,8 +37,8 @@
 #                                       [--cpu 8] [--mem 24Gi] [--pods 40] [--pvc 12]
 #                                       [--k8s-min 1.33] [--k8s-max 1.36]
 #
-# The footprint defaults are the §9.1 table. They are defaults, not a second copy
-# of the source of truth: if §9.1 changes, pass the new numbers or change them
+# The footprint defaults are the shared-cluster requirements §1 table. They are defaults, not a second copy
+# of the source of truth: if shared-cluster requirements §1 changes, pass the new numbers or change them
 # HERE and nowhere else (CD-12).
 # =============================================================================
 set -euo pipefail
@@ -281,7 +281,7 @@ else
       else
         bad "#27 quota $key: ceiling $show_hard, FOOTPRINT NEEDS $show_want (using $show_used)"
         note "A short quota admits 3 of 4 validators and refuses the fourth. The chain will"
-        note "look HEALTHY with zero fault tolerance. Quote the §9.1 footprint table back."
+        note "look HEALTHY with zero fault tolerance. Quote the shared-cluster requirements §1 footprint table back."
       fi
     done
   done < <(jq -c '.items[]' <<<"$QJSON")
@@ -289,7 +289,7 @@ fi
 
 LRJSON="$(kubectl -n "$NS" get limitrange -o json 2>/dev/null || echo '{"items":[]}')"
 if [[ "$(jq '.items | length' <<<"$LRJSON")" -gt 0 ]]; then
-  note "LimitRange present — check its max/default against §9.1 (a max below our request refuses the pod):"
+  note "LimitRange present — check its max/default against shared-cluster requirements §1 (a max below our request refuses the pod):"
   jq -r '.items[].spec.limits[] | "          type=\(.type) max=\(.max // {}) default=\(.default // {}) defaultRequest=\(.defaultRequest // {})"' <<<"$LRJSON"
 else
   ok "no LimitRange on $NS to conflict with our requests"
@@ -366,4 +366,4 @@ fi
 
 printf '\n=== %d passed, %d failed, %d warnings ===\n' "$PASS" "$FAIL" "$WARN"
 printf 'Pod Security is NOT decided here. Run: scripts/preflight/verify-admission.sh -n %s -f <rendered.yaml>\n' "$NS"
-[[ "$FAIL" -eq 0 ]] || { echo "The cluster does not meet the contract. Each failure names a requirement number from NETWORK_REQUIREMENTS_CLOUD_TEAM.md §9.3." >&2; exit 1; }
+[[ "$FAIL" -eq 0 ]] || { echo "The cluster does not meet the contract. Each failure names a requirement number from CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md §3." >&2; exit 1; }

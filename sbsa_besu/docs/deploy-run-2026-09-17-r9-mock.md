@@ -1,7 +1,7 @@
 # R-9 mock deploy — 2026-09-17 — the Octopus polling-Tentacle path (RUNBOOK E.1)
 
 > **RESULT: E.1 steps 1–10 PASSED.** Octopus Cloud ran `kubectl get nodes` against the
-> private EKS endpoint through a polling Tentacle worker on the in-VPC runner, whose only
+> private EKS endpoint through a polling Tentacle worker on the In-VPC EC2 Runner, whose only
 > way out is a `CONNECT` proxy allowlisted to one source `/32` and two hostnames; the worker
 > survived a stop/start with the same thumbprint and IP. CD-56..CD-61 are validated live.
 > Four defects found and fixed on the way (**B21–B24**), one design answer for the bank
@@ -16,7 +16,7 @@
 
 **What this run proves.** The bank's cloud team gives us no egress internals (R-9 closed as
 "option 1", 2026-09-14): a shared central egress behind a load balancer, reachable only from
-a pinned source. Our in-VPC runner must register with Octopus Cloud as a **polling Tentacle
+a pinned source. Our In-VPC EC2 Runner must register with Octopus Cloud as a **polling Tentacle
 worker** through that proxy (CD-55..CD-64) so Octopus can deploy Terraform *and* Helm into a
 cluster whose API endpoint is private. This mock builds the assumed egress shape ourselves
 (`mimic_egress`), the network the cloud team will hand us (`mimic_vpc`), and then the real

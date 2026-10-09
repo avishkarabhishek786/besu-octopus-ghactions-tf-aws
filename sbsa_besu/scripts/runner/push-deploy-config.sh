@@ -2,7 +2,7 @@
 # =============================================================================
 # scripts/runner/push-deploy-config.sh   (run from the LAPTOP)
 # -----------------------------------------------------------------------------
-# F16: the in-VPC runner receives its source as an S3 bundle (D-21,
+# F16: the In-VPC EC2 Runner receives its source as an S3 bundle (D-21,
 # push-runner-bundle.sh) built with `git archive`, so the GITIGNORED env config is
 # excluded by construction and must be delivered separately:
 #   - terraform/environments/<env>/common.tfvars         (always — every root)

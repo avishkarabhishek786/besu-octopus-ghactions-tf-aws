@@ -4,7 +4,7 @@
 # Mirrors the chain root's pinning and default_tags contract, trimmed to the
 # providers this root actually uses. `shared` creates only VPC endpoints and a
 # private hosted zone: pure AWS-layer, no Kubernetes or Helm, so it applies
-# fine from the laptop (no in-VPC runner required).
+# fine from the laptop (no In-VPC EC2 Runner required).
 #
 # The `aws.primary` alias is kept even though there is one region, so every
 # root in this repository passes providers to modules the same way.

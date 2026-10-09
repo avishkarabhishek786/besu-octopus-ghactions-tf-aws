@@ -6,7 +6,7 @@ allots us a namespace. This project pretends to be them, so the platform can be 
 
 - Operating brief and the full rule set: **[CLAUDE.md](CLAUDE.md)**
 - Design record: `../sbsa_besu/docs/CLOUD_TEAM_REDESIGN_NOTES.md` §12
-- The requirements reproduced: `../sbsa_besu/docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.3
+- The requirements reproduced: `../sbsa_besu/docs/CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md` §3
 
 **The default profile is `hostile`, and that is deliberate.** It produces a cluster that
 breaks every gate the platform has: a public API endpoint, a Kubernetes version above the

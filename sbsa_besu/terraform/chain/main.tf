@@ -230,7 +230,7 @@ module "secrets" {
 
 # -----------------------------------------------------------------------------
 # RUNNER BOOTSTRAP SECRETS (stage 3) — the GitHub clone token + deploy-config
-# bundle the in-VPC runner (and the app EC2) consume. These stay in the CHAIN
+# bundle the In-VPC EC2 Runner (and the app EC2) consume. These stay in the CHAIN
 # state (AWS-layer, shared); the runner EC2 ITSELF is a separate root now
 # (terraform/runner/, C1). See CLAUDE.md §3.
 # -----------------------------------------------------------------------------
@@ -312,7 +312,7 @@ resource "aws_secretsmanager_secret" "runner_deploy_config" {
   recovery_window_in_days = var.secret_recovery_window_days
 }
 
-# NOTE (C1): the in-VPC runner itself now lives in its OWN root/state at
+# NOTE (C1): the In-VPC EC2 Runner itself now lives in its OWN root/state at
 # terraform/runner/ (it reads these secret names + the VPC/cluster outputs via
 # terraform_remote_state). Keeping it OUT of this state is what removes the F4/F5
 # `-var deploy_runner=true` traps — a chain apply can no longer create or destroy
@@ -409,7 +409,7 @@ resource "terraform_data" "hardening_guards" {
 
 # BESU WORKLOADS (stage 3) — the genesis bootstrap Job + one StatefulSet per
 # node, via Helm. Uses the helm provider, so it ONLY does anything when
-# deploy_in_cluster_resources = true (run from the in-VPC runner). When false
+# deploy_in_cluster_resources = true (run from the In-VPC EC2 Runner). When false
 # (laptop apply) the module instantiates but creates zero releases.
 # -----------------------------------------------------------------------------
 module "besu" {
@@ -539,7 +539,7 @@ module "observability" {
 # STAGE 9 — BLOCKSCOUT EXPLORER (in-cluster, private). Indexes the dedicated
 # explorer-rpc pool over ClusterIP (eth+debug/trace). Gated by enable_blockscout
 # AND deploy_in_cluster_resources (needs the private EKS endpoint, so it runs
-# from the in-VPC runner, like the Besu/observability releases). depends_on the
+# from the In-VPC EC2 Runner, like the Besu/observability releases). depends_on the
 # besu module so the explorer-rpc pool + gp3 StorageClass exist first.
 # =============================================================================
 module "blockscout" {

@@ -48,7 +48,7 @@ output "eks_cluster_endpoint" {
 }
 
 output "eks_node_security_group_id" {
-  description = "EKS-managed node security group ID. The in-VPC runner (terraform/runner root, C1) attaches to it to reach the private API on 443."
+  description = "EKS-managed node security group ID. The In-VPC EC2 Runner (terraform/runner root, C1) attaches to it to reach the private API on 443."
   value       = module.eks.node_security_group_id
 }
 
@@ -128,7 +128,7 @@ output "besu_image" {
 }
 
 output "besu_node_releases" {
-  description = "Map of Besu node Helm releases => role. Empty until deploy_in_cluster_resources=true (in-VPC runner)."
+  description = "Map of Besu node Helm releases => role. Empty until deploy_in_cluster_resources=true (In-VPC EC2 Runner)."
   value       = module.besu.node_releases
 }
 
@@ -236,8 +236,8 @@ output "primary_region" {
   value       = var.primary_region
 }
 
-# --- Stage 9: Blockscout explorer (private; reached via the in-VPC runner) ----
+# --- Stage 9: Blockscout explorer (private; reached via the In-VPC EC2 Runner) ----
 output "blockscout_portforward_command" {
-  description = "Open the private Blockscout UI from the in-VPC runner (no public endpoint). Empty unless the explorer is deployed."
+  description = "Open the private Blockscout UI from the In-VPC EC2 Runner (no public endpoint). Empty unless the explorer is deployed."
   value       = module.blockscout.portforward_command
 }

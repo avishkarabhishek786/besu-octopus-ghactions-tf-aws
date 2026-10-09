@@ -15,7 +15,7 @@
 #
 # Reads the CA from Secrets Manager (besu-ca-private-key, besu-node-ca-cert) and
 # the keystore/truststore passwords (besu-node-tls-*-password). Run from the
-# in-VPC runner (or any host with the right Secrets Manager permissions + openssl
+# In-VPC EC2 Runner (or any host with the right Secrets Manager permissions + openssl
 # + keytool). Idempotent: re-running rotates the server cert (roll RPC pods after).
 #
 # Usage:

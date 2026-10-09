@@ -7,7 +7,7 @@
 #
 # Decision references (D-N, CT-N, #N) point at
 # sbsa_besu/docs/CLOUD_TEAM_REDESIGN_NOTES.md §12 and
-# sbsa_besu/docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md §9.
+# sbsa_besu/docs/CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md.
 # =============================================================================
 
 # --- Identity & tagging -------------------------------------------------------
@@ -152,14 +152,14 @@ variable "quota_cpu" {
     the most important fixture in the project: QBFT's quorum is 3 of 4, so the
     chain starts, produces blocks and reports healthy with ZERO fault tolerance,
     and the refusal is an event on the StatefulSet with no fourth pod to notice.
-    strict: "8", the §9.1 footprint.
+    strict: "8", the shared-cluster requirements §1 footprint.
   EOT
   type        = string
   default     = null
 }
 
 variable "quota_memory" {
-  description = "#27. hostile: 18Gi (three validators' worth). strict: 24Gi per §9.1."
+  description = "#27. hostile: 18Gi (three validators' worth). strict: 24Gi per shared-cluster requirements §1."
   type        = string
   default     = null
 }
@@ -214,7 +214,7 @@ variable "kubernetes_version" {
 # --- Values that are the same in both profiles -------------------------------
 
 variable "runner_role_arn" {
-  description = "#32 — the administrative instance's IAM role, which gets the access entry. From the platform's runner root."
+  description = "#32 — the In-VPC EC2 Runner's IAM role, which gets the access entry. From the platform's runner root."
   type        = string
   default     = ""
 }

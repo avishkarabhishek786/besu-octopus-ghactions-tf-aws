@@ -29,7 +29,7 @@ When in doubt about *why* something is the way it is, the answer is in that repo
 > rules they define**. Recorded from a verbal update — **not yet confirmed in writing**.
 >
 > **This brief is not yet rewritten against it**, on purpose: the asks in
-> `docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md` **§9 (#27–#38)** decide which files are deleted
+> `docs/CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md` **(#27–#38)** decide which files are deleted
 > versus made conditional. The full design record is `docs/CLOUD_TEAM_REDESIGN_NOTES.md`
 > **§12** (D-23..D-43; §12.13 is the silent-error audit and its gate assignment). Until
 > the rewrite, these override the sections they name:
@@ -164,7 +164,7 @@ consumer is **SWIFT**, reaching **JSON-RPC** over SWIFT's private **MV-SIPN** ne
 ```
 terraform/
   shared/     interface endpoints, gateway endpoints (conditional), Route 53 PHZ
-  runner/     the in-VPC SSM runner (its own root and state)
+  runner/     the In-VPC EC2 Runner (its own root and state)
   chain/      chain EKS + IAM + storage-csi + secrets/PKI + Besu + access
               + observability + Blockscout
   app/        app EKS + application workloads + PrivateLink consumer endpoint
@@ -177,12 +177,21 @@ scripts/      preflight/, lib/, pki/, permissioning/, access/, maintenance/, val
 docs/         RUNBOOK.md, PORTING.md, build-findings.md, design records
 ```
 
+**Naming — the In-VPC EC2 Runner.** The one EC2 instance built by `terraform/runner/` is
+called the **In-VPC EC2 Runner** in every document, comment and message (settled
+2026-10-09). It replaces "administrative instance", "admin instance", "deployment worker",
+"the R-10 instance" and "in-VPC/SSM runner" — all the same machine. Bare "the runner" is
+acceptable shorthand once the full name has appeared. The "In-VPC" is what separates it
+from the cloud team's **GitHub Actions runners**, which sit outside the VPC with internet.
+Exception: three AWS resource `description`s (the runner SG, both runner IAM policies)
+keep the old wording, because changing an SG or IAM-policy description forces replacement.
+
 **Four separate states.** Never let one touch another's resources:
 
 | Root | Backend key | Contains |
 |---|---|---|
 | `shared` | `besu/<env>/shared.tfstate` | VPC endpoints, PHZ — used by BOTH clusters |
-| `runner` | `besu/<env>/runner.tfstate` | the in-VPC runner |
+| `runner` | `besu/<env>/runner.tfstate` | the In-VPC EC2 Runner |
 | `chain` | `besu/<env>/chain.tfstate` | ledger cluster and everything on it |
 | `app` | `besu/<env>/app.tfstate` | application cluster |
 
@@ -268,7 +277,7 @@ human can quote it straight back to the cloud team.
 > attributes, the no-default-route check and the two region gates stay. The subnet
 > inputs move to the **cluster** hand-over, and a new `modules/cluster-contract` carries
 > the cluster-side gates (§12.5 of the redesign notes). **The code still has all eight**
-> — nothing is removed until §9.4 is answered.
+> — nothing is removed until shared-cluster requirements §4 is answered.
 
 ---
 
@@ -279,7 +288,7 @@ human can quote it straight back to the cloud team.
 | Stage | Contents |
 |---|---|
 | 2.0 | `shared`: interface endpoints (§5.1), gateway endpoints if `gateway_endpoints_created_here=false`, Route 53 PHZ |
-| 2.1 | `runner`: in-VPC SSM runner, source and static tooling delivered by S3 bundle |
+| 2.1 | `runner`: In-VPC EC2 Runner, source and static tooling delivered by S3 bundle |
 | 2.2 | Chain EKS cluster, IAM/IRSA, storage-csi, node group with registry-aware bootstrap |
 | 2.3 | Secrets + PKI — CA bootstrap per `ca_mode`, keystores, Secrets Manager, SecretProviderClass, C12 CMK custody |
 | 2.4 | Besu workloads — genesis with QBFT extraData + permissioning seed + preflight, bootnodes, validators with PDB and topology spread, RPC pools |
@@ -407,7 +416,7 @@ standing commitment for the life of the platform, not a setup step.
   and wired through `.terraformrc` as a **`filesystem_mirror`** — filesystem, not
   network: a network mirror needs an HTTPS service, a filesystem mirror needs only a
   directory, and the S3 gateway endpoint already carries it (**D-20**). Needed only for
-  the in-VPC runner; AWS-layer applies run from the laptop, which has internet.
+  the In-VPC EC2 Runner; AWS-layer applies run from the laptop, which has internet.
 - **Runner source and tooling: S3 bundle — IMPLEMENTED (D-21).** GitHub is
   unreachable and the runner carries **no package-manager dependency**. The chain root
   creates `<prefix>-runner-artifacts`; `scripts/runner/push-runner-bundle.sh` downloads
@@ -427,7 +436,7 @@ standing commitment for the life of the platform, not a setup step.
 ### 5.4 `scripts/preflight/verify-images.sh`
 
 Resolve every image reference in the repository and confirm each **digest** exists in
-the registry **before** apply, **run from the in-VPC runner** — never the laptop, which
+the registry **before** apply, **run from the In-VPC EC2 Runner** — never the laptop, which
 would pass while the cluster still cannot pull. Cheap, and it converts a 2am
 `ImagePullBackOff` into a ten-second failure. It is a hard precondition of the chain
 apply **and** of any validator image bump (**D-19**).
@@ -689,7 +698,7 @@ questions CQ-1..CQ-8, R-1..R-10). Load it before touching a workflow or an Octop
   mandatory manual-intervention gate, in ALL THREE environments, plus the H38 plan-safety CI
   check that fails a build which would restart more than one validator.
 - **Octopus IS Octopus Cloud (SaaS), and it reaches the private endpoint through a
-  POLLING TENTACLE WORKER ON THE IN-VPC RUNNER, via the bank's SHARED EGRESS PROXY**
+  POLLING TENTACLE WORKER ON THE IN-VPC EC2 RUNNER, via the bank's SHARED EGRESS PROXY**
   (R-9 closed 2026-09-14 on option 1 — CD-55; mechanism CD-57; §7 of the design notes).
   Not the Kubernetes Agent. The runner is therefore both the Octopus worker AND the
   break-glass shell (CD-53) — never remove it. The rules that fall out, all decided
@@ -720,7 +729,7 @@ questions CQ-1..CQ-8, R-1..R-10). Load it before touching a workflow or an Octop
 
 > **2026-09-21:** every row below is answered, moot or re-scoped by CT-5. **The live
 > questions are Q-8..Q-18** in `docs/CLOUD_TEAM_REDESIGN_NOTES.md` §12.11, and they are
-> answered by the three command outputs in `docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.4.
+> answered by the three command outputs in `docs/CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md` §4.
 
 These are **parameters, not structural forks**. Build with the air-gapped assumption
 as the default and capture each unknown as an explicit variable plus a preflight

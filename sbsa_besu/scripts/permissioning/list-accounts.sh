@@ -9,7 +9,7 @@
 #   scripts/permissioning/list-accounts.sh
 #   scripts/permissioning/list-accounts.sh --live
 #
-# RUN FROM the in-VPC runner (private EKS endpoint). See _perm-lib.sh header.
+# RUN FROM the In-VPC EC2 Runner (private EKS endpoint). See _perm-lib.sh header.
 # =============================================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_perm-lib.sh"

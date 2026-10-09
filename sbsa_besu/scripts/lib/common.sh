@@ -20,7 +20,7 @@ need() { command -v "$1" >/dev/null 2>&1 || die "required tool not found: $1"; }
 # Pinned toolchain — ONE home for any version more than one host depends on.
 # -----------------------------------------------------------------------------
 # scripts/runner/runner-tools.manifest is the pin. It is read by
-# push-runner-bundle.sh (which builds the in-VPC runner's S3 bundle) and by the
+# push-runner-bundle.sh (which builds the In-VPC EC2 Runner's S3 bundle) and by the
 # GitHub Actions workflows, so a version that has to agree across hosts cannot
 # drift by being restated.
 #

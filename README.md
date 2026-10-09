@@ -9,8 +9,8 @@ Octopus Deploy. One repository, three projects, since 2026-09-18.
 > subnets with rules they define**. Recorded from a verbal update, **not yet confirmed
 > in writing**, so the code still builds a cluster. Design record:
 > [`sbsa_besu/docs/CLOUD_TEAM_REDESIGN_NOTES.md` §12](sbsa_besu/docs/CLOUD_TEAM_REDESIGN_NOTES.md);
-> the asks to the cloud team are §9 (#27–#38) of
-> [`NETWORK_REQUIREMENTS_CLOUD_TEAM.md`](sbsa_besu/docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md).
+> the asks to the cloud team are #27–#39 in
+> [`CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md`](sbsa_besu/docs/CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md).
 > A fourth project, [`mimic_eks/`](mimic_eks/), was **built 2026-10-09** — and it is
 > **hostile by default**: a cluster that breaks every gate the platform has, because a
 > check that has only ever been seen to pass is an assumption wearing a check's clothing.

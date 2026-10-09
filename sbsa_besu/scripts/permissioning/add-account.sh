@@ -14,7 +14,7 @@
 # needs a balance (F20). On a running chain (no re-genesis) fund it with a tx
 # from an already-allowed, funded account. Only genesis-time seeds are auto-funded.
 #
-# RUN FROM the in-VPC runner (private EKS endpoint). See _perm-lib.sh header.
+# RUN FROM the In-VPC EC2 Runner (private EKS endpoint). See _perm-lib.sh header.
 # =============================================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_perm-lib.sh"

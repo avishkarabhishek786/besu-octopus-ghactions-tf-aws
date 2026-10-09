@@ -1,7 +1,7 @@
 # =============================================================================
 # modules/runner/variables.tf
 # -----------------------------------------------------------------------------
-# Inputs for the IN-VPC SSM RUNNER — a small EC2 instance in a PRIVATE subnet,
+# Inputs for the In-VPC EC2 Runner — a small EC2 instance in a PRIVATE subnet,
 # reachable only through SSM Session Manager (no SSH, no public IP). It exists
 # to run `terraform apply` / `helm` / `kubectl` against the cluster's PRIVATE
 # API endpoint, which a laptop outside the VPC cannot reach (CLAUDE.md §3).

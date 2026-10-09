@@ -7,7 +7,7 @@
 # PROXY fronts both on ONE port (/ -> frontend, /api,/socket -> backend) so the
 # explorer is reachable through ONE `kubectl port-forward` without the frontend's
 # NEXT_PUBLIC_API_HOST origin/CORS pain. All services are ClusterIP; the human
-# reaches the UI via port-forward (from the in-VPC runner) or SSM. No Ingress, no
+# reaches the UI via port-forward (from the In-VPC EC2 Runner) or SSM. No Ingress, no
 # public LB, ALL external egress disabled — consistent with "nothing public".
 #
 # IMAGES: every `image:` key below is DELIBERATELY EMPTY. Terraform owns them —

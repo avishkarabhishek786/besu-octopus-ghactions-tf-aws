@@ -299,7 +299,7 @@ cd app/infra && terraform init && terraform apply
 
 ## 3. Pentest — actively attack each control
 
-Vantage points: **(a) a rogue in-cluster pod**, **(b) the in-VPC runner / app host**, **(c) an
+Vantage points: **(a) a rogue in-cluster pod**, **(b) the In-VPC EC2 Runner / app host**, **(c) an
 off-VPC laptop** (baseline "nothing public"). Each test names the control and the expected
 *denied* result. Run the "without the control" comparison only where noted.
 
@@ -331,7 +331,7 @@ curl -s -m3 http://169.254.169.254/latest/meta-data/iam/security-credentials/   
 `[ ] H21` — the pod cannot obtain IMDSv2 credentials (hop limit 1 stops the extra pod→node hop).
 
 ### 3.4 — H4: app tx-API rejects unauthenticated + CSRF submits
-From the in-VPC runner/app host (not the operator port-forward):
+From the In-VPC EC2 Runner/app host (not the operator port-forward):
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' -XPOST http://<app-ip>:3000/api/value -H 'Content-Type: application/json' -d '{"value":1}'   # ▶ 401 (or 503 if token unset)
 curl -s -o /dev/null -w '%{http_code}\n' -XPOST http://<app-ip>:3000/api/value -H 'Content-Type: text/plain' --data '{"value":1}'      # ▶ rejected (kills the simple-request CSRF)

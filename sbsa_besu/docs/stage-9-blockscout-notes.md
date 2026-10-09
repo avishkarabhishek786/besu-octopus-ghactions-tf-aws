@@ -18,7 +18,7 @@
 ## 1. What Stage 9 adds
 A **fully-private Blockscout block explorer** for the Besu chain, plus the
 **dedicated `explorer-rpc` pool** it indexes from. No public exposure; reached via
-`kubectl port-forward` from the in-VPC runner (or SSM). Operator/observability
+`kubectl port-forward` from the In-VPC EC2 Runner (or SSM). Operator/observability
 tooling — it sits next to the monitoring stack, not in the app VPC.
 
 ## 2. The decisive choice — in-cluster, with a dedicated DEBUG/TRACE RPC pool
@@ -81,7 +81,7 @@ re-create it (the state-bucket bootstrap, described in `claude-code-setup.md` in
 Then, on top of the Stage-8 chain deploy flow:
 1. Chain apply (laptop) with `explorer_rpc_count=1` → the explorer-rpc secret
    container + topology come up.
-2. In-cluster apply from the **in-VPC runner** (`deploy_in_cluster_resources=true`)
+2. In-cluster apply from the **In-VPC EC2 Runner** (`deploy_in_cluster_resources=true`)
    → genesis writes the explorer-rpc key; the explorer-rpc pod + Blockscout +
    Postgres deploy. Blockscout runs migrations then indexes.
 3. Reach the UI: `terraform output blockscout_portforward_command` →

@@ -22,7 +22,7 @@
 # (3) wait Ready and GATE on the chain still advancing on the OTHER validators and
 # the changed validator catching up to head. Aborts hard if either gate fails.
 #
-# RUN FROM the in-VPC runner (private EKS endpoint), at the repo root, after
+# RUN FROM the In-VPC EC2 Runner (private EKS endpoint), at the repo root, after
 #   `aws eks update-kubeconfig --name <cluster> --region <region>`.
 #
 # Usage:

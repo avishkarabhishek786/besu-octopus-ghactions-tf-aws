@@ -66,7 +66,7 @@ and the service CIDR all concern subnets and a cluster that are no longer ours),
 **`modules/cluster-contract`** joins it to assert the cluster the same way — version,
 private endpoint, pod-identity mechanism, the add-on CRDs we depend on, the
 StorageClass, our namespaces and their Pod Security level. The Kubernetes-side gates
-run **from the in-VPC runner**, because the API endpoint is private.
+run **from the In-VPC EC2 Runner**, because the API endpoint is private.
 
 ## Layout
 
@@ -76,7 +76,7 @@ terraform/
   modules/       shared by every root
   environments/  common.tfvars + chain.tfvars, per environment
   shared/        VPC endpoints + private hosted zone   (apply FIRST)
-  runner/        in-VPC SSM runner
+  runner/        In-VPC EC2 Runner
   chain/         ledger cluster, Besu, access, observability, Blockscout
                  (CT-5: the cluster/node/addon half leaves; KMS, PKI, NLBs, IAM stay)
   app/           application cluster                   (not built yet; CT-5: a namespace, not a cluster)

@@ -1,5 +1,5 @@
 # =============================================================================
-# terraform/runner/versions.tf — the in-VPC RUNNER as its OWN root/state (C1)
+# terraform/runner/versions.tf — the In-VPC EC2 Runner as its OWN root/state (C1)
 # -----------------------------------------------------------------------------
 # WHY A SEPARATE ROOT (C1, F4/F5). The runner used to live in the chain root and
 # was gated on `deploy_runner`. Because it SHARED the chain's state, a chain

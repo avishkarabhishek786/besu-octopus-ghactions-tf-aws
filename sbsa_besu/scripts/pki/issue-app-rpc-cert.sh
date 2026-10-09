@@ -23,7 +23,7 @@
 #
 # Reads the CA (besu-ca-private-key, besu-node-ca-cert) and the app-rpc keystore
 # password (besu-node-apprpc-keystore-password, Terraform-generated). Run from
-# the in-VPC runner (or any host with Secrets Manager perms + openssl). Idempotent:
+# the In-VPC EC2 Runner (or any host with Secrets Manager perms + openssl). Idempotent:
 # re-running rotates the cert (roll the app-rpc pods after).
 #
 # Usage:

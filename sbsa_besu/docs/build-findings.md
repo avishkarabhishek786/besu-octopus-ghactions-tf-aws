@@ -99,7 +99,7 @@ never run before today — a third instance of a check that had not met its real
 tfvars into `common.tfvars` + `chain.tfvars` and no `primary.tfvars` exists under
 `environments/`. The script tolerates a missing candidate (it bundles "whichever exist"), so
 it would have exited 0 having shipped **only the two hand-over files**, and the first
-`terraform plan` run from the in-VPC runner would have failed with "No value for required
+`terraform plan` run from the In-VPC EC2 Runner would have failed with "No value for required
 variable" on all six `common.tfvars` values. Fixed by listing `common.tfvars` and
 `chain.tfvars` as the always-shipped candidates; `fetch-deploy-config.sh`'s usage comment
 updated to the split form.

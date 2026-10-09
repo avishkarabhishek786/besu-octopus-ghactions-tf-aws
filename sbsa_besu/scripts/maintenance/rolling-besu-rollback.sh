@@ -12,7 +12,7 @@
 # It is a thin, clearly-named wrapper over rolling-besu-apply.sh (same OnDelete
 # mechanics + quorum gate), pinned to the PREVIOUS image.
 #
-# Usage (from the in-VPC runner, repo root):
+# Usage (from the In-VPC EC2 Runner, repo root):
 #   PREV_BESU_IMAGE=hyperledger/besu:26.6.1 \
 #     scripts/maintenance/rolling-besu-rollback.sh
 #   # crossing 25<->26 during the rollback? add:

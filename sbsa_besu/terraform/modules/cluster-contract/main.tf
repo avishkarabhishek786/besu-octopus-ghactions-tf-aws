@@ -7,7 +7,7 @@
 # that break do not error — they hang, or they look like success.
 #
 # Each gate cites a requirement number from
-# docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md §9.3, so a failure can be quoted
+# docs/CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md §3, so a failure can be quoted
 # straight back to the cloud team rather than described.
 #
 # WHY `terraform_data` AND NOT `check` BLOCKS
@@ -185,7 +185,7 @@ resource "terraform_data" "endpoint_access" {
   lifecycle {
     precondition {
       condition     = data.aws_eks_cluster.this.vpc_config[0].endpoint_private_access
-      error_message = "#32 VIOLATED: the cluster's PRIVATE endpoint access is disabled. The administrative instance reaches the API over the private endpoint (D-34); with it off there is no path at all, and the symptom is a connection that hangs rather than one that is refused."
+      error_message = "#32 VIOLATED: the cluster's PRIVATE endpoint access is disabled. The In-VPC EC2 Runner reaches the API over the private endpoint (D-34); with it off there is no path at all, and the symptom is a connection that hangs rather than one that is refused."
     }
     precondition {
       condition     = !data.aws_eks_cluster.this.vpc_config[0].endpoint_public_access
@@ -363,7 +363,7 @@ resource "terraform_data" "access" {
   lifecycle {
     precondition {
       condition     = var.runner_access_entry_created
-      error_message = "#32: runner_access_entry_created is false. The administrative instance needs an EKS access entry for its IAM role, scoped to our namespaces — it applies the Helm releases and runs the one-validator-at-a-time upgrade script. It is the cloud team's to create (D-34), so this is a declared fact rather than something we can build. Nothing deploys until it exists."
+      error_message = "#32: runner_access_entry_created is false. The In-VPC EC2 Runner needs an EKS access entry for its IAM role, scoped to our namespaces — it applies the Helm releases and runs the one-validator-at-a-time upgrade script. It is the cloud team's to create (D-34), so this is a declared fact rather than something we can build. Nothing deploys until it exists."
     }
     precondition {
       condition     = var.namespace_ledger != ""

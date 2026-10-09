@@ -526,7 +526,7 @@ variable "rpc_dual_pool" {
 }
 
 # -----------------------------------------------------------------------------
-# IN-VPC RUNNER (stage 3)
+# In-VPC EC2 Runner (stage 3)
 # -----------------------------------------------------------------------------
 # NOTE (C1): `deploy_runner` and `runner_instance_type` were REMOVED — the runner
 # now lives in its own root (terraform/runner/), so the chain no longer gates or
@@ -688,7 +688,7 @@ variable "explorer_rpc_count" {
 
 # --- Stage 9: Blockscout explorer --------------------------------------------
 variable "enable_blockscout" {
-  description = "Deploy the in-cluster Blockscout explorer (indexes the explorer-rpc pool). Requires explorer_rpc_count > 0. In-cluster, so it only applies when deploy_in_cluster_resources=true (from the in-VPC runner)."
+  description = "Deploy the in-cluster Blockscout explorer (indexes the explorer-rpc pool). Requires explorer_rpc_count > 0. In-cluster, so it only applies when deploy_in_cluster_resources=true (from the In-VPC EC2 Runner)."
   type        = bool
   default     = false
 }

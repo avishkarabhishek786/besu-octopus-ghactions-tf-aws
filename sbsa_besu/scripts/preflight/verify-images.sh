@@ -9,7 +9,7 @@
 #   the registry as the cause. That is expensive to debug with a half-built
 #   cluster billing by the hour, and trivial to rule out beforehand.
 #
-#   Run this from somewhere that can reach the registry -- the in-VPC runner is ideal,
+#   Run this from somewhere that can reach the registry -- the In-VPC EC2 Runner is ideal,
 #   since it proves reachability from where the pulls will actually happen.
 #
 # WHAT IT DOES **NOT** PROVE -- READ THIS BEFORE TRUSTING AN EXIT 0  (D-38, #38)
@@ -20,7 +20,7 @@
 #   plus that role's own identity policy, neither of which this script touches.
 #
 #   So this script exits 0 whether or not the cluster can pull. The sentence
-#   above ("the in-VPC runner is ideal") understated it: the RUNNER passes while
+#   above ("the In-VPC EC2 Runner is ideal") understated it: the RUNNER passes while
 #   the cluster still cannot pull. A check that cannot fail is worse than no
 #   check, because it is trusted (CICD design notes 11.3).
 #

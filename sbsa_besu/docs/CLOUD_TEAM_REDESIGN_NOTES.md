@@ -1,7 +1,7 @@
 # Cloud-Team Redesign — Discussion Record & Design Decisions
 
 **Date:** 2026-08-18 (design discussion) · updated 2026-08-29 · **2026-09-21: §12 added (CT-5, shared EKS — namespace tenancy)**
-**Status:** Discussion complete; `CLAUDE.md` written and the platform built against CT-1..CT-4. **2026-09-21: CT-5 recorded from a verbal update — the cluster is no longer ours to build. §12 is the design record; the platform brief is NOT yet rewritten against it** (deliberately — the asks in `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9 must be answered first).
+**Status:** Discussion complete; `CLAUDE.md` written and the platform built against CT-1..CT-4. **2026-09-21: CT-5 recorded from a verbal update — the cluster is no longer ours to build. §12 is the design record; the platform brief is NOT yet rewritten against it** (deliberately — the asks in `CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md` must be answered first).
 **Scope:** This document seeds a **NEW, SEPARATE git project**. The current
 `besu-aws` repository is **unchanged** and remains the record of the existing
 design. Nothing here is to be applied to this repo.
@@ -32,7 +32,7 @@ and between them supersede CT-4 outright; see §12.)*
 | CT-1 | **One VPC only.** Besu and the applications share a single VPC. The **cloud team creates the VPC and subnets**; our Terraform is limited to what we build *inside* those subnets ~~(EKS and above)~~ — **since CT-5, namespace contents and the AWS resources beside the cluster; the cluster itself is theirs too.** |
 | CT-2 | **Private subnets only.** No public subnets, therefore no Internet Gateway. |
 | CT-3 | **All container images from a private registry**, not public ones. Settled as **Amazon ECR** 2026-09-04 — see §11. |
-| ~~CT-4~~ | ~~**VPC CIDR may be smaller than /16.** Determine the ideal size, accounting for a future estate of ~a dozen applications competing for IPs with Besu at peak.~~ **SUPERSEDED 2026-09-21 by CT-1a + CT-5 (D-30).** The task was to size a VPC *we* would lay out with 15 subnets and two clusters. We lay out nothing: the cloud team's VPC already has role-separated subnets and our pods take addresses from their node subnets. **The `/20` ask is withdrawn in all three environments** — §5 is kept as the record, `CIDR_ALLOCATION_REVIEW.md` is marked DO NOT SEND, and the Confluence page "Finalizing CIDR Range" (Question 3) is closed as withdrawn. **What survives is one question, not an ask:** do their node, load-balancer and administrative-instance subnets have headroom for our ~20 pods, 6 NLB interfaces and 1 instance (requirements §9.1, #34)? |
+| ~~CT-4~~ | ~~**VPC CIDR may be smaller than /16.** Determine the ideal size, accounting for a future estate of ~a dozen applications competing for IPs with Besu at peak.~~ **SUPERSEDED 2026-09-21 by CT-1a + CT-5 (D-30).** The task was to size a VPC *we* would lay out with 15 subnets and two clusters. We lay out nothing: the cloud team's VPC already has role-separated subnets and our pods take addresses from their node subnets. **The `/20` ask is withdrawn in all three environments** — §5 is kept as the record, `CIDR_ALLOCATION_REVIEW.md` is marked DO NOT SEND, and the Confluence page "Finalizing CIDR Range" (Question 3) is closed as withdrawn. **What survives is one question, not an ask:** do their node, load-balancer and In-VPC EC2 Runner subnets have headroom for our ~20 pods, 6 NLB interfaces and 1 instance (shared-cluster requirements §1, #34)? |
 | CT-1a | **2026-09-21.** The cloud team's VPC has **separate subnets per role** (application, data, …), each with **security rules the cloud team defines**. A refinement of CT-1: we no longer choose or size subnets, and our flows must pass rules we did not write. See §12.4. |
 | CT-5 | **2026-09-21. We do not build EKS.** A **shared EKS cluster** exists; we are allotted a **namespace** and the cloud team runs the cluster and its maintenance. See §12. |
 
@@ -270,7 +270,7 @@ hardcoded *inside upstream charts we do not author*, so they cannot be parameter
 way ours were; each needs a values override in the module that installs the chart, under
 that chart's own key (`image.repository`, `global.imageRegistry`, `prometheus.image`, …).
 See `../../CHART_IMAGES.md` and PORTING item 4. **CT-5 is the reason to wait:** four of
-the five charts are cluster-scoped add-ons that, under §9 #30, the cloud team provides and
+the five charts are cluster-scoped add-ons that, under #30, the cloud team provides and
 we never install — so the overrides would likely be written and then deleted. Revisit when
 #30 is answered.
 
@@ -316,7 +316,7 @@ confirm each **digest** exists in the registry **before** apply. Cheap, and conv
 > **WITHDRAWN 2026-09-21 by D-30 (CT-5). Kept as the record of the analysis, not as a live ask.**
 > We no longer lay out subnets — we occupy the cloud team's. Our demand is ~20 pod
 > addresses plus load-balancer interfaces, stated as a sizing note in
-> `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.1, not as an address request.
+> `CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md` §1, not as an address request.
 >
 > **Nothing below should be sent or acted on.** Two things in it are still *true* and get
 > cited elsewhere, which is the only reason to read it: §5.1-5.2 (why EKS consumes
@@ -548,7 +548,7 @@ nodes of capacity at 110 pods/node, with a spare /18 for a fourth AZ.
 | D-4 | ~~**Dedicated EKS cluster for the chain** inside the shared VPC; apps run in their own cluster.~~ | **SUPERSEDED by D-23/D-28 (CT-5, 2026-09-21)** — **we do not build EKS at all.** The cloud team runs a **shared cluster** and allots us a **namespace**; they own the cluster and its maintenance. We ask for *two* namespaces (ledger, app — #27). The isolation this decision bought is re-requested as a dedicated, tainted **node group** (#28, D-26), and what remains of it in our hands is namespaces + `NetworkPolicy` (D-9) |
 | D-5 | ~~Split registry: ECR endpoints for AWS-owned addon images, a third-party repository for everything else.~~ | **SUPERSEDED by D-16** — one registry (ECR), no carve-out |
 | D-6 | ~~Runner source comes from a third-party mirror.~~ | **SUPERSEDED by D-21** — S3 source bundle |
-| D-7 | ~~**CIDR ask = contiguous /20, no secondary CIDR.** Chain gets dedicated subnets (§5.5.1).~~ | **WITHDRAWN by D-30 (CT-5, 2026-09-21)** — the cloud team's VPC already has **role-separated subnets with rules they define** (CT-1a) and we occupy them. Our ask is a `ResourceQuota` (requirements §9.1), not address space |
+| D-7 | ~~**CIDR ask = contiguous /20, no secondary CIDR.** Chain gets dedicated subnets (§5.5.1).~~ | **WITHDRAWN by D-30 (CT-5, 2026-09-21)** — the cloud team's VPC already has **role-separated subnets with rules they define** (CT-1a) and we occupy them. Our ask is a `ResourceQuota` (shared-cluster requirements §1), not address space |
 | D-8 | ~~Pod subnets parameterised **separately** from node subnets from day one, even when identical.~~ | **WITHDRAWN by D-30 (CT-5)** — CNI addressing is the cloud team's configuration; we do not place nodes or pods |
 | D-9 | NetworkPolicy default-deny becomes **mandatory** (currently H6, opt-in). | DECIDED — **and load-bearing since CT-5.** On shared nodes it is the primary tenant boundary, not an addition to one (D-26). Requires the cluster's CNI to actually enforce it: #35 |
 
@@ -771,7 +771,7 @@ which also negates D-11 for the two endpoints that now carry the entire supply c
 Cheap to confirm; expensive to discover.
 
 > **Mitigation already in hand.** B-1, B-2 and B-4 are all caught empirically by running
-> `scripts/preflight/verify-images.sh` **from the in-VPC runner** before the chain apply.
+> `scripts/preflight/verify-images.sh` **from the In-VPC EC2 Runner** before the chain apply.
 > That preflight is the gate. It must never be run from the laptop, which would pass
 > while the cluster still cannot pull.
 
@@ -915,7 +915,7 @@ New or changed work:
 | D-16 | **A private Amazon ECR registry is THE container registry** for this platform, with artefacts built and pushed from outside the VPC and pulled from inside over the existing endpoints. | **DECIDED** 2026-09-04 |
 | D-17 | **Pull-through cache is NOT used.** It requires internet egress on first pull (§11.2). The supply chain is an explicit, curated replication pipeline. | DECIDED (technical, not negotiable) |
 | D-18 | **The mirror preserves digests** — `crane copy` / `skopeo copy --all` only. Never `docker pull`/`tag`/`push`. | DECIDED |
-| D-19 | **`verify-images.sh`, run from the in-VPC runner, is the gate** for B-1/B-2/B-4, and a hard precondition of both the chain apply and any validator image bump (O-1). | DECIDED |
+| D-19 | **`verify-images.sh`, run from the In-VPC EC2 Runner, is the gate** for B-1/B-2/B-4, and a hard precondition of both the chain apply and any validator image bump (O-1). | DECIDED |
 | D-20 | **Terraform providers move to an S3 `filesystem_mirror`**, not a network mirror. | DECIDED |
 | D-21 | **The runner drops its package-manager dependency** — static tools delivered by S3 bundle (§11.4.1). | DECIDED |
 | D-22 | Helm charts are **converted to OCI artefacts in ECR**, accepting that this is more work than a chart-proxying repository would have been (§11.5). | DECIDED |
@@ -962,7 +962,7 @@ VPC* (CT-1) to **tenant of one namespace inside someone else's cluster**. It is 
 larger change than CT-1 was, and it has the same shape as CT-1 and R-9 before it: a
 **hand-over of plain values**, a **contract module that asserts it**, and a **mimic
 that impersonates it**. This section is the design record. The sendable asks are
-`NETWORK_REQUIREMENTS_CLOUD_TEAM.md` **§9 (#27–#38)**.
+`CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md` **(#27–#38)**.
 
 The work is on branch **`shared-eks-namespace`**; the own-cluster design is frozen on
 **`own-eks-cluster-design`** at `3af66e8`. The platform brief (`CLAUDE.md`) is **not**
@@ -1062,7 +1062,7 @@ rule does not fail an apply — the chain simply never reaches quorum, and the s
 stay `unhealthy` forever) and of the runner's path to the control plane (`i/o timeout`).
 
 **The flows the design needs are requirement #34** in
-`NETWORK_REQUIREMENTS_CLOUD_TEAM.md` — ten rows, F-1..F-10, derived from the charts and
+`CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md` — ten rows, F-1..F-10, derived from the charts and
 `modules/rpc-access` on 2026-09-21. **That table is the single source of truth and is
 deliberately not copied here.** It is what we send, what `verify-subnet-rules.sh`
 implements, and what a failure cites (`#34 F-1`), so a second copy would be a second
@@ -1168,7 +1168,7 @@ cannot ask).
 - **B13 mostly evaporates** — the 15 chart-carried images belong to charts we no longer
   install, if #30 confirms the cloud team provides them.
 - **Requirements #4, #7, #9, #10, #11 (re-scoped into #28), #12, #15, #16, #17** — withdrawn
-  in `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.2.
+  in `CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md` §2.
 
 ### 12.8 The mimic — `mimic_eks`, and one fidelity change to `mimic_vpc`
 
@@ -1221,7 +1221,7 @@ models role-separated subnets, which is what the cloud team described.
 | **D-31** | **Blockscout's Postgres placement follows their data-subnet policy** (#37): in-cluster if permitted, RDS in a data subnet if not. Explorer-only; the lowest-stakes item here. | DECIDED (conditional) |
 | **D-32** | **`mimic_eks` is a third mimic project** (§12.8), built from the moved `modules/eks`, giving the runner only the namespace-scoped access the bank would. **`mimic_vpc` NACLs become restrictive.** | DECIDED |
 | **D-33** | **Pod Security Admission is a gate.** The F32 root init container is incompatible with `restricted`; before any apply the namespace's PSA level is known (#27) and the chart either conditions on it or the fix is redone without root. | DECIDED |
-| **D-35** | **Every requirement in §9.3 carries a named gate, or it is written down that it has none.** §9.6 shipped three generic checks for thirteen requirements; the gap was not that the checks were wrong but that twelve of the thirteen had no owner. Four gate classes, and each requirement is assigned to one or more: **plan-time** (`modules/cluster-contract`), **runner preflight** (the Kubernetes-side facts — the endpoint is private, so only the runner can ask), **post-deploy assertion**, **standing alarm**. §12.13 is the mapping. | DECIDED 2026-10-09 |
+| **D-35** | **Every requirement in shared-cluster requirements §3 carries a named gate, or it is written down that it has none.** shared-cluster requirements §6 shipped three generic checks for thirteen requirements; the gap was not that the checks were wrong but that twelve of the thirteen had no owner. Four gate classes, and each requirement is assigned to one or more: **plan-time** (`modules/cluster-contract`), **runner preflight** (the Kubernetes-side facts — the endpoint is private, so only the runner can ask), **post-deploy assertion**, **standing alarm**. §12.13 is the mapping. | DECIDED 2026-10-09 |
 | **D-36** | **The silent-success class is the one that matters, and it needs positive assertions.** #27's quota and #28's co-location do not look like failures — they look like a healthy chain. A quota a few hundred millicores short admits three validators; QBFT's quorum is 3 of 4, so the ledger starts, produces blocks and reports healthy with **zero** fault tolerance, and the refusal is an event on the StatefulSet with no fourth pod to inspect. Gates for this class assert a **count** — four validators in the block-producing set, four distinct `spec.nodeName` — never the absence of errors. | DECIDED |
 | **D-37** | **A boundary is only proven by a check that asserts a negative.** #32 (scope of the access entry) and #35 (`NetworkPolicy` enforcement) both fail **open**: a cluster-wide grant works exactly as well as a scoped one, and the API server accepts `NetworkPolicy` objects whether or not the CNI enforces them. So the gates are `kubectl auth can-i create pods -n kube-system` → must be `no`, and an active two-pod deny-probe whose forbidden connection must be refused. Configuration is evidence; a refused connection is proof. | DECIDED |
 | **D-38** | **`verify-images.sh` does not and cannot satisfy #38 — principal mismatch.** It authenticates with `REGISTRY_USER`/`REGISTRY_PASS` (`scripts/preflight/verify-images.sh:93-101`), i.e. the runner's own credentials. Under CT-5 the pull is performed by **their** node role via kubelet's ECR credential provider. Different principals, different policies, and the script exits 0 either way — a check that cannot fail, in the CICD §11.3 sense. Closed by three things: a repository-policy assertion on their node role ARN, a check that the node role's **identity** policy carries `ecr:GetAuthorizationToken` (no repository policy can grant it), and a **canary pod** as the only authoritative proof. The script's banner says so, so nobody reads its exit 0 as "the cluster can pull". | DECIDED |
@@ -1237,7 +1237,7 @@ models role-separated subnets, which is what the cloud team described.
 | # | Question | Impact | Asked as |
 |---|---|---|---|
 | Q-8 | Does the **application estate** also land in this shared cluster, or only the ledger? | Decides whether `app` is a namespace or nothing; whether two namespaces are needed at all | #27 |
-| Q-9 | Is the node group **charged back** to consuming teams? | Cost model only | §9.4 of the requirements addendum |
+| Q-9 | Is the node group **charged back** to consuming teams? | Cost model only | §4 of the shared-cluster requirements |
 | Q-10 | **IRSA or Pod Identity?** | Which trust our IAM roles carry; whether `eks-auth` (excluded by D-14) is now needed — it is *their* endpoint either way | #31 |
 | Q-11 | **NACLs, security groups, or both** on the role subnets? | Whether F-3 and the "+ return" rows are real | #34 |
 | Q-12 | Will they **add a node-SG rule for our NLB**, or is **Security Groups for Pods** enabled? | F-2 is impossible without one of the two | #33 |
@@ -1249,8 +1249,8 @@ models role-separated subnets, which is what the cloud team described.
 | Q-17 | Is the **load-balancer controller's IAM policy** conditioned on a resource tag for `RegisterTargets`? | Our target groups are Terraform-made and carry no `elbv2.k8s.aws/cluster` tag. If conditioned, the controller's `AccessDenied` lands in a log in a namespace our #32 access cannot read, and from our side the binding looks healthy with an empty target group | **#30**, question I |
 | Q-18 | Is Pod Security enforced **cluster-wide** via `AdmissionConfiguration` as well as by namespace label? | A namespace label alone would mislead us; D-40's dry-run is the backstop either way | **#27**, question K |
 
-All of these are answered by the four command outputs in §9.4 of the requirements
-addendum, plus the questions listed there in words. **Ask for observable strings** (the
+All of these are answered by the four command outputs in §4 of the shared-cluster
+requirements, plus the questions listed there in words. **Ask for observable strings** (the
 CD-31 → R-1 lesson); "does your cluster have the load-balancer controller?" produced
 ambiguous answers elsewhere, `kubectl get crd targetgroupbindings.elbv2.k8s.aws` cannot.
 
@@ -1267,7 +1267,7 @@ ambiguous answers elsewhere, `kubectl get crd targetgroupbindings.elbv2.k8s.aws`
   create any.
 - **CD-42..CD-45** (the `/20` per environment, same size for all three) → withdrawn.
 - **Requirements #4, #7, #9, #10, #11, #12, #15, #16, #17** → withdrawn or re-scoped in
-  `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.2.
+  `CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md` §2.
 - **`CLAUDE.md` §1 "Two EKS clusters"**, §4 Stage 3.0, §6 (node group + per-tier SGs),
   §7 (EKS version ladder), §11 Q-2 / Q-2a → to be rewritten once §12.11 is answered.
 - **`CICD_DESIGN_NOTES.md` §0.3** — `besu-infra` no longer deploys a cluster; the three-
@@ -1278,11 +1278,11 @@ load-bearing), D-16..D-22, the whole of CD-55..CD-65, C6, C10, C12, H1, F19/F20/
 
 ### 12.13 The silent-error audit — what detects each requirement, and where it lives (2026-10-09)
 
-§9.6 of the requirements addendum shipped **three** checks for **thirteen** requirements.
+§6 of the shared-cluster requirements shipped **three** checks for **thirteen** requirements.
 The three were not wrong; the problem was that twelve of the thirteen had no owner, and
 every one of them fails in the class this project keeps meeting — *it hangs, or it looks
 like success, and nothing names the cause*. This section is the implementation side of
-D-35..D-43. The sendable version is §9.6; this is the part that says which file to write.
+D-35..D-43. The sendable version is shared-cluster requirements §6; this is the part that says which file to write.
 
 #### 12.13.1 The two findings that are about us, not them
 
@@ -1310,7 +1310,7 @@ ask); `D` = post-deploy assertion in `scripts/validation/`; `A` = standing alarm
 | Req | Silent failure | Gate | Where |
 |---|---|---|---|
 | #27 PSA | cluster-wide `AdmissionConfiguration` is invisible in namespace labels; a StatefulSet dry-run only *warns* | `K` | **new** `verify-admission.sh` — bare-Pod dry-run, warnings fatal (D-40) |
-| #27 quota | three validators start, chain looks healthy, zero fault tolerance | `K` + `D` | `verify-cluster.sh` headroom vs §9.1; then `qbft_getValidatorsByBlockNumber` == 4 **and** 4 × `Ready` |
+| #27 quota | three validators start, chain looks healthy, zero fault tolerance | `K` + `D` | `verify-cluster.sh` headroom vs shared-cluster requirements §1; then `qbft_getValidatorsByBlockNumber` == 4 **and** 4 × `Ready` |
 | #28 | two validators on one node | fix + `D` | chart → `DoNotSchedule` (D-39); assert 4 distinct `spec.nodeName` |
 | #29 | a force-drain is indistinguishable from maintenance until the halt | `A` only | validator-out-of-set > 5 min; block height stalled (D-42) |
 | #30 CRD/controller | `TargetGroupBinding` accepted, never reconciled, target group stays empty | `K` + `D` | CRD **and** ready controller; then `describe-target-health` == 4 healthy |
@@ -1388,10 +1388,10 @@ as B12 and the `jq '// "absent"'` bug, now for the third time:
 | ~~`modules/cluster-contract`~~ | **BUILT 2026-10-09.** See §12.13.6 |
 | ~~`mimic_eks` (D-32)~~ | **BUILT 2026-10-09.** See §12.13.7 |
 | ~~`verify-subnet-rules.sh` (D-29, #34)~~ | **BUILT 2026-10-09.** See §12.13.8 |
-| D-42 / D-43 alarms | Genuinely blocked on **#30**: whether we get `PrometheusRule` on their operator or run our own Prometheus decides where the rules live |
+| D-42 / D-43 alarms | Genuinely blocked on **#30**: whether we get `PrometheusRule` on their operator or run our own Prometheus decides where the rules live. **DEFERRED by agreement 2026-10-09 — this is the resume point for the workstream:** nothing else in the queue is outstanding, and the answer to #30 changes the *shape* of `modules/observability`, not just its values, so building it first means building it twice |
 
 **What has not changed:** the chart and script work above is all read-only or
-scheduling-only, so none of it pre-empts a §9.4 answer. The moment an answer arrives it
+scheduling-only, so none of it pre-empts a shared-cluster requirements §4 answer. The moment an answer arrives it
 changes *values* in a hand-over file, not the gates.
 
 #### 12.13.6 `modules/cluster-contract` and the cluster hand-over — built 2026-10-09
@@ -1401,7 +1401,7 @@ changes *values* in a hand-over file, not the gates.
 gate was driven to failure, not read.
 
 **The hand-over file is NOT symlinked into the roots yet**, deliberately. The CT-5 banner
-in `CLAUDE.md` §3 says nothing is removed until §9.4 is answered, so `lb_subnet_ids` and
+in `CLAUDE.md` §3 says nothing is removed until shared-cluster requirements §4 is answered, so `lb_subnet_ids` and
 the other subnet inputs still exist in `contract/handover.tf`. An unprefixed
 `lb_subnet_ids` in the cluster hand-over would therefore be a **duplicate variable** in
 any root loading both files. The cluster-side copies are prefixed `cluster_` so the
@@ -1483,13 +1483,13 @@ of another failure.
 and refuses the fourth, and QBFT's quorum is 3 of 4 — so the chain starts, produces blocks
 and reports healthy while sitting one failure from a halt, with the refusal recorded as an
 event on the StatefulSet and no fourth pod to notice the absence of. It is the fixture for
-the only failure in §9 that looks exactly like success.
+the only failure in the shared-cluster requirements that looks exactly like success.
 
 **Three implementation notes worth keeping:**
 
 - **The cluster module is sourced in place, not copied.** §12.6 says `modules/eks` moves
   here and leaves the platform, but `sbsa_besu/terraform/chain/main.tf:101` still sources
-  it and the CT-5 banner forbids removing anything before §9.4 is answered. A copy would
+  it and the CT-5 banner forbids removing anything before shared-cluster requirements §4 is answered. A copy would
   be a second source of truth and would drift. At cutover the directory moves and only one
   `source` line changes.
 - **The namespace is rendered as YAML, not built with the `kubernetes` provider.**

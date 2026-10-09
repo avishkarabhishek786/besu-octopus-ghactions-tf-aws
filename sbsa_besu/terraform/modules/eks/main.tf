@@ -164,7 +164,7 @@ resource "aws_eks_cluster" "this" {
   }
 
   # Use EKS ACCESS ENTRIES (the modern replacement for the aws-auth ConfigMap)
-  # so IAM principals — notably the in-VPC runner (stage 3) — can be granted
+  # so IAM principals — notably the In-VPC EC2 Runner (stage 3) — can be granted
   # Kubernetes RBAC declaratively. API_AND_CONFIG_MAP keeps the legacy ConfigMap
   # working too. bootstrap_cluster_creator_admin_permissions keeps whoever
   # created the cluster as a cluster admin.

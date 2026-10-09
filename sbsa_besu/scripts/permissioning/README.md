@@ -56,7 +56,7 @@ Everything below is for changes **after** that initial deploy.
 
 ## Prerequisites
 
-- Run **from the in-VPC runner** (the private EKS endpoint isn't reachable from a
+- Run **from the In-VPC EC2 Runner** (the private EKS endpoint isn't reachable from a
   laptop), at the repo root, after
   `aws eks update-kubeconfig --name <cluster> --region <region>`.
 - Tools: `kubectl`, `jq` (all scripts); `cast` (Foundry) for `fund-account.sh`

@@ -188,7 +188,7 @@ the absence of one. The distinction that matters:
 
 | Dimension | Scope it? | Why |
 |---|---|---|
-| **`Principal`** | **Yes — this is the strong control** | Every pull through this endpoint is made by *our* IAM roles (EKS node roles and our administrative instance role). Restricting to them limits the blast radius to exactly what we run. |
+| **`Principal`** | **Yes — this is the strong control** | Every pull through this endpoint is made by *our* IAM roles (EKS node roles and our In-VPC EC2 Runner role). Restricting to them limits the blast radius to exactly what we run. |
 | **`Action`** | **Yes** | Only four read actions are ever needed. |
 | **`Resource`** | **Careful — do NOT scope to our account alone** | The EKS managed addon images live in an **AWS-owned account**, not ours. A `Resource` limited to our repositories denies them. |
 
@@ -363,7 +363,7 @@ confirmations section.
 
 - **(a) ECR in our workload account.** Simplest; nothing further needed from you.
 - **(b) ECR in a central shared-services account.** Then we need **repository policies**
-  granting our EKS node roles and our administrative instance role:
+  granting our EKS node roles and our In-VPC EC2 Runner role:
   `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer`, `ecr:BatchCheckLayerAvailability`.
   In this case **#23 becomes mandatory** rather than merely advisable.
 
@@ -498,7 +498,7 @@ integration testing.
 **One consequence either way, which affects sequencing:** the agent is itself a Helm chart
 that pulls its own container images. Those must be **mirrored into ECR before** the agent
 can be installed, and installing it requires cluster access, which is what our in-VPC
-administrative instance is for. So the bootstrap order is: administrative instance →
+In-VPC EC2 Runner is for. So the bootstrap order is: In-VPC EC2 Runner →
 mirror the agent chart and images → install the agent → Octopus takes over from there.
 
 ### CQ-2 — GitHub Actions runners: who owns them, and should we use them? (not blocking)
@@ -671,7 +671,7 @@ consequences of using a third-party artefact repository; moving to ECR removes t
 | **#8** | Route and DNS resolution from the node subnets to an external registry host, plus its TLS trust chain | ECR is an AWS service reached through endpoints we already require. No external host to route to, no hostname for your DNS, no private CA certificate to distribute to our nodes. **This was the longest-lead item in the original document for your team.** |
 | **#19** | A written policy exception for AWS-owned EKS addon images, which could not be repointed at a third-party registry | With ECR there is one registry and one path: the addon images and our mirrored images arrive identically. "All images from ECR" holds with no carve-out to defend. |
 
-| **#21** | Permission for our administrative instance to reach the Amazon Linux package repositories through the S3 gateway endpoint | **We removed the dependency instead of asking you to accommodate it.** That instance no longer installs any OS packages: its entire toolchain (`kubectl`, `helm`, `terraform`, and a JRE) is downloaded and checksum-verified outside the VPC, then delivered as a single S3 object it unpacks at boot. It needs no package manager, no internet, and no new permission. |
+| **#21** | Permission for our In-VPC EC2 Runner to reach the Amazon Linux package repositories through the S3 gateway endpoint | **We removed the dependency instead of asking you to accommodate it.** That instance no longer installs any OS packages: its entire toolchain (`kubectl`, `helm`, `terraform`, and a JRE) is downloaded and checksum-verified outside the VPC, then delivered as a single S3 object it unpacks at boot. It needs no package manager, no internet, and no new permission. |
 
 Also no longer needed, and previously implied: a registry CA certificate distributed into
 every node's trust store, and a registry service account with pull credentials and a
@@ -695,7 +695,7 @@ single account still breaks `vpc-cni`, `coredns` and `kube-proxy`.
 We are not asking you to take our word that these settings are correct, and we are not
 planning to discover a problem during a billed deployment.
 
-We run a read-only preflight from **inside the VPC** — from the administrative instance,
+We run a read-only preflight from **inside the VPC** — from the In-VPC EC2 Runner,
 not from a laptop, because a laptop would pass while the cluster still could not pull. It
 resolves the image list from our Terraform configuration itself (so it cannot disagree with
 what will actually be deployed), pulls every image manifest, and prints the digests.

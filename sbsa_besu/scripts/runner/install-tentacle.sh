@@ -2,7 +2,7 @@
 # =============================================================================
 # scripts/runner/install-tentacle.sh   (run ON THE RUNNER, over SSM, as root)
 # -----------------------------------------------------------------------------
-# Turns the in-VPC runner into an Octopus POLLING TENTACLE WORKER that reaches
+# Turns the In-VPC EC2 Runner into an Octopus POLLING TENTACLE WORKER that reaches
 # Octopus Cloud through the bank's egress proxy — CICD_DESIGN_NOTES CD-57, the
 # mechanism behind CD-55 (R-9 closed on option 1). Idempotent: re-running on a
 # configured host changes nothing; `--reregister` forces a fresh registration.

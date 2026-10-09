@@ -13,7 +13,7 @@
 # During development the file is produced by the sibling project:
 #   mimic_eks/scripts/emit-handover.sh
 # In production it is assembled BY HAND from what the cloud team sends, which is
-# the four command outputs in docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md §9.4.
+# the four command outputs in docs/CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md §4.
 # Its shape is the contract.
 #
 # NOTHING downstream may read these variables directly — everything consumes
@@ -26,7 +26,7 @@
 # §12.5 says the subnet inputs MOVE from the network hand-over to this one,
 # because under CT-5 they are facts about where the cluster placed us rather
 # than about a VPC we lay out. They have not moved yet: the CT-5 banner in
-# CLAUDE.md §3 is explicit that nothing is removed until §9.4 is answered, so
+# CLAUDE.md §3 is explicit that nothing is removed until shared-cluster requirements §4 is answered, so
 # `lb_subnet_ids` and friends still exist in contract/handover.tf.
 #
 # An unprefixed name here would therefore be a DUPLICATE VARIABLE in any root
@@ -233,7 +233,7 @@ variable "cluster_lb_subnet_ids" {
 }
 
 variable "cluster_runner_subnet_id" {
-  description = "Which subnet the administrative instance should use (CT-1a). Prefixed — see the header."
+  description = "Which subnet the In-VPC EC2 Runner should use (CT-1a). Prefixed — see the header."
   type        = string
   default     = ""
 }
@@ -282,7 +282,7 @@ variable "network_policy_enforced" {
 }
 
 variable "runner_access_entry_created" {
-  description = "#32 — they created the EKS access entry for the administrative instance's role, scoped to our namespaces. Nothing can be deployed without it; it is their action, so it is a declared fact we gate on rather than something we can create (D-34)."
+  description = "#32 — they created the EKS access entry for the In-VPC EC2 Runner's role, scoped to our namespaces. Nothing can be deployed without it; it is their action, so it is a declared fact we gate on rather than something we can create (D-34)."
   type        = bool
   default     = false
 }

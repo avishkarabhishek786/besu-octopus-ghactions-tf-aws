@@ -2,7 +2,7 @@
 # modules/runner/main.tf
 # -----------------------------------------------------------------------------
 # PURPOSE
-#   The IN-VPC RUNNER. A laptop outside the VPC can call AWS APIs but CANNOT
+#   The In-VPC EC2 Runner. A laptop outside the VPC can call AWS APIs but CANNOT
 #   reach the cluster's PRIVATE Kubernetes API endpoint, so any in-cluster
 #   resource (Helm releases, the Besu charts, the StorageClass, manifests) must
 #   be applied from INSIDE the VPC. This module provisions a minimal EC2 host in

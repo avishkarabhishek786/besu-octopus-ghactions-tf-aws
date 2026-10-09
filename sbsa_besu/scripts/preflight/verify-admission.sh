@@ -112,11 +112,11 @@ classify() {
       note "   container non-root first (D-33). NOTE: PSA can also be enforced CLUSTER-WIDE via"
       note "   AdmissionConfiguration, which does not appear in the namespace labels (question K)." ;;
     *"exceeded quota"*|*"forbidden: exceeded"*)
-      note "-> #27: ResourceQuota. Compare hard-minus-used against the footprint table in §9.1."
+      note "-> #27: ResourceQuota. Compare hard-minus-used against the footprint table in shared-cluster requirements §1."
       note "   Remember admission tests ONE pod: a quota that admits three validators and refuses"
       note "   the fourth passes here and still leaves QBFT one failure from a halt (D-36)." ;;
     *LimitRange*|*"minimum memory usage"*|*"maximum cpu usage"*)
-      note "-> #27: LimitRange defaults or maxima sit below/above our requests (§9.1)." ;;
+      note "-> #27: LimitRange defaults or maxima sit below/above our requests (shared-cluster requirements §1)." ;;
     *"no matches for kind"*|*"could not find the requested resource"*)
       note "-> #30: the CRD is not installed on this cluster. Which one is named above."
       note "   TargetGroupBinding has NO fallback (the RPC endpoints cannot be exposed without"

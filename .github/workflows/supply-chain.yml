@@ -68,7 +68,7 @@ concurrency:
 
 env:
   # crane is pinned HERE and not in scripts/runner/runner-tools.manifest, on
-  # purpose: CI is its only consumer — the in-VPC runner never mirrors — and
+  # purpose: CI is its only consumer — the In-VPC EC2 Runner never mirrors — and
   # adding it to the manifest would ship it in the runner's S3 bundle for
   # nothing. Any version more than one host depends on (helm, terraform) lives
   # in the manifest instead and is read at run time. The rule is written out in
@@ -134,7 +134,7 @@ jobs:
           set -euo pipefail
           # Helm's version and download URL come from the pinned manifest, not
           # from this file. Restating them here is how the CI toolchain and the
-          # in-VPC runner's toolchain drift apart, and for terraform that drift
+          # In-VPC EC2 Runner's toolchain drift apart, and for terraform that drift
           # is not cosmetic: state records the version that last wrote it, so a
           # newer Terraform can refuse or rewrite state across our four state
           # files (CD-23).

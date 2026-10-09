@@ -346,7 +346,7 @@ an IGW.**
   its first pull needs an internet route (D-17).
 - **Terraform providers.** The Phase-1 and Phase-2 **AWS layers** are applied from the
   human's laptop, which has internet — provider mirroring is not needed for them. It
-  is needed only for the in-VPC runner that applies Kubernetes resources.
+  is needed only for the In-VPC EC2 Runner that applies Kubernetes resources.
 - **Source code for the runner.** Delivered as an **S3 bundle** through the S3
   gateway endpoint. As of D-21 this **is** the production arrangement, not an
   approximation — and the runner carries no package-manager dependency either.

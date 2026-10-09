@@ -15,8 +15,8 @@ H1–H39. Preserve them.
 > the four add-ons (#30); item **7** gains an EKS/namespace denylist. The replacement work —
 > `modules/cluster-contract`, the cluster hand-over, `verify-subnet-rules.sh`, `mimic_eks`, and
 > the removal of `modules/eks` / `storage-csi` / the four add-on releases — is listed in
-> `docs/CLOUD_TEAM_REDESIGN_NOTES.md` **§12.6** and starts once **§9 of the requirements
-> document is answered**. Branch `shared-eks-namespace`; the pre-CT-5 build is frozen on
+> `docs/CLOUD_TEAM_REDESIGN_NOTES.md` **§12.6** and starts once **the shared-cluster requirements
+> (`docs/CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md`) are answered**. Branch `shared-eks-namespace`; the pre-CT-5 build is frozen on
 > `own-eks-cluster-design`.
 
 ---
@@ -62,7 +62,7 @@ still has all eight — see the banner above.)*
 | Root | Backend key | Contains |
 |---|---|---|
 | `shared` | `besu/<env>/shared.tfstate` | interface + gateway endpoints, Route 53 PHZ |
-| `runner` | `besu/<env>/runner.tfstate` | in-VPC SSM runner (already its own root) |
+| `runner` | `besu/<env>/runner.tfstate` | In-VPC EC2 Runner (already its own root) |
 | `chain` | `besu/<env>/chain.tfstate` | ledger cluster + Besu + access + observability + Blockscout |
 | `app` | `besu/<env>/app.tfstate` | application cluster |
 
@@ -178,7 +178,7 @@ via `terraform console`:
 `scripts/preflight/verify-images.sh` resolves the list *from Terraform* rather
 than restating it (a second copy is a copy that can drift), pulls each manifest
 via crane/skopeo/docker, and prints digests ready to paste back. Run it from the
-in-VPC runner, which proves reachability from where the pulls happen.
+In-VPC EC2 Runner, which proves reachability from where the pulls happen.
 
 **Done 2026-08-30 — containerd CA trust:**
 

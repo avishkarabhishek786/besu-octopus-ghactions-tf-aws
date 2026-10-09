@@ -6,7 +6,7 @@
 # (eth+debug/trace). Generates the DB password + Phoenix SECRET_KEY_BASE here so
 # no secret is hard-coded or passed by the human. Fully private (no edge).
 #
-# In-cluster resource: applied from the in-VPC runner (private EKS endpoint),
+# In-cluster resource: applied from the In-VPC EC2 Runner (private EKS endpoint),
 # like the Besu/observability releases. Gated by var.deploy.
 # =============================================================================
 

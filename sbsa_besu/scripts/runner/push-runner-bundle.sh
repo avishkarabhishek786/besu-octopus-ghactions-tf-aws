@@ -2,7 +2,7 @@
 # =============================================================================
 # scripts/runner/push-runner-bundle.sh   (run from the LAPTOP / a CI runner)
 # -----------------------------------------------------------------------------
-# D-21: deliver the in-VPC runner's TOOLCHAIN and SOURCE through S3, so the
+# D-21: deliver the In-VPC EC2 Runner's TOOLCHAIN and SOURCE through S3, so the
 # runner needs no package manager, no internet and no GitHub token.
 #
 # THE PROBLEM THIS SOLVES

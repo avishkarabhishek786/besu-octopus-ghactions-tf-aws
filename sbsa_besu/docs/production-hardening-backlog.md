@@ -191,7 +191,7 @@ noted as follow-up).
 | **H2** | Genesis Job re-runs → mismatched genesis/pubkeys → chain brick | **Critical** | 3,4 | ✅VERIFIED · **DONE** |
 | **H3** | C6 `hot` allowlist reload silently no-ops on validators (revocation not enforced) | **Critical** | 1,4 | ✅VERIFIED · **DONE** |
 | **H4** | App tx-submitting API is unauthenticated, whole-VPC reachable, CSRF-able | **High** | 1,2,7 | ⚠️TRIAGE · **DONE** |
-| **H5** | In-VPC runner hardwired to `AdministratorAccess`, no scope-down path | **High** | 1,2 | ⚠️TRIAGE · **DONE — boundary + scoped policy landed 2026-08-10; needs apply-validation** |
+| **H5** | In-VPC EC2 Runner hardwired to `AdministratorAccess`, no scope-down path | **High** | 1,2 | ⚠️TRIAGE · **DONE — boundary + scoped policy landed 2026-08-10; needs apply-validation** |
 | **H6** | No NetworkPolicies over privileged RPC listeners (QBFT/ADMIN/PERM/DEBUG); ops JWT optional | **High** | 1,2 | ✅VERIFIED · **DONE (opt-in)** |
 | **H7** | EKS Secrets not envelope-encrypted with CMK; CSI `syncSecret`→etcd risk | **High** | 1,4 | ⚠️TRIAGE · **DONE** |
 | **H8** | App signer funded but never allowlisted under `local` default → `set()` denied | **High** | 1,4,7 | ✅VERIFIED · **DONE** |
@@ -380,7 +380,7 @@ noted as follow-up).
 
 ## P1 — High (privilege, exposure, upgrade-safety, input-validation)
 
-### H5 — Give the in-VPC runner a least-privilege deploy role (not `AdministratorAccess`)
+### H5 — Give the In-VPC EC2 Runner a least-privilege deploy role (not `AdministratorAccess`)
 - **Source.** TF #1. ⚠️TRIAGE (High).
 - **Problem.** `terraform/modules/runner/variables.tf:46-56` defaults the instance profile to
   `arn:aws:iam::aws:policy/AdministratorAccess`, and `terraform/runner/main.tf:17-34` provides

@@ -5,11 +5,11 @@
 # and one besu-node release PER NODE (validators, bootnodes, RPC). This module
 # uses the helm provider (inherited from root) and therefore needs a PRIVATE
 # path to the EKS endpoint — it is gated by `deploy` (= deploy_in_cluster_resources)
-# and is meant to run from the in-VPC runner.
+# and is meant to run from the In-VPC EC2 Runner.
 # =============================================================================
 
 variable "deploy" {
-  description = "Master gate. When false (laptop apply against the private endpoint), NO Helm releases are created. Set true from the in-VPC runner."
+  description = "Master gate. When false (laptop apply against the private endpoint), NO Helm releases are created. Set true from the In-VPC EC2 Runner."
   type        = bool
   default     = false
 }

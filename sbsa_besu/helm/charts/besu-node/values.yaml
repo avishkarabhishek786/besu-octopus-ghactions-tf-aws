@@ -186,14 +186,14 @@ explorerRpc:
 # --- Validator-internal ops RPC (role=validator; stage 8) --------------------
 # Privileged namespaces (QBFT validator voting + optional ADMIN/DEBUG/TXPOOL) on
 # an INTERNAL-ONLY ClusterIP listener — NEVER fronted by an NLB/PrivateLink.
-# Reached only from the in-VPC runner via `kubectl port-forward`. QBFT votes must
+# Reached only from the In-VPC EC2 Runner via `kubectl port-forward`. QBFT votes must
 # be cast on each validator, so this is the correct (and only) home for them.
 opsRpc:
   enabled: false
   # PERM is included so the operator can hot-reconcile the account allowlist on
   # validators via perm_add/removeAccountsFromAllowlist (C6/H3). SAFE here because
   # this listener is ClusterIP-only and reached solely via `kubectl port-forward`
-  # from the in-VPC runner — perm_* mutators are NEVER on the SWIFT/app external edges.
+  # from the In-VPC EC2 Runner — perm_* mutators are NEVER on the SWIFT/app external edges.
   apis: "ETH,NET,WEB3,QBFT,ADMIN,DEBUG,TXPOOL,PERM"
   # JWT (internal-only path). When a pubkey secret is set, auth is on.
   jwtPubkeySecret: ""

@@ -1,7 +1,7 @@
 # =============================================================================
 # terraform/runner/deploy-policy.tf — scoped runner deploy policy (H5)
 # -----------------------------------------------------------------------------
-# WHAT: the IAM policy attached to the in-VPC runner's instance role. The runner
+# WHAT: the IAM policy attached to the In-VPC EC2 Runner's instance role. The runner
 # runs `terraform apply` for the WHOLE chain stack from inside the VPC (the EKS
 # API endpoint is private), so it needs real deploy power. This file makes that
 # power (a) service-scoped, (b) resource-scoped on every store that holds

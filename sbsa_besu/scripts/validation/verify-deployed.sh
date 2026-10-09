@@ -4,10 +4,10 @@
 # -----------------------------------------------------------------------------
 # READ-ONLY by default. The NetworkPolicy enforcement probe creates two
 # short-lived pods and is therefore OPT-IN (--probe-netpol). Free either way.
-# Run from the in-VPC runner.
+# Run from the In-VPC EC2 Runner.
 #
 # WHY IT EXISTS
-#   Four of the silent failures in NETWORK_REQUIREMENTS_CLOUD_TEAM.md §9.3
+#   Four of the silent failures in CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md §3
 #   cannot be detected before the workload is running, and three of those
 #   LOOK LIKE SUCCESS. A preflight cannot catch them; only an assertion on the
 #   deployed state can. (CLOUD_TEAM_REDESIGN_NOTES §12.13.2, class "D".)
@@ -98,7 +98,7 @@ elif [[ "$N_TOTAL" -lt "$WANT" ]]; then
   note "tolerance. Look for the refusal on the StatefulSet, not on a pod:"
   note "  kubectl -n $NS describe statefulset -l $SELECTOR | sed -n '/Events/,\$p'"
   note "  kubectl -n $NS get resourcequota -o yaml"
-  note "Then quote §9.1's footprint table to the cloud team (#27)."
+  note "Then quote shared-cluster requirements §1's footprint table to the cloud team (#27)."
 else
   bad "#27: $N_TOTAL validator pods, $N_READY Ready (want $WANT Ready)"
   jq -r '.items[] | "        \(.metadata.name)  phase=\(.status.phase)  node=\(.spec.nodeName // "<unscheduled>")"' <<<"$PODS_JSON"

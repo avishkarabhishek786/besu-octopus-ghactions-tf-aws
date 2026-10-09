@@ -7,7 +7,7 @@
 # platform (`sbsa_besu`) drops it in beside network-handover.auto.tfvars.
 #
 # In production this file is typed BY HAND from the four command outputs in
-# sbsa_besu/docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md §9.4. Its shape is the
+# sbsa_besu/docs/CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md §4. Its shape is the
 # contract (sbsa_besu/terraform/contract/eks-handover.tf); regenerate it rather
 # than editing it.
 #
@@ -55,7 +55,7 @@ log "rendering cluster hand-over (profile=$PROFILE) -> $OUT"
 # Fidelity profile: $PROFILE
 #
 # In production this file is assembled BY HAND from the four command outputs in
-# docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md §9.4. Its shape is the contract —
+# docs/CLOUD_TEAM_SHARED_CLUSTER_REQUIREMENTS.md §4. Its shape is the contract —
 # terraform/contract/eks-handover.tf. Regenerate rather than edit.
 #
 # Decision references: docs/CLOUD_TEAM_REDESIGN_NOTES.md §12 (D-23..D-43).
