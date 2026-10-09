@@ -2,7 +2,8 @@
 
 > Consumes the shared VPC **and, since CT-5, the shared EKS cluster** provided by the
 > bank cloud team. During development those are produced by the sibling projects
-> `mimic_vpc` and (to be built) `mimic_eks`.
+> `mimic_vpc` and `mimic_eks` (built 2026-10-09; **hostile by default** — it exists to make
+> this platform's gates fail, so they can be trusted when they pass).
 
 You (Claude Code) are building a production Hyperledger Besu (QBFT) ledger and an
 application platform in **a namespace of a shared EKS cluster another team runs, inside a

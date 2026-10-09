@@ -24,7 +24,7 @@ you what to run; nothing is executed for you.
 | `mimic_vpc/` | Impersonates the bank cloud team's network hand-over. | Throwaway — delete when the real VPC exists |
 | `mimic_egress/` | Impersonates the bank's shared egress proxy (R-9, CD-63). | Throwaway — delete when the R-10 ticket is answered |
 | `sbsa_besu/` | The platform: Besu and everything around it, in **a namespace of the cloud team's shared cluster** (CT-5; was 2 EKS clusters of our own). | Permanent |
-| `mimic_eks/` | **To be built** — impersonates the shared EKS cluster and our namespace (CT-5, D-32). | Throwaway |
+| `mimic_eks/` | Impersonates the shared EKS cluster and our namespace (CT-5, D-32). **Built 2026-10-09, `profile = "hostile"` by default** — it breaks every platform gate deliberately, so each can be seen to fire. Bills per hour, unlike `mimic_vpc`. | Throwaway |
 
 They were **separate git repositories until 2026-09-18** and are now three
 subdirectories of one. The reason they were kept apart still stands — the

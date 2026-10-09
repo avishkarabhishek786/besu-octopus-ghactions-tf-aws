@@ -1386,6 +1386,7 @@ as B12 and the `jq '// "absent"'` bug, now for the third time:
 | Item | Blocked on |
 |---|---|
 | ~~`modules/cluster-contract`~~ | **BUILT 2026-10-09.** See §12.13.6 |
+| ~~`mimic_eks` (D-32)~~ | **BUILT 2026-10-09.** See §12.13.7 |
 | `verify-subnet-rules.sh` (D-29, #34) | Writable now, and deliberately not written blind. Ordered NACL evaluation is the most intricate logic in the set, and §9.4 command 3 produces the real rule dumps to test it against. Writing it against imagined input is how the `jq '//'` bug happened |
 | D-42 / D-43 alarms | Genuinely blocked on **#30**: whether we get `PrometheusRule` on their operator or run our own Prometheus decides where the rules live |
 
@@ -1451,3 +1452,66 @@ module header says never to add one that does.
 **`gates_skipped` is an output, not a comment.** Terraform cannot warn from a module, so
 the roots must print it and the RUNBOOK must say to read it. A gate that could not run
 reading as a gate that passed is precisely how this module would become decorative.
+
+#### 12.13.7 `mimic_eks` — built 2026-10-09, hostile by default
+
+The fixture D-32 called for, and the thing that makes everything in §12.13.5 and §12.13.6
+trustworthy rather than merely written. `terraform validate` clean; both profiles' knobs
+and both rendered manifests verified.
+
+**`profile = "hostile"` is the default, and that is the design.** The platform now carries
+eleven Terraform gates and four runner preflights, all written against a cluster that did
+not exist. This programme has been bitten three times by checks that could not fail — B12,
+the `jq '// "absent"'` bug that treated `false` as empty, and the `jq | while read`
+subshell that swallowed quota failures. So the first run against this mimic is supposed to
+fail in a dozen places, each citing a requirement number, and **seeing that is the
+deliverable**. A mimic that defaults to compliant is one nobody runs in the mode that has
+value.
+
+Thirteen deliberate defects, each mapped to the gate it should trip: a public API
+endpoint (CG-2), Kubernetes above the tested ceiling (CG-3), no load-balancer controller
+(CG-7), a `restricted` namespace (CG-8), **no dedicated node group and no NetworkPolicy
+enforcement together** (CG-9, the isolation floor), three nodes for four validators (D-39's
+`Pending`), a quota admitting three validators of four (D-36), an `Immediate`
+StorageClass and no volume expansion (#30), a cluster-admin access entry (#32's silent
+direction), no RBAC for the four custom resource kinds (#32), and a node security group
+with no RPC ingress (#33). Every knob overrides individually, so one defect can be enabled
+alone — which is how you distinguish a gate that works from one that is merely downstream
+of another failure.
+
+**The quota fixture is the one to understand.** `quota_cpu = 6` admits three validators
+and refuses the fourth, and QBFT's quorum is 3 of 4 — so the chain starts, produces blocks
+and reports healthy while sitting one failure from a halt, with the refusal recorded as an
+event on the StatefulSet and no fourth pod to notice the absence of. It is the fixture for
+the only failure in §9 that looks exactly like success.
+
+**Three implementation notes worth keeping:**
+
+- **The cluster module is sourced in place, not copied.** §12.6 says `modules/eks` moves
+  here and leaves the platform, but `sbsa_besu/terraform/chain/main.tf:101` still sources
+  it and the CT-5 banner forbids removing anything before §9.4 is answered. A copy would
+  be a second source of truth and would drift. At cutover the directory moves and only one
+  `source` line changes.
+- **The namespace is rendered as YAML, not built with the `kubernetes` provider.**
+  Fidelity first — the cloud team hands us a namespace, they do not Terraform one into our
+  state — and then two practical reasons: in the strict profile the API endpoint is private
+  so a laptop could not reach it anyway (D-34), and Kubernetes objects sharing this root's
+  state would recreate the teardown-order problem the platform solved by splitting roots.
+- **A fourth bug, found the same way as the others.** `tenancy.tf`'s first version built
+  the pod-security labels as a hand-indented heredoc and interpolated it mid-block,
+  rendering `enforce` at four spaces and `audit`/`warn` at two — **invalid YAML**, whose
+  `kubectl` parser error would have read like a platform problem rather than a fixture one.
+  Found by parsing the rendered output with a YAML loader instead of reading it. The rule
+  that replaced it: interpolated blocks carry **no** leading indentation, the template
+  supplies the first line's indent literally, and `indent(n, …)` supplies the rest — which
+  is precisely what `indent` does, since it skips the first line by design.
+  `apply-tenancy.sh` now also refuses to apply a manifest that fails
+  `kubectl apply --dry-run=client`.
+
+**What it cannot reproduce, said plainly so no pass is over-read:** cluster-wide Pod
+Security via `AdmissionConfiguration` (a managed control plane does not expose it —
+`psa_cluster_wide` reproduces the *information gap* question K describes, not the
+enforcement); EKS Pod Identity (always IRSA here, so #31's other branch is exercised by
+editing the hand-over); the real #33 grant (it would reference our NLB security groups,
+which do not exist until the platform is deployed); and #29, which is an agreement between
+people and has no configuration to mimic.

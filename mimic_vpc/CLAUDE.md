@@ -33,8 +33,11 @@ silently diverging.
 >    class they described. The replacement must permit the nine flows in §12.4 of the redesign
 >    notes (requirement #34) and nothing else, and the platform's `verify-subnet-rules.sh`
 >    must be tested against a deliberately broken copy first — the B12 lesson.
-> 3. **A third mimic, `mimic_eks`, is to be built** from the platform's `modules/eks`
->    (D-32). The cluster is *not* added here: different lifetime and different cost — this
+> 3. **A third mimic, `mimic_eks`, was BUILT on 2026-10-09** (D-32). It sources the
+>    platform's `modules/eks` in place rather than copying it, and consumes **this**
+>    project's hand-over — which makes it a fidelity check on that file too: if a cluster
+>    cannot be built from it, the platform could not have been either. The cluster is still
+>    *not* added here, for the original reason: different lifetime and different cost — this
 >    VPC is free and stays up for weeks, a cluster bills per hour.
 >
 > **Requirement numbers:** several the platform withdrew as *asks* (#4, #7, #10, #12, #16,

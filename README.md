@@ -11,13 +11,17 @@ Octopus Deploy. One repository, three projects, since 2026-09-18.
 > [`sbsa_besu/docs/CLOUD_TEAM_REDESIGN_NOTES.md` §12](sbsa_besu/docs/CLOUD_TEAM_REDESIGN_NOTES.md);
 > the asks to the cloud team are §9 (#27–#38) of
 > [`NETWORK_REQUIREMENTS_CLOUD_TEAM.md`](sbsa_besu/docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md).
-> A fourth project, `mimic_eks`, is to be built. Work happens on branch
-> `shared-eks-namespace`; the own-cluster design is frozen on `own-eks-cluster-design`.
+> A fourth project, [`mimic_eks/`](mimic_eks/), was **built 2026-10-09** — and it is
+> **hostile by default**: a cluster that breaks every gate the platform has, because a
+> check that has only ever been seen to pass is an assumption wearing a check's clothing.
+> Work happens on branch `shared-eks-namespace`; the own-cluster design is frozen on
+> `own-eks-cluster-design`.
 
 | Directory | What it is | Ships to production? |
 |---|---|---|
 | [`sbsa_besu/`](sbsa_besu/) | **The platform.** Terraform roots (`shared` → `runner` → `chain` → `app`), Helm charts, scripts, and the full design record in `docs/`. | Yes |
 | [`mimic_vpc/`](mimic_vpc/) | The cloud team's landing-zone VPC, **as a consumer sees it** — so the platform's input contract can be built and tested before the real hand-over. | No — throwaway |
+| [`mimic_eks/`](mimic_eks/) | The cloud team's **shared EKS cluster** and the namespace allotted to us (CT-5, D-32). **Hostile by default**: it exists to make the platform's eleven Terraform gates and four runner preflights *fail*, each citing a requirement number. A pass against it is a bug in the check. Bills per hour — same-day teardown. | No — throwaway |
 | [`mimic_egress/`](mimic_egress/) | The bank's shared egress proxy, **as a consumer sees it** — so the Octopus polling-Tentacle path can be tested before the real egress is wired. | No — throwaway |
 
 The frozen reference build this platform was ported from, `besu-aws`, sits

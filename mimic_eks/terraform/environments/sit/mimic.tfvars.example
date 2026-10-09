@@ -1,0 +1,30 @@
+# =============================================================================
+# mimic_eks — SIT example. COPY to mimic.tfvars and fill in; that file is
+# gitignored because in production these values are bank-specific (CD-10).
+# -----------------------------------------------------------------------------
+# The network values come from mimic_vpc's hand-over, which Terraform loads
+# automatically from network-handover.auto.tfvars — do NOT restate them here.
+# =============================================================================
+
+environment    = "sit"
+deletion_group = "mimic-eks-sit-001" # UNIQUE per deployment; teardown keys on it
+owner          = "ledger-platform"
+cost_center    = "REPLACE-ME"
+region         = "af-south-1"
+
+# #32 — the administrative instance's role, from the platform's runner root:
+#   terraform -chdir=../sbsa_besu/terraform/runner output -raw runner_role_arn
+# Leave empty to skip the access entry; the platform's CG-10 will then refuse,
+# which is itself a correct outcome to have seen once.
+runner_role_arn = ""
+
+# -----------------------------------------------------------------------------
+# PROFILE. Default is "hostile" and that is on purpose — see CLAUDE.md §1.
+# Uncomment for a deployable cluster, AFTER you have watched the platform's
+# gates fail against the hostile one.
+# -----------------------------------------------------------------------------
+# profile = "strict"
+
+# Break exactly ONE thing instead, to confirm exactly one gate fires:
+# profile   = "strict"
+# quota_cpu = "6"      # -> verify-cluster.sh #27, then verify-deployed.sh D-36
