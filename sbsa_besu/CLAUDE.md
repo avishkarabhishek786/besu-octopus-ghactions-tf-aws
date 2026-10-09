@@ -170,7 +170,9 @@ terraform/
   modules/    network-contract, endpoints, eks, iam, storage-csi, secrets, pki,
               besu, rpc-access, observability, blockscout, registry
 helm/         charts + values
-scripts/      preflight/, lib/, pki/, permissioning/, access/, maintenance/, validation/
+scripts/      preflight/, lib/, pki/, permissioning/, access/, maintenance/, validation/,
+              runner/, supply-chain/   — indexed in scripts/README.md (where each RUNS,
+              and read-only vs mutating vs irreversible); detail in each script's header
 docs/         RUNBOOK.md, PORTING.md, build-findings.md, design records
 ```
 

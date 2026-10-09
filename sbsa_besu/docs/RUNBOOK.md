@@ -10,6 +10,12 @@ you what to run; nothing is executed for you.
 
 ---
 
+> **Looking for which script to run?** [`../scripts/README.md`](../scripts/README.md) is the
+> index: all 31, what each does, **where it has to run** (laptop vs in-VPC runner vs build
+> host — not a preference; the API endpoint is private and the VPC has no egress), and
+> whether it is read-only, mutating, or irreversible. The detail is in each script's own
+> header, which `-h` prints.
+
 ## 1. Orientation — three projects, one repository
 
 | Directory | Role | Lifetime |
