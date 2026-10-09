@@ -564,7 +564,7 @@ nodes of capacity at 110 pods/node, with a spare /18 for a fourth AZ.
 | ~~Q-4~~ | ~~Is `100.64.0.0/10` free on the bank's network?~~ | **MOOT under CT-5 (D-30)** — secondary CIDRs and CNI custom networking are the cloud team's configuration. |
 | Q-5 | ~~Third-party repository specifics.~~ **Replaced by Q-4a..Q-4e** (§11 / `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §8.4): ECR account topology, CVE gating, and who owns the mirror pipeline. | Blocks the supply-chain stage. |
 
-*(Every row above is now closed or moot; the live questions are **Q-8..Q-15 in §12.11**.)*
+*(Every row above is now closed or moot; the live questions are **Q-8..Q-18 in §12.11**.)*
 
 **None of these block drafting the new `CLAUDE.md`** — they are parameters, not
 structural forks. Write it with the air-gapped assumption as the default and capture each
@@ -1139,7 +1139,7 @@ cannot ask).
 | `terraform/modules/secrets/` | The AWS-provider `helm_release` removed; `SecretProviderClass` path kept behind `cluster_provides_secrets_store_csi`, init-container fetch as the alternative |
 | `terraform/modules/rpc-access/` | LBC `helm_release` removed; `TargetGroupBinding` asserted available. NLB subnets = `lb_subnet_ids`; target ingress = a rule on *their* node SG (#33) or an SGP-attached SG of ours |
 | `terraform/modules/observability/` | kube-prometheus-stack and fluent-bit `helm_release`s removed; `Prometheus`/`Alertmanager` CRs in-namespace behind `cluster_provides_prometheus_operator`; SNS, alarms, CloudTrail stay |
-| `terraform/modules/besu/`, `blockscout/` | `create_namespace = false`; namespace from the hand-over; tolerations/selectors from `node_taint`/`node_label`; anti-affinity by hostname → `required` |
+| `terraform/modules/besu/`, `blockscout/` | `create_namespace = false`; namespace from the hand-over; tolerations/selectors from `node_taint`/`node_label`; anti-affinity by hostname → `required` (D-39: `whenUnsatisfiable: DoNotSchedule`) |
 | `terraform/modules/runner/` | Access entry + policy association removed (they create it, #32). Cluster identity from the hand-over, not from `chain` state. `runner_scope = "in-cluster"` becomes the default |
 | `terraform/modules/network-contract/` | Gates 2, 3, 5, 6 removed (§12.5) |
 | **new** `terraform/modules/cluster-contract/` | The EKS analogue of `network-contract`: creates nothing, asserts everything, one requirement number per failure message |
@@ -1149,7 +1149,7 @@ cannot ask).
 | `terraform/shared/` | The PHZ stays ours. Interface endpoints: `central_interface_endpoints = true` was already the production setting (CD-39); their cluster needs the same endpoints, so **the shared root creates nothing in the bank** and `verify-endpoints.sh` is the check |
 | `helm/charts/besu-node/` | `runAsUser: 0` init container (F32) — conditional on `psa_level`, or redone non-root (§12.3) |
 | `helm/charts/besu-blockscout/` | Postgres StatefulSet kept, or replaced by an RDS reference, per #37 |
-| `scripts/preflight/` | **new** `verify-subnet-rules.sh` (D-29); `verify-endpoints.sh` unchanged; `verify-images.sh` unchanged but the image list shrinks |
+| `scripts/preflight/` | **new** `verify-subnet-rules.sh` (D-29), `verify-cluster.sh`, `verify-admission.sh`, `verify-pull-canary.sh` (§12.13.3); `verify-endpoints.sh` gains `eks-auth` conditionally (#31); `verify-images.sh` keeps its logic, loses its claim — it proves *our* pull, not the node role's (D-38). The image list shrinks |
 | `scripts/maintenance/full-delete.sh` | No cluster to delete; the abort-on-hit denylist (item 7) gains `eks:cluster`, `eks:nodegroup`, and anything in a namespace that is not ours |
 | `scripts/supply-chain/mirror.manifest` | The four cluster-scoped charts and most of the 15 chart-carried images leave **if** #30 confirms they are provided. Prometheus / Alertmanager / Grafana images stay if we run our own instances. `../CHART_IMAGES.md` shrinks accordingly |
 | `docs/CICD_DESIGN_NOTES.md` | `besu-infra` loses the EKS step; CD-23's Terraform container and CD-29's endpoint assertion stand; a CD-66 entry when the pipeline is touched |
@@ -1214,13 +1214,22 @@ models role-separated subnets, which is what the cloud team described.
 | **D-24** | **Cluster-scoped add-ons are the cloud team's to provide; the platform asserts and never installs.** The four in §12.2 each carry a hand-over boolean, an assertion on the CRD, and a named namespaced fallback. The load-balancer controller has no fallback and is therefore a hard requirement (#30). | DECIDED |
 | **D-25** | **The cluster arrives as `eks-handover.auto.tfvars`** — plain values, symlinked into each root, never `terraform_remote_state`. Third application of the rule (network, egress, cluster). | DECIDED |
 | **D-26** | **Ask for a dedicated, tainted ledger node group in dedicated ledger subnets** (#28) — the multi-tenant-standard form of §6's node isolation, in the cloud team's own vocabulary. If refused: `NetworkPolicy` default-deny (D-9) is the compensating control and the posture regression is recorded in writing, not absorbed. | PROPOSED — needs the human's sign-off before sending |
-| **D-27** | **Node maintenance needs a written operational contract, not a configuration** (#29): PDBs respected, never forced, one node at a time, notice and a window, Kubernetes-upgrade cadence shared in advance. On our side, validator anti-affinity by hostname becomes `required`. The failure this prevents is a chain halt (H1), and it is named as such in the ask. | DECIDED (the ask); its terms are the cloud team's to accept |
+| **D-27** | **Node maintenance needs a written operational contract, not a configuration** (#29): PDBs respected, never forced, one node at a time, notice and a window, Kubernetes-upgrade cadence shared in advance. On our side, validator anti-affinity by hostname becomes `required` — implemented as D-39. The failure this prevents is a chain halt (H1), and it is named as such in the ask. | DECIDED (the ask); its terms are the cloud team's to accept |
 | **D-28** | **One cluster, two namespaces** (ledger, app) requested (#27). PrivateLink between clusters (D-1), the dedicated chain cluster (D-4), the `app` root's consumer endpoint and the Stage 3.0 gate are deleted; ledger ↔ application isolation is namespaces + `NetworkPolicy`. | DECIDED — supersedes D-1, D-4 |
 | **D-29** | **The subnet security rules are a gate.** The flow table (§12.4) is requirement #34, asserted by a read-only preflight against the live NACLs and security groups, citing the flow number on failure. The mimic ships restrictive rules so the check is exercised. | DECIDED |
 | **D-30** | **The network hand-over shrinks** (§12.5); `network-contract` loses gates 2, 3, 5, 6; the CIDR ask (CD-42..45, D-7, D-8, D-12) and Appendix A are withdrawn. | DECIDED — supersedes D-7, D-8, D-10 (partly: re-scoped into D-26), D-12 |
 | **D-31** | **Blockscout's Postgres placement follows their data-subnet policy** (#37): in-cluster if permitted, RDS in a data subnet if not. Explorer-only; the lowest-stakes item here. | DECIDED (conditional) |
 | **D-32** | **`mimic_eks` is a third mimic project** (§12.8), built from the moved `modules/eks`, giving the runner only the namespace-scoped access the bank would. **`mimic_vpc` NACLs become restrictive.** | DECIDED |
 | **D-33** | **Pod Security Admission is a gate.** The F32 root init container is incompatible with `restricted`; before any apply the namespace's PSA level is known (#27) and the chart either conditions on it or the fix is redone without root. | DECIDED |
+| **D-35** | **Every requirement in §9.3 carries a named gate, or it is written down that it has none.** §9.6 shipped three generic checks for thirteen requirements; the gap was not that the checks were wrong but that twelve of the thirteen had no owner. Four gate classes, and each requirement is assigned to one or more: **plan-time** (`modules/cluster-contract`), **runner preflight** (the Kubernetes-side facts — the endpoint is private, so only the runner can ask), **post-deploy assertion**, **standing alarm**. §12.13 is the mapping. | DECIDED 2026-10-09 |
+| **D-36** | **The silent-success class is the one that matters, and it needs positive assertions.** #27's quota and #28's co-location do not look like failures — they look like a healthy chain. A quota a few hundred millicores short admits three validators; QBFT's quorum is 3 of 4, so the ledger starts, produces blocks and reports healthy with **zero** fault tolerance, and the refusal is an event on the StatefulSet with no fourth pod to inspect. Gates for this class assert a **count** — four validators in the block-producing set, four distinct `spec.nodeName` — never the absence of errors. | DECIDED |
+| **D-37** | **A boundary is only proven by a check that asserts a negative.** #32 (scope of the access entry) and #35 (`NetworkPolicy` enforcement) both fail **open**: a cluster-wide grant works exactly as well as a scoped one, and the API server accepts `NetworkPolicy` objects whether or not the CNI enforces them. So the gates are `kubectl auth can-i create pods -n kube-system` → must be `no`, and an active two-pod deny-probe whose forbidden connection must be refused. Configuration is evidence; a refused connection is proof. | DECIDED |
+| **D-38** | **`verify-images.sh` does not and cannot satisfy #38 — principal mismatch.** It authenticates with `REGISTRY_USER`/`REGISTRY_PASS` (`scripts/preflight/verify-images.sh:93-101`), i.e. the runner's own credentials. Under CT-5 the pull is performed by **their** node role via kubelet's ECR credential provider. Different principals, different policies, and the script exits 0 either way — a check that cannot fail, in the CICD §11.3 sense. Closed by three things: a repository-policy assertion on their node role ARN, a check that the node role's **identity** policy carries `ecr:GetAuthorizationToken` (no repository policy can grant it), and a **canary pod** as the only authoritative proof. The script's banner says so, so nobody reads its exit 0 as "the cluster can pull". | DECIDED |
+| **D-39** | **Validator hostname spread becomes `DoNotSchedule`.** `helm/charts/besu-node/templates/statefulset.yaml:77-79` is `whenUnsatisfiable: ScheduleAnyway` — correct for a cluster we size ourselves, wrong on a shared one, because it lets two validators land on one node silently and a single drain then removes two of four. Implements the anti-affinity clause D-27 already stated. **Accepted trade-off:** with fewer than four schedulable nodes the fourth validator stays `Pending`. That is the point — a `Pending` pod is loud, a co-located pair is found during an incident. The zone constraint stays `ScheduleAnyway`. | DECIDED |
+| **D-40** | **Admission is proven by dry-running a standalone Pod, and warnings are failures.** Pod Security evaluates a workload controller's pod template and returns a **warning**, not a rejection — enforcement happens when the controller creates the pod — so `helm template \| kubectl apply --dry-run=server` on the StatefulSet *passes* on a `restricted` namespace. The preflight therefore renders the pod template into a bare `Pod` and dry-runs **that**, and treats any admission warning on any object as exit non-zero. PSA may also be enforced cluster-wide via `AdmissionConfiguration`, which is invisible in namespace labels (#27, question K) — the dry-run is what catches that, not the label. | DECIDED |
+| **D-41** | **The cluster-version gate has an upper bound, not just a minimum** (#36). Their upgrade breaks nothing when it lands; it breaks on our next apply, when a removed API version stops a chart reconciling. `cluster_version_max_tested` fails the plan when the live version exceeds it, which turns an upgrade we were not told about into a plan-time citation of #36 instead of a mid-apply failure. | DECIDED |
+| **D-42** | **#29 has no preventive control, and the design stops implying it does.** A force-drain past the PDB is indistinguishable from ordinary maintenance until the second validator stops. Three detective controls instead: a validator absent from the block-producing set > 5 min, block height not advancing (the halt itself), and the one-line health check handed to the cloud team so their tooling can gate its own next step. This is the whole reason #29 is listed first and is addressed to people rather than to a config file. | DECIDED |
+| **D-43** | **#39 cannot be proven durably from our side, and the document says so.** `AvailableIpAddressCount` on a shared subnet is a snapshot; another tenant's scale-up invalidates a passing reading. AWS publishes **no** CloudWatch metric for free addresses in a subnet, and E-15 forbids the usual scheduled-Lambda workaround. So: a pre-deploy margin check (node count × ~50), an alert on pod-sandbox creation failures in our namespace, and an ask that they include our subnets in whatever exhaustion alarm they already run. | DECIDED |
 | **D-34** | **The runner stays** (CD-53 unchanged) and is more important, not less: it is the only host that can ask the Kubernetes-side questions in `cluster-contract`. Its cluster access is an access entry the cloud team creates, scoped to our namespaces (#32); `runner_scope = "in-cluster"` (CD-54) is the mode. | DECIDED |
 
 ### 12.11 Open questions — and where each is asked
@@ -1237,7 +1246,10 @@ models role-separated subnets, which is what the cloud team described.
 | Q-15 | **Node-rotation policy** — do they ever force past a PDB | D-27 | #29 |
 | Q-16 | **Do their node / LB / instance subnets have free addresses** for ~20 pods' worth of nodes, 6 NLB interfaces and 1 instance? | The surviving half of CT-4. Under the VPC CNI a node holds ~30–50 addresses regardless of pod count, so our pod count is not the measure; and on a shared subnet the margin can be consumed by another tenant's scaling | **#39** (added 2026-10-08, after it was found to be referenced but never asked — #11's free-IP floor lost its home when #11 was re-scoped into #28) |
 
-All of these are answered by the three command outputs in §9.4 of the requirements
+| Q-17 | Is the **load-balancer controller's IAM policy** conditioned on a resource tag for `RegisterTargets`? | Our target groups are Terraform-made and carry no `elbv2.k8s.aws/cluster` tag. If conditioned, the controller's `AccessDenied` lands in a log in a namespace our #32 access cannot read, and from our side the binding looks healthy with an empty target group | **#30**, question I |
+| Q-18 | Is Pod Security enforced **cluster-wide** via `AdmissionConfiguration` as well as by namespace label? | A namespace label alone would mislead us; D-40's dry-run is the backstop either way | **#27**, question K |
+
+All of these are answered by the four command outputs in §9.4 of the requirements
 addendum, plus the questions listed there in words. **Ask for observable strings** (the
 CD-31 → R-1 lesson); "does your cluster have the load-balancer controller?" produced
 ambiguous answers elsewhere, `kubectl get crd targetgroupbindings.elbv2.k8s.aws` cannot.
@@ -1263,3 +1275,85 @@ ambiguous answers elsewhere, `kubectl get crd targetgroupbindings.elbv2.k8s.aws`
 
 **Not superseded, worth saying:** CT-2 (air-gap), CT-3a (ECR mirror), D-3, D-9 (now
 load-bearing), D-16..D-22, the whole of CD-55..CD-65, C6, C10, C12, H1, F19/F20/F32.
+
+### 12.13 The silent-error audit — what detects each requirement, and where it lives (2026-10-09)
+
+§9.6 of the requirements addendum shipped **three** checks for **thirteen** requirements.
+The three were not wrong; the problem was that twelve of the thirteen had no owner, and
+every one of them fails in the class this project keeps meeting — *it hangs, or it looks
+like success, and nothing names the cause*. This section is the implementation side of
+D-35..D-43. The sendable version is §9.6; this is the part that says which file to write.
+
+#### 12.13.1 The two findings that are about us, not them
+
+1. **`verify-images.sh` cannot satisfy #38 (D-38).** It authenticates with
+   `REGISTRY_USER`/`REGISTRY_PASS` at `scripts/preflight/verify-images.sh:93-101`. The
+   pull that matters is kubelet's, with **their** node role via the ECR credential
+   provider. The script exits 0 whether or not the cluster can pull — which is the
+   CICD §11.3 failure exactly: *a check that cannot fail is worse than no check, because
+   it is trusted.* The gap existed before CT-5 in milder form (laptop vs runner, §5.4);
+   CT-5 widened it from "wrong host" to "wrong account".
+2. **Our own spread is best-effort (D-39).** `statefulset.yaml:77-79` carries
+   `whenUnsatisfiable: ScheduleAnyway` on the hostname key. On a cluster we size, that is
+   right. On theirs it is the silent road to two validators on one node.
+
+Both were found by reading our code against the requirement rather than by reading the
+requirement, which is the only method that works for this class.
+
+#### 12.13.2 Gate assignment
+
+Four classes. `P` = plan-time Terraform precondition in `modules/cluster-contract`;
+`K` = runner-side Kubernetes preflight (the API endpoint is private — a laptop cannot
+ask); `D` = post-deploy assertion in `scripts/validation/`; `A` = standing alarm in
+`modules/observability`.
+
+| Req | Silent failure | Gate | Where |
+|---|---|---|---|
+| #27 PSA | cluster-wide `AdmissionConfiguration` is invisible in namespace labels; a StatefulSet dry-run only *warns* | `K` | **new** `verify-admission.sh` — bare-Pod dry-run, warnings fatal (D-40) |
+| #27 quota | three validators start, chain looks healthy, zero fault tolerance | `K` + `D` | `verify-cluster.sh` headroom vs §9.1; then `qbft_getValidatorsByBlockNumber` == 4 **and** 4 × `Ready` |
+| #28 | two validators on one node | fix + `D` | chart → `DoNotSchedule` (D-39); assert 4 distinct `spec.nodeName` |
+| #29 | a force-drain is indistinguishable from maintenance until the halt | `A` only | validator-out-of-set > 5 min; block height stalled (D-42) |
+| #30 CRD/controller | `TargetGroupBinding` accepted, never reconciled, target group stays empty | `K` + `D` | CRD **and** ready controller; then `describe-target-health` == 4 healthy |
+| #30 controller IAM | `RegisterTargets` `AccessDenied` in a log we cannot read (Q-17) | `P` | assert no blocking tag condition if the policy is supplied; `D` catches it regardless |
+| #30 StorageClass | `Immediate` pins the volume to the wrong AZ → permanent `Pending`; `allowVolumeExpansion: false` surfaces at disk-full | `K` | assert `volumeBindingMode`, `allowVolumeExpansion`, and record the KMS key owner |
+| #31 | no credential env → SDK falls to IMDS → the pod runs **as their node role**, plausibly succeeding with wider privilege | `D` | `sts get-caller-identity` from inside a pod; fail unless the ARN is ours |
+| #31 (ours) | an IRSA trust policy without a `sub` condition is assumable by **any pod in any namespace of a shared cluster** | `P` | static assertion that every trust policy carries `sub = system:serviceaccount:<ns>:<sa>` **and** `aud = sts.amazonaws.com` |
+| #32 | too broad works exactly as well as scoped — fails open | `K` | `auth can-i` positives on the four CRD kinds **and negatives** outside our namespaces (D-37) |
+| #33 | targets `unhealthy` with no mention of a security group; or SGP selector misses and our SG is silently not applied | `K` + `D` | node-SG evaluation for 8545–8546; then `vpc.amazonaws.com/pod-eni` annotation present when SGP is the route, 4 healthy targets |
+| #34 | the whole "hangs, does not error" family; **TCP-open/UDP-closed runs with discovery dead** | `K` + `D` | **new** `verify-subnet-rules.sh` (D-29) — ordered NACL evaluation, each protocol separately, `#34 F-n` in the message; then `net_peerCount` == 3 |
+| #35 | the API accepts policies nothing enforces | `K` + `D` | `aws-node` env, then an **active two-pod deny-probe** (D-37) |
+| #36 | their upgrade breaks our *next* apply, not their change | `P` | `cluster_version_max_tested` upper bound (D-41) |
+| #37 | Blockscout connection timeouts | — | the F-9 row of #34 |
+| #38 | our check passes as the wrong principal | `P` + `D` | repository policy names their node role ARN with the three pull actions; node-role identity policy carries `ecr:GetAuthorizationToken`; **canary pod** as the only real proof (D-38) |
+| #39 | `ContainerCreating` / `failed to assign an IP address`, on a shared subnet, possibly from someone else's scaling | `K` + `A` | margin = node count × ~50, pre-deploy; alert on `FailedCreatePodSandbox` in our namespace; the alarm ask is theirs (D-43) |
+
+#### 12.13.3 Files this produces
+
+| Path | Status | Contents |
+|---|---|---|
+| `terraform/modules/cluster-contract/` | **new** (already planned, §12.5) | The `P` rows: version floor **and ceiling**, private endpoint, OIDC-vs-Pod-Identity coherence, our trust policies' `sub`/`aud`, their node role in each ECR repository policy, the controller policy's tag condition. `terraform_data` + `lifecycle` preconditions, never `check` — these are gates, not advisories |
+| `scripts/preflight/verify-cluster.sh` | **new** | The `K` rows that are reads: CRDs **and** ready controllers, StorageClass fields, quota headroom, `auth can-i` positives and negatives, `aws-node` network-policy and `POD_ENI` env, node-SG evaluation |
+| `scripts/preflight/verify-admission.sh` | **new** | D-40: `helm template` → extract each pod template → submit as a bare `Pod` with `--dry-run=server` → any warning is a failure |
+| `scripts/preflight/verify-subnet-rules.sh` | **new** (D-29) | F-1..F-10 against live NACLs and SGs, ordered-rule evaluation, per-protocol, citing `#34 F-n` |
+| `scripts/preflight/verify-pull-canary.sh` | **new** (D-38) | One small image from our registry, one pod in our namespace, assert `Running`. The authoritative #38 gate |
+| `scripts/preflight/verify-images.sh` | **amend** | Banner states what it does **not** prove (D-38). Its exit 0 stops meaning "the cluster can pull" |
+| `scripts/validation/verify-deployed.sh` | **amend** | The `D` rows: 4 in the producing set, 4 distinct nodes, 4 healthy targets, caller identity per pod, pod-eni annotation, peer count, the NetworkPolicy deny-probe |
+| `helm/charts/besu-node/templates/statefulset.yaml` | **amend** | Hostname constraint → `DoNotSchedule` (D-39). Zone constraint unchanged |
+| `modules/observability` | **amend** | D-42's two alarms and D-43's sandbox-failure alert |
+| `scripts/preflight/verify-endpoints.sh` | **amend, conditional** | `REQUIRED_INTERFACE` at line 73 is a static array with no `eks-auth`. If #31 answers Pod Identity, the list gains it — and a missing endpoint in this VPC hangs rather than errors (prime directive 2). Conditional on the hand-over's `pod_identity`, not edited by hand |
+
+#### 12.13.4 The rule these are built under
+
+Every one of these scripts must be **tested against a deliberately broken fixture, not a
+healthy one** — the B12 lesson, and the `jq '// "absent"'` bug in `verify-endpoints.sh`
+(CICD §11.3) that made the single check it existed for report "absent" and skip in
+silence. `mimic_eks` (D-32) exists for this: it ships a `restricted` namespace, an
+undersized quota, a missing CRD, a node SG without the RPC rule and NACLs that deny
+30303/udp, so each gate is proven to fire before it is trusted. A gate that has only ever
+been seen to pass is an assumption wearing a check's clothing.
+
+**Nothing here is implemented yet** (D-35..D-43 are decisions, not code), and nothing
+should be until §9.4 is answered — the answers decide which gates are assertions and which
+are deletions. What is implemented now is the writing-down, because the defect this audit
+found was not a missing script. It was thirteen requirements whose failure modes were
+described in prose and owned by nobody.

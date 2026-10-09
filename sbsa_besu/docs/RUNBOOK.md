@@ -343,6 +343,12 @@ Only once the registry is populated and `scripts/preflight/verify-images.sh -e s
 > group admits 443, the S3 gateway is associated with our route tables, and both ECR policy
 > traps (#20, #23). `verify-images.sh` then proves an actual pull. **A laptop passes both
 > while the cluster still cannot pull**, which is the whole reason they run in-VPC.
+>
+> **CT-5 (D-38) extends that sentence one step further:** on a cluster we do not own, the
+> *runner* passes while the cluster cannot pull, because the runner authenticates as itself
+> and kubelet pulls as the cloud team's node role. `verify-images.sh` cannot see that
+> difference. The gate that can is a **canary pod** in our namespace (#38) — redesign notes
+> §12.13.
 
 **Two decisions needed first:**
 
@@ -466,7 +472,7 @@ more. Lead the next cloud-team conversation with it.
 | **Q-4a..Q-4e (ECR)** | ⬜ Blocks Phase D image work. Need written confirmation that ECR is the registry, the ECR account topology, any CVE-gating requirement, and who owns the mirror pipeline. See `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §8.4. |
 | ~~Q-5 golden AMI~~ | **Moot under CT-5** — the nodes are the cloud team's. |
 | ~~Q-2 central endpoints~~ | **Answered by CT-5** — their cluster already needs every endpoint we do; `shared` creates none in the bank (CD-39). The ~$400/mo is not ours either way. |
-| **Q-8..Q-15 (CT-5)** | ⬜ **Blocks the rebuild.** App estate in this cluster? IRSA or Pod Identity? NACLs or SGs? node-SG rule or SGP? PSA level? which add-ons exist? node-rotation policy? All answered by the three command outputs in `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.4. Record: `CLOUD_TEAM_REDESIGN_NOTES.md` §12.11. |
+| **Q-8..Q-18 (CT-5)** | ⬜ **Blocks the rebuild.** App estate in this cluster? IRSA or Pod Identity? NACLs or SGs? node-SG rule or SGP? PSA level? which add-ons exist? node-rotation policy? IP headroom? LBC policy tag condition? cluster-wide PSA? All answered by the four command outputs in `NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.4. Record: `CLOUD_TEAM_REDESIGN_NOTES.md` §12.11; the per-requirement detection table is §9.6 / §12.13. |
 
 ## 6. Quick reference
 

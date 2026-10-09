@@ -102,7 +102,8 @@ created only when `gateway_endpoints_exist = false` (#10), associated to the
 ledger/app/lb/endpoint route tables — not `data`, which hosts managed databases
 needing neither service.
 
-Deliberately excluded: `eks-auth` (IRSA, not Pod Identity) and `autoscaling` (no
+Deliberately excluded: `eks-auth` (IRSA, not Pod Identity — **CT-5: conditional now, see
+#31; if the cluster uses Pod Identity the endpoint is required**) and `autoscaling` (no
 Cluster Autoscaler deployed). A validation rejects `s3` in the interface list —
 it is the free gateway endpoint, and an interface endpoint for it would bill per
 AZ for nothing.

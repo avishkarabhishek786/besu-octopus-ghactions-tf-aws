@@ -30,7 +30,8 @@ When in doubt about *why* something is the way it is, the answer is in that repo
 > **This brief is not yet rewritten against it**, on purpose: the asks in
 > `docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md` **§9 (#27–#38)** decide which files are deleted
 > versus made conditional. The full design record is `docs/CLOUD_TEAM_REDESIGN_NOTES.md`
-> **§12** (D-23..D-34). Until the rewrite, these override the sections they name:
+> **§12** (D-23..D-43; §12.13 is the silent-error audit and its gate assignment). Until
+> the rewrite, these override the sections they name:
 >
 > - **§1 "Two EKS clusters"** — superseded. One cluster, ours is a namespace (two requested). PrivateLink between clusters, the `app` cluster and **Stage 3.0 are deleted** (D-28).
 > - **Prime directive 1 extends to EKS and to every cluster-scoped Kubernetes kind** — cluster, node groups, addons, CRDs, DaemonSets, StorageClasses, webhooks, cluster RBAC. A plan or chart that creates one is a bug (D-23).
@@ -328,9 +329,16 @@ runner — without these there is no access at all), `ec2`, `ecr.api`, `ecr.dkr`
 §7). `sns` was already required for Alertmanager, so the pipeline adds only ONE
 endpoint, not two — ~$28/mo in af-south-1.
 
-**Deliberately excluded:** `eks-auth` (we use IRSA, not Pod Identity) and
-`autoscaling` (no Cluster Autoscaler or Karpenter is deployed). If either is ever
-introduced, its endpoint must be added in the same change.
+**Deliberately excluded:** `eks-auth` (we use IRSA, not Pod Identity) and `autoscaling`
+(no Cluster Autoscaler or Karpenter is deployed). If either is ever introduced, its
+endpoint must be added in the same change.
+
+> **CT-5 makes the first exclusion conditional, not a choice.** The pod-identity mechanism
+> is the cluster owner's (#31). If the answer is **Pod Identity**, `eks-auth` IS required —
+> and in this VPC a missing endpoint hangs rather than errors. `REQUIRED_INTERFACE` in
+> `scripts/preflight/verify-endpoints.sh` is a static array; it becomes conditional on the
+> cluster hand-over's `pod_identity` rather than hand-edited (§12.13.3). D-14 already
+> recorded the reasoning; this is where the code lives.
 
 `monitoring` is retained as insurance even though nothing obviously publishes custom
 metrics — a missing endpoint hangs rather than errors, and the debugging cost exceeds
@@ -421,10 +429,21 @@ would pass while the cluster still cannot pull. Cheap, and it converts a 2am
 `ImagePullBackOff` into a ten-second failure. It is a hard precondition of the chain
 apply **and** of any validator image bump (**D-19**).
 
-**Known gap:** it resolves `local.image_ref`, which covers only the 8 images this
+**Known gap 1:** it resolves `local.image_ref`, which covers only the 8 images this
 repository names directly. The **15 images carried by the five upstream charts** have no
 verification path, so it can exit 0 with 15 images missing. See `../CHART_IMAGES.md` and
 PORTING item 4.
+
+> **Known gap 2 — CT-5 (D-38): it proves the WRONG PRINCIPAL.** It authenticates with
+> `REGISTRY_USER`/`REGISTRY_PASS` (lines 93–101), i.e. the runner's credentials. Under CT-5
+> the pull is kubelet's, with the **cloud team's node role** via the ECR credential
+> provider — a different principal against different policies, and this script exits 0
+> either way. The sentence above ("never the laptop, which would pass while the cluster
+> still cannot pull") now understates it: the *runner* passes while the cluster cannot
+> pull. **Its exit 0 does not mean the cluster can pull.** Requirement #38 is closed by a
+> repository-policy assertion on their node role ARN, a check that that role's identity
+> policy carries `ecr:GetAuthorizationToken` (no repository policy can grant it), and a
+> **canary pod** — the only authoritative proof. Spec: redesign notes §12.13.
 
 ---
 
@@ -574,7 +593,8 @@ Append a row to `docs/test-run-log.md` for every apply/destroy cycle.
 
 Code written and commented · `terraform fmt` and `validate` pass · docs updated ·
 `plan` shown to the human · `network-contract` assertions pass · `verify-images.sh`
-passes · and, with human approval, verify-deployed and then torn down within the cost
+passes (**and, under CT-5, `cluster-contract` + the four new preflights — `verify-images.sh`
+alone no longer proves the supply chain, D-38**) · and, with human approval, verify-deployed and then torn down within the cost
 guardrail. Then — and only then — move to the next stage.
 
 ---
@@ -694,7 +714,7 @@ questions CQ-1..CQ-8, R-1..R-10). Load it before touching a workflow or an Octop
 ## 11. Open questions inherited from the design phase
 
 > **2026-09-21:** every row below is answered, moot or re-scoped by CT-5. **The live
-> questions are Q-8..Q-15** in `docs/CLOUD_TEAM_REDESIGN_NOTES.md` §12.11, and they are
+> questions are Q-8..Q-18** in `docs/CLOUD_TEAM_REDESIGN_NOTES.md` §12.11, and they are
 > answered by the three command outputs in `docs/NETWORK_REQUIREMENTS_CLOUD_TEAM.md` §9.4.
 
 These are **parameters, not structural forks**. Build with the air-gapped assumption

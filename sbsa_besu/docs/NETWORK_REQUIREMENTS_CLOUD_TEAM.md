@@ -627,6 +627,12 @@ That single check exercises requirements **#20, #22 and #23** end-to-end, in abo
 seconds, before any billable cluster exists. If it passes, the supply chain is proven. If
 it fails, we come back to you with a specific requirement number rather than a symptom.
 
+> **Narrowed by §9.6 (2026-10-09).** On a cluster we do not own, that check proves *our*
+> instance can pull, not that your node role can — different principals, different
+> policies, and it passes either way. #38 and §9.6 carry the gates that close the
+> difference. "The supply chain is proven" above should be read as "#20, #22 and #23 are
+> proven".
+
 ---
 
 ## 9. Addendum — shared EKS cluster, namespace tenancy (2026-09-21)
@@ -758,6 +764,11 @@ runs as root to fix file ownership, which `restricted` rejects at admission, so 
 `baseline` or we rework it first; the **`ResourceQuota`** (§9.1 has our numbers); and any
 **`LimitRange`** whose defaults or maximums sit below the requests in §9.1.
 
+One detail we would not otherwise think to ask: Pod Security can also be enforced
+**cluster-wide** through the API server's `AdmissionConfiguration`, which does not show up
+in a namespace's labels. If that is how it is set here, please tell us the cluster default
+as well as any namespace label, because the label alone would mislead us.
+
 **What breaks without it:** at `restricted`, every validator pod is refused before it
 starts; a quota below the table makes the fourth validator unschedulable — and QBFT with
 three of four is one failure from a halt.
@@ -793,6 +804,24 @@ For each: what we need, and what we do if it is absent.
 | **Prometheus Operator** | the `PodMonitor` / `PrometheusRule` CRDs, and either your Prometheus scraping our namespace or our own `Prometheus` object in it | We run a plain Prometheus in-namespace. Acceptable |
 | **Log shipping** (Fluent Bit or equivalent) | our containers' logs delivered to a CloudWatch log group **we can read and alarm on** | A sidecar per pod. Acceptable, heavier |
 
+Two details in that table matter more than they look, and one extra ask:
+
+- **`volumeBindingMode` must be `WaitForFirstConsumer`.** With `Immediate`, the volume is
+  provisioned before the pod is scheduled and is pinned to whichever AZ the provisioner
+  chose; our validators are spread across three, so one can end up permanently `Pending`
+  with its data in the wrong zone. `allowVolumeExpansion: true` matters because the chain
+  grows — without it the first disk-full is an incident rather than a change request.
+- **Whose KMS key encrypts the StorageClass's volumes?** If it is yours, we need to know:
+  chain data encrypted under a key we cannot audit or hold is something we have to declare
+  in review, and a key policy change on your side stops the ledger.
+- **The load-balancer controller's own IAM role** needs to be able to register targets into
+  target groups **we** create in Terraform. Those do not carry the
+  `elbv2.k8s.aws/cluster` tag that a hardened controller policy is often conditioned on. If
+  yours has such a condition, `RegisterTargets` fails with `AccessDenied` in the
+  controller's log — in a namespace our scoped access cannot read — and from our side the
+  binding looks healthy with an empty target group. Please send the policy (question I) or
+  confirm there is no tag condition.
+
 **What breaks without it:** the first two, everything — no RPC endpoint and no chain
 data. The others degrade the operational posture rather than the ledger.
 
@@ -807,8 +836,17 @@ accounts. Tell us which mechanism the cluster uses:
   permission to create **pod identity associations** for service accounts in our
   namespaces (or you create them from a list we send).
 
-Either is fine. **What breaks without it:** no pod can decrypt a validator key or read a
-secret; nothing starts.
+Either is fine. One consequence to flag: **Pod Identity needs the `eks-auth` interface
+VPC endpoint.** We left it off our endpoint list deliberately on the assumption of IRSA. If
+the cluster already uses Pod Identity the endpoint must already exist — but in this VPC a
+missing endpoint does not error, it hangs until timeout, so we would rather confirm it than
+infer it (question J).
+
+**What breaks without it:** no pod can decrypt a validator key or read a secret; nothing
+starts. And if neither mechanism is wired for our service accounts, the AWS SDK falls back
+to instance metadata and our pods run **as your node role** — which on a shared cluster may
+quietly succeed with wider privilege than we asked for. We check for that explicitly
+(§9.6).
 
 #### 32. Cluster access for our administrative instance — namespace-scoped
 
@@ -818,8 +856,17 @@ role with **`AmazonEKSEditPolicy` scoped to our two namespaces** (or a `Role` +
 `RoleBinding` you prefer) — never cluster-wide. Plus: the **cluster name, API endpoint
 and CA certificate**, and confirmation the endpoint is **private-only**.
 
+One thing that grant probably does not cover: `AmazonEKSEditPolicy` follows the built-in
+`edit` role, which enumerates **built-in** kinds. The four custom resources we create —
+`TargetGroupBinding`, `SecretProviderClass`, `PodMonitor`, `PrometheusRule` — are included
+only if the add-on that owns each CRD ships a `ClusterRole` labelled
+`rbac.authorization.k8s.io/aggregate-to-edit`, which is not guaranteed. Please either add a
+`Role` in our namespaces covering those four kinds, or confirm the aggregation exists; we
+verify it with `kubectl auth can-i` rather than finding out at deploy time.
+
 **What breaks without it:** nothing can be deployed. And too broad a grant would be
-something we have to explain in a review; scoped is what we want.
+something we have to explain in a review; scoped is what we want — so we also check that
+the grant *cannot* reach outside our namespaces (§9.6).
 
 #### 33. Node security group — admit our load balancers, or enable Security Groups for Pods
 
@@ -865,7 +912,9 @@ instance should use.
 our design record both cite `#34 F-n` rather than restating it.)*
 
 **What breaks without it:** a blocked F-1 means the chain never reaches quorum and
-reports nothing except a peer count of zero; a blocked F-2 is #33's silent failure; a
+reports nothing except a peer count of zero — and note that F-1 needs **both** protocols:
+with 30303/TCP open and 30303/UDP closed, our statically-configured peers still connect and
+the chain runs with discovery dead, which is a failure we would not see until it mattered; a blocked F-2 is #33's silent failure; a
 blocked F-6 stops every image pull half-way through a layer. None of these produce an
 error naming the cause — which is why we want to verify the rules before anything is
 built, not diagnose them after.
@@ -899,8 +948,16 @@ repositories (central shared-services account, §8) must grant pull to **your no
 group's IAM role** — send us its ARN (#33) and we add it, or add it yourselves if the
 repositories are managed centrally.
 
+Two halves, and the second is easy to miss: a repository policy grants the *resource*
+side, but the node role still needs **`ecr:GetAuthorizationToken`** in its own identity
+policy, which no repository policy can grant. The managed `AmazonEC2ContainerRegistryReadOnly`
+policy includes it; a hardened policy scoped to your own registry account will refuse ours.
+Please confirm which the node role carries.
+
 **What breaks without it:** `ImagePullBackOff` on every pod, against a registry that
-looks fully populated.
+looks fully populated. Our own `verify-images.sh` **cannot catch this** — it authenticates
+as our administrative instance, not as your node role, so it passes either way. We close
+that gap with a canary pull from inside our namespace (§9.6).
 
 #### 39. IP headroom in the subnets we are scheduled into
 
@@ -929,15 +986,20 @@ custom networking on a secondary CIDR (the old #17). **We are flagging it, not p
 it.** Note that prefix delegation allocates in /28 blocks per ENI, which makes consumption
 *worse* on a small subnet — it is the right tool for large subnets and the wrong one here.
 
+One small ask alongside the confirmation: **if you alarm on subnet address exhaustion,
+please include the subnets we land in.** AWS publishes no CloudWatch metric for free
+addresses in a subnet, so this is never accidental — and a snapshot reading from us does not
+protect against another tenant's scale-up next week.
+
 **What breaks without it:** pods stuck in `ContainerCreating` with an IP-allocation error,
 on a cluster that looks healthy from every other angle. It is not a clean "out of
 addresses" failure, and on a shared subnet it can arrive because of someone else's
 scaling rather than ours — which is why we would rather know the margin now than diagnose
 it later.
 
-### 9.4 What we need you to send — three commands, then a few questions
+### 9.4 What we need you to send — four commands, then a few questions
 
-Most of §9.3 is answered by pasting three outputs. We ask for these rather than
+Most of §9.3 is answered by pasting four outputs. We ask for these rather than
 descriptions because we have been misled by descriptions before; a string cannot be
 ambiguous.
 
@@ -954,6 +1016,8 @@ kubectl get storageclass
 kubectl get ns <our-namespace> --show-labels
 kubectl get resourcequota,limitrange -n <our-namespace>
 kubectl -n kube-system get ds aws-node -o jsonpath='{.spec.template.spec.containers[?(@.name=="aws-node")].env}' | tr ',' '\n' | grep -iE 'NETWORK_POLICY|POD_ENI'
+kubectl get deploy -A -l app.kubernetes.io/name=aws-load-balancer-controller
+kubectl get storageclass <class> -o jsonpath='{.volumeBindingMode}{" "}{.allowVolumeExpansion}{" "}{.parameters.kmsKeyId}{"\n"}'
 
 # 3 — the subnet rules our flows must pass (#34)
 aws ec2 describe-network-acls   --region af-south-1 --filters Name=association.subnet-id,Values=<node,lb,data subnet ids>
@@ -976,6 +1040,9 @@ In words:
 | F | The **cadence** for Kubernetes upgrades (#36) |
 | G | **Databases in data subnets** — policy or preference? (#37) |
 | H | Who creates our **access entry** (#32) and **pod identity associations** if #31 is Pod Identity |
+| I | The **load-balancer controller's IAM policy** — is `RegisterTargets` conditioned on a resource tag? (#30) |
+| J | If #31 is Pod Identity: does the VPC have the **`eks-auth` interface endpoint**? (#31) |
+| K | Is Pod Security enforced **cluster-wide** as well as by namespace label? (#27) |
 
 ### 9.5 Shared responsibility — delta to §7 and §8.5
 
@@ -993,21 +1060,58 @@ In words:
 
 ### 9.6 How we will prove it works before we spend anything
 
-Three read-only checks, all run from our administrative instance inside the VPC, all
-free, all about ten seconds:
+Every requirement above states what breaks without it. Almost all of those breakages are
+**silent**: nothing reports the cause, and several report nothing at all because they look
+like success. So for each requirement we have written down the check that turns it into a
+named failure, and the stage it runs at. All are read-only, all are free, and the whole
+set takes about a minute.
 
-1. **The cluster contract** — version, private endpoint, OIDC/Pod Identity, the CRDs
-   in #30, the StorageClass, our namespaces and their PSA labels, our access entry.
-2. **The subnet rules** — the NACLs and security groups on the node, load-balancer and
-   administrative-instance subnets, evaluated against F-1..F-9.
-   The same pass reads `AvailableIpAddressCount` on those subnets and warns if the margin
-   is below what our node count needs (#39).
-3. **The registry** — `verify-images.sh` as in §8.6, now pulling as *your* node role's
-   peer (#38).
+Two instruments do most of the work:
 
-Each failure names the requirement number above. If they pass, the platform deploys;
-if they fail, we come back with `#34 F-1` rather than *"the chain won't start."*
+- **Server-side admission dry-run.** We render our manifests and submit them with
+  `--dry-run=server`, which runs your Pod Security, `ResourceQuota`, `LimitRange`, RBAC
+  and webhook admission without creating anything. If the namespace will not accept our
+  pods we learn it in seconds, before a cluster-minute is billed.
+- **Checks that assert a negative.** A boundary — a scoped grant, a default-deny policy —
+  works identically whether it is present or missing, so the only proof is a probe that
+  must *fail*. Those are called out below.
 
+| Req | What fails silently | How we detect it, and when |
+|---|---|---|
+| **#27** Pod Security | Pod Security can be enforced **cluster-wide** through the API server's `AdmissionConfiguration`, which does not appear in `kubectl get ns --show-labels`. And a violation in a StatefulSet's pod template comes back as a *warning*, not a rejection, because enforcement happens when the controller creates the pod — so a naive dry-run passes and the validator still never starts | Dry-run a **standalone Pod** built from the same template, and treat any admission warning as a failure. Pre-deploy |
+| **#27** quota | The worst case in this document, because **it looks like success.** A quota a few hundred millicores short admits three validators and refuses the fourth. QBFT's quorum is 3 of 4, so the chain starts, produces blocks and reports healthy — with **zero** fault tolerance. The refusal is an event on the StatefulSet; there is no fourth pod to notice | `hard` minus `used` against the §9.1 table, pre-deploy. Then a post-deploy gate that fails unless `qbft_getValidatorsByBlockNumber` returns **four** and every one is `Ready` |
+| **#28** | Our spread constraints are `whenUnsatisfiable: ScheduleAnyway` — deliberate, so scheduling never blocks. On a busy cluster that lets two validators land on one node, silently; one drain then removes two of four and halts the chain | Ours to fix: the hostname constraint for validators becomes `DoNotSchedule`, so the failure is a `Pending` pod we can see rather than a co-location we find during an incident. Plus a post-deploy gate asserting four distinct node names |
+| **#29** | **No check exists** — see below |
+| **#30** CRD vs controller | A CRD proves only that something once installed it. If the controller is not running or not reconciling, our `TargetGroupBinding` is accepted and simply sits there: no targets register, the NLB stays empty, nothing errors | Assert the CRD **and** a ready controller, pre-deploy. Then assert real target registration post-deploy — `describe-target-health` must return four healthy targets, not an empty list |
+| **#30** controller IAM | Our target groups are created by our own Terraform, so they do not carry the `elbv2.k8s.aws/cluster` tag that a hardened load-balancer-controller policy is often conditioned on. The controller then fails `RegisterTargets` with `AccessDenied` **into its own log, in a namespace our scoped access cannot read.** From our side: a healthy-looking binding and an empty target group, indefinitely | Question I in §9.4 asks for the policy so we can check the condition before we build. The target-health gate above catches it afterwards whatever the cause |
+| **#30** StorageClass | `volumeBindingMode: Immediate` provisions the volume *before* the pod is scheduled, pinning it to an arbitrary AZ — with validators spread across three, one can end up permanently `Pending` with its data in the wrong zone. `allowVolumeExpansion: false` is invisible until the chain fills the disk, by which time it is an incident rather than a change | Assert both fields on the class, pre-deploy |
+| **#31** | The one with a security consequence. If we build for Pod Identity and the cluster uses IRSA — or nothing is wired for our service account — no credential variables are injected, the AWS SDK falls through to instance metadata, and the pod runs **as your node role**. On a shared cluster that role is likely broader than ours, so the call may well *succeed*: wrong principal, your CloudTrail, not ours | `aws sts get-caller-identity` from inside one of our pods at startup; fail unless the ARN is the role we expect. Also ours to get right: our IRSA trust policies must condition on `sub = system:serviceaccount:<our-ns>:<sa>` **and** `aud = sts.amazonaws.com`, or any pod in any namespace of your cluster could assume them. A static check fails our plan if either condition is missing |
+| **#32** | Two directions. **Too narrow** is loud (`Forbidden`) but blocks a deployment: `AmazonEKSEditPolicy` follows the built-in `edit` role, which enumerates built-in kinds, so the four custom resources we create are covered only if an add-on ships a ClusterRole labelled `aggregate-to-edit` — not guaranteed. **Too broad is the silent one:** a cluster-wide grant works exactly as well as a scoped one, so nothing ever tells us the boundary is absent | `kubectl auth can-i` as the worker's role, asserting the positives (create those four kinds in our namespaces) **and the negatives** (`create pods -n kube-system` must return `no`). Pre-deploy |
+| **#33** | The health checks fail, targets read `unhealthy` with `Target.FailedHealthChecks`, and nothing names a security group. If Security Groups for Pods is the chosen route instead and the `SecurityGroupPolicy` selector does not match our pods, they get an ordinary node ENI — our security group is simply not applied, with no error at all | Pre-deploy: evaluate the node SG for 8545–8546 from our NLB security groups. Post-deploy: assert the `vpc.amazonaws.com/pod-eni` annotation on the RPC pods when SGP is the route, and four healthy targets |
+| **#34** | Silent by construction — this class is why the document exists. F-1 blocked gives a peer count of zero and no block ever produced; F-6 blocked stalls an image pull mid-layer; F-5 blocked makes every AWS call hang until timeout. **One partial case worth naming:** if 30303/TCP is permitted and 30303/**UDP** is not, our statically-configured peers still connect and the chain runs — discovery is dead and we would not find out until it mattered | A preflight evaluates the rules you send (§9.4 command 3) against F-1..F-10 **before anything is created**, testing each protocol separately, and names the flow: `#34 F-1 BLOCKED: NACL <id> entry <n> denies 30303/udp from <cidr>`. Post-deploy, peer count must be 3 on every validator |
+| **#35** | The API server accepts `NetworkPolicy` objects whether or not anything enforces them. A default-deny policy that enforces nothing is indistinguishable from one that works | Read the `aws-node` configuration (§9.4 command 2), then **prove** it: a two-pod probe in our own namespace, one connection that policy forbids, asserting it is actually refused. Configuration is evidence; a refused connection is proof |
+| **#36** | Silent in the direction that matters. Your upgrade breaks nothing at the moment it lands; it breaks the next time we apply, when a removed API version stops a chart reconciling | The cluster contract pins a **tested version range** and fails our plan when the live version is above it — an upper bound, not just a minimum. The first apply after your upgrade stops with `#36: cluster is 1.37, validated to 1.36; run the compatibility pass first` |
+| **#37** | Loud enough: if Postgres moves to a data subnet and F-9 is not open, Blockscout logs connection timeouts | Covered by the F-9 row of the #34 check |
+| **#38** | **The gap is in our own checking, and we would rather say so.** `verify-images.sh` authenticates with *our* credentials, so it proves our administrative instance can pull — not that your node role can. Different principals, different policies, and the check passes either way | Three parts: assert your node role ARN appears in each repository policy with `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer`, `ecr:BatchCheckLayerAvailability`; confirm the node role's **identity** policy allows `ecr:GetAuthorizationToken` (a repository policy cannot grant it, and a policy scoped to your own registry account will refuse ours); and the only real proof — a **canary pod** in our namespace pulling one small image from our registry, before anything expensive is built |
+| **#39** | Partly undetectable, honestly. The symptom is pods stuck in `ContainerCreating` with `failed to assign an IP address`, on a cluster healthy from every other angle | We read `AvailableIpAddressCount` and fail if the margin is below our node count × ~50 — but on a shared subnet that is a snapshot, and another tenant's scale-up can consume it an hour later. So also: an alert on pod-sandbox creation failures in our namespace, and an ask — **if you alarm on subnet address exhaustion, please include the subnets we land in.** AWS publishes no CloudWatch metric for it, so it has to be deliberate |
+
+#### What has no check, and what we do instead
+
+**#29 is the exception.** There is no configuration to read and no probe to run: a
+force-drain past our `PodDisruptionBudget` is indistinguishable from any other
+maintenance until the second validator stops. What we can do is make it loud when it
+happens rather than when the chain halts —
+
+- an alarm when any validator leaves the block-producing set for more than five minutes
+  (one is survivable; it is also the warning);
+- an alarm when block height stops advancing (two down — the chain has already halted);
+- the one-line health check in #29 item 2, so your tooling can gate its own next step.
+
+Detective, not preventive. That is precisely why we asked you to read #29 first.
+
+Each failure above names a requirement number from this document. If every check passes,
+the platform deploys. If one fails, we come back to you with `#34 F-1` and the exact rule,
+or `#33` and the exact port — rather than *"the chain won't start."*
 ---
 
 ## Appendix A — IP address sizing
