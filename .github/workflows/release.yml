@@ -127,9 +127,9 @@ jobs:
       - name: helm lint
         run: for c in helm/charts/*/; do helm lint "$c"; done
 
-      # -S error gates. The 17 warning-level findings that predate this
-      # workflow (2026-10-10, mostly SC2034/SC2206/SC2207) are reported, not
-      # gated, so the first run measures the code instead of failing on its past.
+      # -S error gates. The warning-level findings that predate this workflow
+      # (22 on 2026-10-10, mostly SC2034/SC2206/SC2207) are counted, not gated,
+      # so the first run measures the code instead of failing on its past.
       # Tighten to -S warning once they are cleared.
       - name: shellcheck
         run: |
