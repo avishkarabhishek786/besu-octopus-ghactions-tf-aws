@@ -28,13 +28,16 @@ resource "octopusdeploy_project_group" "besu" {
   description = "Besu ledger platform — besu-infra, besu-workloads, besu-validators (CICD design notes §5)."
 }
 
+# No sort_order: Octopus appends a new environment after the space's existing ones
+# and ignores the requested position on create, which provider 1.20.0 reports as
+# "inconsistent result after apply" (seen 2026-10-10: asked 0, got 3). Promotion
+# order is the lifecycle's job, not the environment list's.
 resource "octopusdeploy_environment" "this" {
   for_each = var.manage_environments ? local.envs : {}
 
-  space_id   = local.space_id
-  name       = each.key
-  slug       = each.value
-  sort_order = index(var.environments, each.key)
+  space_id = local.space_id
+  name     = each.key
+  slug     = each.value
 }
 
 data "octopusdeploy_environments" "existing" {
