@@ -99,6 +99,18 @@ if [[ -n "$NODE_ROLE" ]]; then
   printf '\n=== #38 repository policies (cause) ===\n'
   note "node role: $NODE_ROLE"
   for repo in "${REPOS[@]}"; do
+    # SAME ACCOUNT: a repository policy is not needed at all — the node role's
+    # identity policy alone governs a same-account pull. Without this, a
+    # single-account registry FAILed with "their node role cannot pull" while
+    # the canary below proved it could (B36, 2026-10-10). The bank's registry is
+    # cross-account (CD-27), where the policy check below is the real question.
+    reg_acct="$(aws ecr describe-repositories --repository-names "$repo" \
+                  --query 'repositories[0].registryId' --output text 2>/dev/null || true)"
+    role_acct="$(cut -d: -f5 <<<"$NODE_ROLE")"
+    if [[ -n "$reg_acct" && "$reg_acct" == "$role_acct" ]]; then
+      ok "$repo is in the node role's own account ($reg_acct) — no repository policy needed; its identity policy decides, and the canary tests that"
+      continue
+    fi
     pol="$(aws ecr get-repository-policy --repository-name "$repo" \
              --query policyText --output text 2>/dev/null || true)"
     if [[ -z "$pol" || "$pol" == "None" ]]; then
@@ -141,8 +153,25 @@ echo
 # `command: ["false"]` would make the pod Error after a SUCCESSFUL pull, which is
 # indistinguishable from what we want to measure. Sleep briefly instead: Running
 # (or Completed) both prove the image was pulled, which is the only question.
+#
+# The pod must be ADMISSIBLE in the namespace we deploy into, or this script
+# measures admission and never reaches the registry. A bare `kubectl run` has
+# no resources and no securityContext, so it was refused by any ResourceQuota
+# that names requests (#27 asks for exactly that — P-1's lesson) and by
+# `restricted` Pod Security. Explicit small requests/limits (cpu limit too: a
+# quota that does not track limits.cpu ignores it) and a restricted-compliant
+# securityContext make the pull the only thing under test. uid 65534 because
+# the image's own user may be root, which `restricted` refuses.
+OVERRIDES=$(cat <<JSON
+{"apiVersion":"v1","spec":{
+  "securityContext":{"runAsNonRoot":true,"runAsUser":65534,"runAsGroup":65534,"seccompProfile":{"type":"RuntimeDefault"}},
+  "containers":[{"name":"$POD","image":"$IMAGE","command":["/bin/sh","-c","exit 0"],
+    "resources":{"requests":{"cpu":"10m","memory":"16Mi"},"limits":{"cpu":"100m","memory":"64Mi"}},
+    "securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}
+JSON
+)
 if ! kubectl -n "$NS" run "$POD" \
-      --image="$IMAGE" --restart=Never \
+      --image="$IMAGE" --restart=Never --overrides="$OVERRIDES" \
       --command -- /bin/sh -c 'exit 0' >/dev/null 2>&1; then
   # A refusal HERE is admission, not the registry — PSA (#27) or RBAC (#32).
   bad "the API server refused to create the canary pod. This is NOT a registry failure."

@@ -107,6 +107,37 @@ rules it reports all three runner → control-plane pairs BLOCKED.
 
 ## Closed
 
+### B36 — `verify-pull-canary.sh --check-policy` failed a same-account registry the canary proved pullable
+**Provenance:** tooling · **Found:** 2026-10-10, pull-canary run · **Fixed:** same day
+
+"`mirror/alpine/k8s` has NO repository policy — their node role cannot pull", printed seconds
+after the canary pulled that image as that role. A same-account pull needs no repository
+policy; the node role's identity policy alone decides. The check now compares the
+repository's `registryId` with the node role's account and passes same-account with that
+explanation; cross-account — the bank's case (CD-27) — it still demands the policy. Both
+branches exercised.
+
+**Found by:** running the check beside the canary, so the verdicts could contradict.
+
+---
+
+### B35 — the pull canary could never reach the registry in a namespace with a quota
+**Provenance:** tooling · **Found:** 2026-10-10, reading it before its first live run · **Fixed:** same day
+
+`verify-pull-canary.sh` created its pod with a bare `kubectl run` — no resources, no
+securityContext. Any `ResourceQuota` naming requests (exactly what #27 asks for) refuses
+that pod at admission, and so does `restricted` Pod Security; the script then reports "the
+API server refused … NOT a registry failure" and never tests a pull. P-1's lesson, in the
+check itself. Shown live: the old shape → `failed quota: must specify limits.cpu …
+requests.cpu …`. Fix: small explicit requests/limits and a restricted-compliant
+securityContext (uid 65534, drop ALL, `RuntimeDefault`). The fixed canary then **passed**
+for `alpine/k8s` and `hyperledger/besu` by digest — **#38 proven live** (same-account).
+
+**Found by:** asking, before the first run, whether the pod could be admitted where it runs.
+
+---
+
+
 ### B27 — the restrictive NACLs model only OUR flows, so a node in one AZ never joined
 **Provenance:** tooling (fixture) · **Found:** 2026-10-09, first `mimic_eks` apply · **Fixed:** 2026-10-10 (`862f6c2`) · **Proven live:** 2026-10-10
 
@@ -140,7 +171,9 @@ the offline prediction (46/0/12/4; C-1 broken → C-1 ×6 + F-7 ×3); **3/3 node
 with control-plane ENIs in az1 and az2 only, so the az3 node registered across a NACL;
 logs fetched from pods on the az3 node (C-3); and with C-1 removed on the live cluster
 **only the az3 node went NotReady** (~54 s), back to Ready ~10 s after the restore.
-C-2 is still offline-proven only — no image with a shell can be pulled until the mirror.
+**C-2 proven live 2026-10-10 (2nd run)** with the mirrored `alpine/k8s`: 20/20 UDP + 20/20
+TCP from a CoreDNS-less node across a NACL; C-2's UDP rule cut → UDP 0/20, TCP 20/20;
+restored → 20/20 (`docs/deploy-run-2026-10-10-pull-canary-c2.md`).
 
 **Found by:** the first apply of anything that needed nodes in all three AZs. Detail: `docs/deploy-run-2026-10-09-ct5-gates-and-regression.md` §A3.
 
