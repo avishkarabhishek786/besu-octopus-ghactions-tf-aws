@@ -38,3 +38,8 @@ flow_log_retention_days = 1 # SHORT: the only billable resource in this project
 # runner -> proxy rule and its return: under nacl_mode = "flows" the Octopus Tentacle
 # on the In-VPC EC2 Runner then cannot poll (B40). Set it for any run with a runner.
 egress_proxy_cidr = "10.61.0.0/24"
+
+# #34 / R-10 (B43) — EXPLICIT reservation on the runner's pinned /32 (mimic_egress
+# runner_private_ip), so the VPC CNI's warm pool cannot take it. Without it EC2 can
+# refuse the runner with InvalidIPAddress.InUse.
+pinned_ip_reservations = { "afs1-az1" = "10.60.0.250" }

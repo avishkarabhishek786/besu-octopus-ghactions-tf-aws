@@ -107,6 +107,42 @@ rules it reports all three runner → control-plane pairs BLOCKED.
 
 ## Closed
 
+### B43 — the EKS nodes' CNI warm pool took the runner's pinned IP
+**Provenance:** port-induced (CD-60 pin + CT-5 shared subnets) · **Found:** 2026-10-10, `ServerTasks-1517` · **Fixed:** same day; the bank-side half is an R-10 ask
+
+`terraform: runner` failed at apply with `InvalidIPAddress.InUse` for `10.60.0.250`. The chain,
+the shared root and the runner bundle had all succeeded. The address is the one /32 the
+egress proxy allowlists (CD-60), so the runner is pinned to it. It sits in a **ledger subnet the
+EKS nodes share**, and the VPC CNI keeps a warm pool of secondary IPs on every node ENI, drawn
+from the subnet at random. `eni-0f3a9de898fbcc343` (an `aws-K8S-i-…` node ENI) was holding it.
+On 09-17 the node group happened not to pick it, so the race was there all along. **It can
+happen in the bank** whenever the runner is (re)created after nodes have scaled.
+
+Unblocked live: `create-subnet-cidr-reservation --reservation-type explicit` on the /32
+(`scr-00405fb7285c2d5bf`), `unassign-private-ip-addresses` from the node ENI, and re-deploy
+the same release: `ServerTasks-1518` Success.
+
+Fixed in two layers:
+1. **The cause: an explicit reservation, owned by the subnet owner.** AWS then assigns the
+   address only on explicit request, which is how the runner asks for it. In production this
+   is the cloud team's: added to the R-10 asks (`CICD_DESIGN_NOTES.md`). In the mimic:
+   `mimic_vpc` `pinned_ip_reservations` (`reservations.tf`), with gates that the AZ is a
+   ledger AZ and the address sits in its subnet.
+2. **The symptom, at plan: `terraform/runner/ip-guard.tf`.** A precondition fails the plan
+   when any interface other than the runner holds the pinned IP. It names the ENI and prints the two
+   commands that free it. It can't see the reservation (the provider has no data source for one),
+   so it catches what actually breaks the apply. Proven both ways against the live VPC,
+   read-only: with the runner holding its IP, the plan passes (+1 `terraform_data`); with
+   `runner_private_ip` set to a CNI-held address (`10.60.0.120`) it fails, naming the node ENI.
+
+A third layer, a persistent ENI that owns the address independently of the instance, would
+also keep the Tentacle's identity across a re-create. Not done: it changes the runner module,
+and the reservation already removes the race.
+
+**Found by:** the first Octopus deployment of `besu-infra`.
+
+---
+
 ### B42 — `release.yml` could not find the deployment it had just started
 **Provenance:** tooling (CD-68) · **Found:** 2026-10-10, run `38059442057` · **Fixed:** same day
 

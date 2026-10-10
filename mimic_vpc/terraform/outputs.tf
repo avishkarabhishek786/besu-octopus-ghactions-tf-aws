@@ -51,3 +51,8 @@ output "subnet_cidrs_by_role" {
 # producer's side of the same statement, so the two can be compared.
 output "nacl_rules_authored" { value = module.subnets.nacl_rules_authored }
 output "nacl_mode" { value = module.subnets.nacl_mode }
+
+# #34 / R-10 (B43) — the explicit reservations, az_id => reservation id.
+output "pinned_ip_reservations" {
+  value = { for k, r in aws_ec2_subnet_cidr_reservation.pinned : k => "${r.cidr_block} ${r.id}" }
+}

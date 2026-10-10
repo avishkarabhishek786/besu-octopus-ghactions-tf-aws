@@ -736,6 +736,10 @@ bundle is wrong for Tentacle (CD-58), and our "one hostname" ask is really two (
 destination entries for `<instance>.octopus.app:443` and `polling.<instance>.octopus.app:443`,
 `CONNECT` only; no TLS decryption for those two; a route from the ledger route tables to the
 egress VIP's prefix over the Transit Gateway; and whether the proxy requires credentials.
+**Plus one for the subnet owner (B43, 2026-10-10):** an **explicit subnet CIDR reservation** on
+that /32 in its ledger subnet. The EKS nodes share the subnet, and the VPC CNI's warm pool took
+the runner's address on the first Octopus deployment; with the reservation, AWS assigns it only
+on explicit request, which is how the runner asks for it.
 That is the whole list.
 
 **What we build to not wait.** `mimic_egress` (CD-63) — the assumed shape, as a sibling of

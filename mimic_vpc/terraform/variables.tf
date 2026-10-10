@@ -188,6 +188,21 @@ variable "egress_proxy_port" {
   default     = 3128
 }
 
+variable "pinned_ip_reservations" {
+  description = <<-EOT
+    #34 / R-10 (B43) — addresses in LEDGER subnets that a consumer pins, as
+    { az_id => ip }. Each becomes an EXPLICIT subnet CIDR reservation, so AWS
+    never hands it out automatically — in particular, the VPC CNI's warm pool on
+    an EKS node cannot take it. Without one, the platform's In-VPC EC2 Runner
+    (pinned to the proxy's allowlisted /32, CD-60) can find its address taken
+    and EC2 refuses the instance. Empty = no reservations, modelling the ask
+    not yet answered. SIT: { "afs1-az1" = "10.60.0.250" } (mimic_egress
+    runner_private_ip).
+  EOT
+  type        = map(string)
+  default     = {}
+}
+
 variable "sipn_cidr" {
   description = "The prefix SWIFT reaches the RPC NLBs from over MV-SIPN. Empty falls back to the VPC CIDR, which is what a mimic with no Transit Gateway can actually test."
   type        = string
