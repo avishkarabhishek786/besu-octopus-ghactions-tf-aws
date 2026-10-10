@@ -15,7 +15,7 @@
 # Three jobs:
 #   check    terraform fmt + validate on every root, helm lint, shellcheck,
 #            the manifest/Terraform drift check. No credentials of any kind.
-#   package  sbsa-besu-platform.<version>.tar.gz — terraform/, helm/, scripts/,
+#   package  sbsa-besu-platform.<version>.zip — terraform/, helm/, scripts/,
 #            octopus/ and RELEASE.json, from git, so nothing gitignored
 #            (real tfvars, hand-overs, state) can be in it. Version scheme CD-8.
 #   publish  OIDC sign-in to Octopus (no API key — CD-9), push the package,
@@ -179,16 +179,35 @@ jobs:
           {"package": "${PACKAGE_ID}", "version": "${VERSION}", "commit": "${GITHUB_SHA}", "ref": "${GITHUB_REF}",
            "run": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"}
           EOF
-          # --dereference: the tracked handover.tf symlinks become files. The
-          # extractor on an Octopus worker is not guaranteed to recreate a
-          # symlink, and without that file `shared` and `chain` do not plan.
-          out="$RUNNER_TEMP/${PACKAGE_ID}.${VERSION}.tar.gz"
-          tar --dereference -czf "$out" -C "$pkg" .
+          # ZIP, NOT TAR.GZ. Octopus's built-in feed opens a pushed .tar.gz, and
+          # if it finds a Chart.yaml inside it files the package as THAT HELM
+          # CHART, taking the chart's name and version over the filename. Ours
+          # carries six charts: run 38055337989 (2026-10-10) published
+          # sbsa-besu-platform as "besu-app-rpc-edge 0.1.0". A zip is always a
+          # generic package, named from its filename.
+          # Symlinks are stored as the files they point to (the tracked
+          # handover.tf links: a worker's extractor is not guaranteed to
+          # recreate a link, and without that file `shared` and `chain` do not
+          # plan). Unix modes are kept in the entries, though every nested
+          # script call goes through `bash` and does not depend on them.
+          out="$RUNNER_TEMP/${PACKAGE_ID}.${VERSION}.zip"
+          python3 - "$pkg" "$out" <<'PY'
+          import os, sys, zipfile
+          root, out = sys.argv[1], sys.argv[2]
+          with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+              for d, _, files in os.walk(root):
+                  for f in sorted(files):
+                      path = os.path.join(d, f)
+                      info = zipfile.ZipInfo.from_file(path, os.path.relpath(path, root))  # follows symlinks
+                      info.compress_type = zipfile.ZIP_DEFLATED
+                      with open(path, "rb") as fh:
+                          z.writestr(info, fh.read())
+          PY
           # Refuse to publish anything that looks like state or real config.
-          bad="$(tar -tzf "$out" | grep -E '\.plan$|\.tfstate|\.auto\.tfvars$|/environments/[^/]+/[^/]+\.tfvars$|\.pem$|(^|/)\.env$' || true)"
+          bad="$(python3 -c 'import sys,zipfile; print("\n".join("./"+n for n in zipfile.ZipFile(sys.argv[1]).namelist()))' "$out" | grep -E '\.plan$|\.tfstate|\.auto\.tfvars$|/environments/[^/]+/[^/]+\.tfvars$|\.pem$|(^|/)\.env$' || true)"
           [ -z "$bad" ] || { echo "::error::refusing to package:"; echo "$bad"; exit 1; }
           echo "PKG=$out" >> "$GITHUB_ENV"
-          { echo "### Package"; echo; echo "\`$(basename "$out")\` — $(du -h "$out" | cut -f1), $(tar -tzf "$out" | wc -l) entries, commit \`${GITHUB_SHA::7}\`"; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "### Package"; echo; echo "\`$(basename "$out")\` — $(du -h "$out" | cut -f1), $(python3 -c 'import sys,zipfile; print(len(zipfile.ZipFile(sys.argv[1]).namelist()))' "$out") files, commit \`${GITHUB_SHA::7}\`"; } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -245,7 +264,7 @@ jobs:
         uses: OctopusDeploy/push-package-action@v4
         with:
           space: ${{ vars.OCTOPUS_SPACE }}
-          packages: ${{ runner.temp }}/package/${{ env.PACKAGE_ID }}.${{ env.VERSION }}.tar.gz
+          packages: ${{ runner.temp }}/package/${{ env.PACKAGE_ID }}.${{ env.VERSION }}.zip
           overwrite_mode: FailIfExists
 
       - name: Create the release
