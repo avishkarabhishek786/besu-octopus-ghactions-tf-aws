@@ -66,7 +66,7 @@ while [[ $# -gt 0 ]]; do
     --node-sg)  NODE_SG="$2"; shift 2 ;;
     --proxy)    PROXY="$2"; shift 2 ;;
     --sipn)     SIPN="$2"; shift 2 ;;
-    -h|--help)  sed -n '2,54p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,51p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -544,4 +544,4 @@ if [[ "$SKIP" -gt 0 ]]; then
   printf '(--lb, --endpoint, --data, --runner, --control-plane, --node-sg, --proxy) before treating the\n'
   printf 'flow table as verified. #34 asks the cloud team for exactly these placements.\n'
 fi
-[[ "$FAIL" -eq 0 ]] || { echo "Flows are blocked. Quote the #34 F-n citations above back to the cloud team." >&2; exit 1; }
+[[ "$FAIL" -eq 0 ]] || { echo "Flows are blocked. Quote the #34 F-n / C-n citations above back to the cloud team." >&2; exit 1; }
