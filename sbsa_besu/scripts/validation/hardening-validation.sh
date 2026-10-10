@@ -647,9 +647,9 @@ main() {
   if [ "$DRY_RUN" = yes ]; then
     banner "DRY-RUN — planned tests for your tfvars"
     log "RUNNER:  H5-scoped, F28-bootstrap, H5-deny"
-    log "CERTS:   F19-secrets$( is_true \"$RPC_MTLS\" && echo ', F19-mtls, F19-enforce' || echo ' (mTLS off)' )"
-    log "AWS:     H7 H10 H13 H19 H21$( is_true \"$NODE_CMK\" && echo ' H7-cmk' )$( [ -n \"$DATA_CMK\" ] && echo ' H20' )"
-    log "CLUSTER: F27-gate H14 H7-etcd H1 H2 H15 H12$( is_true \"$RUN_H16\" && echo ' H16' )"
+    log "CERTS:   F19-secrets$( is_true "$RPC_MTLS" && echo ', F19-mtls, F19-enforce' || echo ' (mTLS off)' )"
+    log "AWS:     H7 H10 H13 H19 H21$( is_true "$NODE_CMK" && echo ' H7-cmk' )$( [ -n "$DATA_CMK" ] && echo ' H20' )"
+    log "CLUSTER: F27-gate H14 H7-etcd H1 H2 H15 H12$( is_true "$RUN_H16" && echo ' H16' )"
     if [ "$ACCOUNT_PERM" = local ]; then log "RUN  H3-config (read-only)$( is_true "$ALLOW_MUT" && echo ' + H3 full revoke (MUTATING)' || echo '  [H3 full revoke needs --allow-mutations]' )"; else log "SKIP H3 (perm off)"; fi
     if is_true "$NETPOL"; then is_true "$ALLOW_MUT" && log "RUN  H6 rogue-pod (MUTATING) + H21-pod" || log "RUN  H6-config (read-only)  [rogue-pod needs --allow-mutations]"; else log "SKIP H6 (network policy off)"; fi
     is_true "$APP_RPC" && log "RUN  app H4/H8/H22/H24/H25" || log "SKIP app layer (enable_app_rpc=false)"

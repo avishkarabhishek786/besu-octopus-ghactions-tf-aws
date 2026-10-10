@@ -107,6 +107,21 @@ rules it reports all three runner → control-plane pairs BLOCKED.
 
 ## Closed
 
+### B37 — `hardening-validation.sh --dry-run` mis-reported four planned tests
+**Provenance:** inherited (`besu-aws`) · **Found:** 2026-10-10, writing `release.yml` · **Fixed:** same day
+
+The dry-run plan printed `$( is_true \"$NODE_CMK\" … )` and `$( [ -n \"$DATA_CMK\" ] … )`.
+Inside `$( … )` the escaped quotes reach the test as literal `"` characters, so
+`[ -n '""' ]` is always true and `is_true '"true"'` is always false. As a result:
+**H20 was always listed**, even with no `data_cmk_arn`; **mTLS always read "off"**; and
+**H7-cmk and H16 never appeared**. The tests themselves were unaffected; only the plan
+was wrong. The backslashes are gone, and all four branches were exercised.
+
+**Found by:** `shellcheck -S error` (SC2070/SC2157), its only error-level finding in the
+36 scripts, while choosing what `release.yml` could gate on from day one.
+
+---
+
 ### B36 — `verify-pull-canary.sh --check-policy` failed a same-account registry the canary proved pullable
 **Provenance:** tooling · **Found:** 2026-10-10, pull-canary run · **Fixed:** same day
 
