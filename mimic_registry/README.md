@@ -44,6 +44,9 @@ Then, in the GitHub repository (Settings → Secrets and variables → Actions):
 ## If the role is refused
 
 `Not authorized to perform sts:AssumeRoleWithWebIdentity` means the token's `sub` is not
-in `terraform output trusted_subjects`. The workflow's **Show the OIDC subject** step
+in `terraform output trusted_subjects`. **Seen on the first dry run (2026-10-10):** this
+repository postdates GitHub's 2026-07-15 change, and its `sub` is
+`repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:<ref>`. Setting `github_ids` generates that
+form exactly for every allowed ref. The workflow's **Show the OIDC subject** step
 printed the real one (also in the run summary). Add that exact string to
 `extra_subjects`, plan, apply, re-run. Never replace it with a wildcard.

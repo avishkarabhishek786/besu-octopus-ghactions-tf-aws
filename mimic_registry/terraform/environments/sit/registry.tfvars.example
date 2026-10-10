@@ -15,6 +15,10 @@ allowed_refs = ["refs/heads/main"]
 ecr_prefix                = "mirror"
 allow_create_repositories = true
 
-# Fill ONLY from the workflow's "Show the OIDC subject" output, if the plain
-# repo:<owner>/<name>:ref:<ref> form is refused.
+# Repositories created after 2026-07-15: the token's sub is
+# repo:<owner>@<owner-id>/<name>@<repo-id>:ref:<ref>. IDs from
+# GET https://api.github.com/repos/<owner>/<name>  (.owner.id, .id).
+# github_ids = { owner = "<owner-id>", repository = "<repo-id>" }
+
+# Anything else the workflow's "Show the OIDC subject" step printed — exact, never a wildcard.
 extra_subjects = []

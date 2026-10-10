@@ -33,12 +33,19 @@ locals {
   # match, no wildcards in the owner or repository: `repo:owner*/…` also
   # matches any other owner whose name merely starts the same way.
   #
-  # Repositories created after 2026-07-15 may carry ID suffixes in `sub`
-  # (supply-chain.yml, trust-policy note). We do not guess that format: the
-  # workflow prints the claim it actually received, and the observed value goes
-  # in extra_subjects. Least privilege beats a wildcard that "probably" works.
+  # Repositories created after 2026-07-15 carry numeric IDs in `sub`. OBSERVED
+  # 2026-10-10 (the workflow's "Show the OIDC subject" step, first dry run):
+  #     repo:<owner>@<owner-id>/<name>@<repo-id>:ref:<ref>
+  # The plain form was refused. Both are generated, exactly, for every allowed
+  # ref — the IDs are what make a recreated or renamed repository NOT match,
+  # which is the point. extra_subjects remains for anything else observed.
+  _owner = split("/", var.github_repository)[0]
+  _name  = split("/", var.github_repository)[1]
   subjects = concat(
     [for r in var.allowed_refs : "repo:${var.github_repository}:ref:${r}"],
+    var.github_ids == null ? [] : [
+      for r in var.allowed_refs : "repo:${local._owner}@${var.github_ids.owner}/${local._name}@${var.github_ids.repository}:ref:${r}"
+    ],
     var.extra_subjects,
   )
 

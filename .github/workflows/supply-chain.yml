@@ -210,12 +210,17 @@ jobs:
       # `aws sts assume-role-with-web-identity`. Same result, one less
       # dependency. Raise it if this step is what blocks adoption.
       #
-      # Trust-policy note: GitHub's `sub` claim gained org and repository ID
-      # suffixes for repositories created after 2026-07-15, so a StringEquals
-      # condition copied from an older tutorial fails with an unhelpful
-      # "Not authorized to perform sts:AssumeRoleWithWebIdentity". Use
-      # StringLike with wildcards, and if auth fails, decode the actual token
-      # claim rather than guessing at the policy.
+      # Trust-policy note: GitHub's `sub` claim gained owner and repository ID
+      # suffixes for repositories created after 2026-07-15. OBSERVED 2026-10-10
+      # on the first run of this workflow:
+      #     repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:refs/heads/<branch>
+      # A condition written in the older repo:<owner>/<repo>:ref:... form fails
+      # with an unhelpful "Not authorized to perform
+      # sts:AssumeRoleWithWebIdentity". Match the new form EXACTLY (IDs from
+      # GET /repos/<owner>/<repo>: .owner.id and .id) rather than reaching for
+      # `repo:<owner>*/<repo>*` — that wildcard also matches any other owner
+      # whose name starts the same way. The step above prints the subject this
+      # run actually received; send that string to whoever owns the role.
       # Print the `sub` claim GitHub put in THIS run's token — the subject only,
       # never the token (it is masked before anything else touches it). The
       # trust policy must match `sub` EXACTLY, and its format differs between

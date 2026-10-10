@@ -77,3 +77,17 @@ variable "extra_subjects" {
   type        = list(string)
   default     = []
 }
+
+variable "github_ids" {
+  description = <<-EOT
+    Numeric owner and repository IDs, for the `sub` format of repositories
+    created after 2026-07-15: repo:<owner>@<owner-id>/<name>@<repo-id>:ref:<ref>
+    (observed 2026-10-10). From the API: GET /repos/<owner>/<name> -> .owner.id
+    and .id. null for an older repository, whose `sub` has no IDs.
+  EOT
+  type = object({
+    owner      = string
+    repository = string
+  })
+  default = null
+}
