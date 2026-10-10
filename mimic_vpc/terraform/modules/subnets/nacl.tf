@@ -163,6 +163,11 @@ locals {
         [for c in local.s3_cidrs : { n = 150, proto = "tcp", from = local.eph.from, to = local.eph.to, cidr = c, flow = "F-6 return from S3 (image layers, state, bundle)" }],
         [for c in(local.wide ? local.role_cidrs["data"] : [var.vpc_cidr]) : { n = 160, proto = "tcp", from = local.eph.from, to = local.eph.to, cidr = c, flow = "F-9 return from the explorer database" }],
         [{ n = 170, proto = "udp", from = local.eph.from, to = local.eph.to, cidr = var.vpc_cidr, flow = "F-10 DNS replies from the VPC resolver + C-2 replies from CoreDNS" }],
+        # F-8's reply comes from OUTSIDE the VPC, so no VPC-CIDR return rule
+        # carries it. Until 2026-10-10 (B40) it rode F-6's S3 return only
+        # because empty s3_cidrs falls back to 0.0.0.0/0; enumerate S3's
+        # prefixes and the Tentacle's handshake dies. Band 190 = egress F-8.
+        var.egress_proxy_cidr == "" ? [] : [{ n = 190, proto = "tcp", from = local.eph.from, to = local.eph.to, cidr = var.egress_proxy_cidr, flow = "F-8 return from the egress proxy (R-10)" }],
         # --- the cluster's own flows (B27) and F-7's missing half (B32) -----
         # Appended, never inserted — not for the keys (they are content-based)
         # but for the rule NUMBERS, which are band + position. Bands are 10

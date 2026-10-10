@@ -225,8 +225,8 @@ platform's checker would have been written against something that could never fa
   > the first `mimic_eks` apply the node in the AZ without a control-plane ENI never joined.
   > F-7 (runner → API) was blocked by the same omission (B32). Both were proven fixed
   > offline, then live. Run the checker with `--control-plane` before any cluster apply.
-  > Rule budget in the default `summarised` source mode: workload NACLs at **16 in / 19
-  > out** (with the F-8 proxy rule), **17 / 20** with two enumerated `s3_cidrs` — at the
+  > Rule budget in the default `summarised` source mode: workload NACLs at **17 in / 19
+  > out** (with F-8 and, since B40, its own return rule), **18 / 20** with two enumerated `s3_cidrs` — at the
   > limit. A strict (`#28`) cluster joins without `ledger_subnets_in_use`, because in this
   > mode the cluster flows use the VPC CIDR; setting it adds the ledger F-1 peer rules and
   > exceeds 20 (that is #34's quota finding, unchanged). In `narrow` mode set

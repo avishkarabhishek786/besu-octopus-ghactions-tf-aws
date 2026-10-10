@@ -107,6 +107,30 @@ rules it reports all three runner → control-plane pairs BLOCKED.
 
 ## Closed
 
+### B40 — the F-8 proxy reply had no NACL rule of its own; `egress_proxy_cidr` was unset in SIT
+**Provenance:** tooling + mimic · **Found:** 2026-10-10, preparing the first Octopus run · **Fixed:** same day, offline-proven
+
+Three faults, all on the In-VPC EC2 Runner → egress proxy path (F-8) the Octopus Tentacle
+depends on. None of them could show on 09-17, which ran before the `flows` NACLs existed:
+1. **SIT's `mimic_vpc` tfvars left `egress_proxy_cidr` empty**, which *omits* the outbound
+   F-8 rule. Under `flows` the Tentacle could not have polled. Now `10.61.0.0/24`.
+2. **There was no inbound rule for the proxy's reply.** NACLs are stateless, and the reply
+   comes from outside the VPC, so none of the VPC-CIDR return rules cover it. It got
+   through only because empty `s3_cidrs` falls back to an any-source S3 return rule (150).
+   Enumerate S3's prefixes, as a real cloud team will, and the handshake dies. There is now
+   a dedicated inbound rule (band 190). Budget: 17/19, or 18/20 with two S3 ranges.
+3. **`verify-subnet-rules.sh` checked only the outbound half of F-8**, so it would have
+   passed fault 2. It now checks the return too, and warns when that return only passes
+   through a `0.0.0.0/0` rule.
+
+Fixture matrix from real plans (`b40/`): SIT settings PASS with the new warning;
+enumerated S3 PASS through rule 190; `nacl_break_flow = "F-8"` FAILs both halves.
+
+**Found by:** reading the NACL flow table against the one path the Octopus run needs. The
+B12/B27 lesson again: a check that only looks at the forward half passes a dead flow.
+
+---
+
 ### B39 — `besu-infra` created the runner before its S3 bundle existed
 **Provenance:** port-induced (CD-67) · **Found:** 2026-10-10, preparing the first Octopus run · **Fixed:** same day, not yet run
 

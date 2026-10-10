@@ -402,11 +402,23 @@ else
     skip "F-8 — no NACL on the In-VPC EC2 Runner's subnet"
   else
     r="$(nacl_eval "$racl" 1 tcp "$PP" "$PC")"
-    IFS=$'\t' read -r v rule rc cov <<<"$r"
-    if [[ "$v" == allow ]]; then
-      ok "F-8 admin -> $PC:$PP (rule $rule, $cov coverage)"
+    IFS=$'\t' read -r v rule rc cov _ <<<"$r"
+    # THE RETURN HALF (B40, 2026-10-10). NACLs are stateless: the proxy's reply
+    # arrives at the runner's EPHEMERAL port from the proxy's prefix, which is
+    # OUTSIDE the VPC — so none of the VPC-CIDR return rules carry it. Until
+    # this was added the checker evaluated only the outbound rule and passed a
+    # NACL on which the Tentacle's TCP handshake could never complete.
+    rr="$(nacl_eval "$racl" 0 tcp 1024 "$PC")"
+    IFS=$'\t' read -r rv rrule rrc rcov _ <<<"$rr"
+    if [[ "$v" == allow && "$rv" == allow ]]; then
+      ok "F-8 runner -> $PC:$PP (out rule $rule, $cov) and its return (in rule $rrule, $rcov)"
+      # Passing only through an any-source rule means the return belongs to
+      # some OTHER flow (on the mimic: F-6's S3 fallback). Narrow that rule —
+      # as a cloud team enumerating S3's prefixes will — and F-8 dies.
+      [[ "$rrc" == "0.0.0.0/0" ]] && warn "F-8's return rides in rule $rrule (0.0.0.0/0), not a rule for the proxy $PC — ask for one (#34 F-8)"
     else
-      bad "#34 F-8 BLOCKED: In-VPC EC2 Runner cannot reach the egress proxy $PC:$PP ($v)"
+      [[ "$v" == allow ]] || bad "#34 F-8 BLOCKED: In-VPC EC2 Runner cannot reach the egress proxy $PC:$PP ($v)"
+      [[ "$rv" == allow ]] || bad "#34 F-8 RETURN BLOCKED: nothing admits tcp/1024-65535 from the proxy $PC into the runner's subnet ($rv)"
       note "Without it the Octopus polling Tentacle cannot register (CD-55/CD-57) and"
       note "every deployment stops — but the chain itself is unaffected, so this one"
       note "fails loudly in the pipeline rather than silently in the ledger."
