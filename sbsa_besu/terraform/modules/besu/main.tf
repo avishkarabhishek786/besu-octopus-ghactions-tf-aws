@@ -183,7 +183,8 @@ resource "helm_release" "genesis" {
       adminAccount            = var.permissioning_admin_account
       initialAccountAllowlist = var.initial_account_allowlist
     }
-    # C6: seeds the besu-account-allowlist ConfigMap the nodes mount (accountMode=local).
+    # C6: names the live allowlist ConfigMap the nodes mount (accountMode=local). The
+    # chart renders only <name>-seed; the genesis Job creates <name> from it if absent.
     accountAllowlist = { configMapName = var.account_allowlist_configmap_name }
     secrets = {
       region            = var.region

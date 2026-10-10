@@ -80,6 +80,7 @@ citation rather than a symptom.
 | `rolling-besu-apply.sh` | **runner** | mutates | Apply **any** Helm value override across the validators **one at a time**, verifying quorum and catch-up between each. The single supported path for every validator-affecting change | **H1** · CD-5 |
 | `rolling-besu-upgrade.sh` | **runner** | mutates | Back-compat wrapper over `rolling-besu-apply.sh` preserving the plain image-bump interface | H1 |
 | `rolling-besu-rollback.sh` | **runner** | mutates | The same quorum-gated roll, pinned to the **previous** image. For a bad forward roll or a misbehaving image | H11 |
+| `migrate-allowlist-ownership.sh` | **runner** | mutates (metadata only) | **One-time**, for chains created before the allowlist ownership split: annotates the live `besu-account-allowlist` `helm.sh/resource-policy=keep` and labels it Job-owned, so the next `besu-genesis` upgrade cannot delete and re-seed it. Data untouched. **Dry-run by default**; `--apply` to execute | C6 · H2 |
 | `migrate-h1-validator-split.sh` | laptop or runner | mutates (state only) | **One-time** Terraform state move for the H1 validator split. On an already-applied chain, skipping it makes the next apply uninstall and reinstall **every** validator at once → halt | H1 |
 | `full-delete.sh` | laptop | **⚠️ IRREVERSIBLE** | Tag-keyed teardown backstop for when the state is lost. Deletes keys and chain data. **Dry-run by default**; `--confirm` requires typing `DELETE <group>`. Prefer `terraform destroy` | §9 teardown |
 
@@ -93,7 +94,7 @@ semantics. All of these run **on the runner** (private EKS endpoint) and all **m
 | `add-account.sh` | Add sender addresses to the allowlist ConfigMap without re-genesis, then propagate | C6 · **F20** |
 | `remove-account.sh` | Revoke addresses. Refuses to empty the list — an empty allowlist denies every sender | C6 |
 | `list-accounts.sh` | Show the ConfigMap, and with `--live` each enforcing pod's mounted view | C6 |
-| `reload-permissions.sh` | Propagate the *current* ConfigMap after a `terraform apply` regenerated it. A ConfigMap change alone does **not** restart a StatefulSet | C6 · H3 |
+| `reload-permissions.sh` | Propagate the *current* ConfigMap when the pods were not: after a `PROPAGATE=none` patch, a part-failed propagation, or a re-genesis reset. A ConfigMap change alone does **not** restart a StatefulSet | C6 · H3 |
 | `fund-account.sh` | Fund an account by transfer from the faucet. Genesis funding fires **only** at chain creation, and a zero-balance sender's transaction is never mined on a zero-gas chain | **F20** |
 | `_perm-lib.sh` | Shared helpers and the propagation logic (validators go one at a time, quorum-gated) | C6 |
 
@@ -102,7 +103,7 @@ semantics. All of these run **on the runner** (private EKS endpoint) and all **m
 | Script | Run from | Effect | What it does | Record |
 |---|---|---|---|---|
 | `pki/issue-server-cert.sh` | **runner** (or any host with the Secrets Manager grants) | mutates | The RPC server mTLS keystore, truststore and JWT keys into Secrets Manager. **Run before** deploying with `rpc_mtls_enabled=true`, or the pods crash-loop on an empty keystore. Needs `keytool` — an openssl-built PKCS12 truststore makes Besu throw a TLS internal error | **F19** · C12 |
-| `pki/issue-app-rpc-cert.sh` | as above | mutates | The app-rpc **server-TLS** keystore. Server-TLS + JWT, no client certs, unlike the SWIFT pool | Stage 8 |
+| `pki/issue-app-rpc-cert.sh` | as above | mutates | The app-rpc **server-TLS** keystore, plus the app JWT keypair on first run (kept on re-runs; `APP_RPC_ROTATE_JWT=1` rotates). Server-TLS + JWT, no client certs, unlike the SWIFT pool | Stage 8 |
 | `access/sign-client-csr.sh` | laptop | read-only (writes a cert locally) | Sign SWIFT's CSR with our CA. **The default flow:** SWIFT's private key never leaves SWIFT | §1 |
 | `access/make-join-pack.sh` | laptop | read-only | Build the bundle handed to SWIFT: CA cert, client cert, endpoint, permitted methods, a method-scoped JWT, and a README | §2.5 |
 

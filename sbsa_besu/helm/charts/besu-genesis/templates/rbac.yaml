@@ -1,4 +1,5 @@
-# RBAC letting the genesis Job publish the genesis ConfigMap in its namespace.
+# RBAC letting the genesis Job publish the genesis ConfigMap (and, when
+# accountMode=local, create/label the LIVE account allowlist) in its namespace.
 # Namespaced Role (least privilege) — only configmaps, only this namespace.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

@@ -377,6 +377,18 @@ The mimic stays up through Phase D (~$0/mo — flow logs only).
 
 ---
 
+## Upstream fixes cherry-picked from `besu-aws`
+
+| `besu-aws` commit | What it fixes | Here |
+|---|---|---|
+| `cdbd6be` (2026-10-09) | Runner `region_guard` (deploy region ≠ state-bucket region); `issue-app-rpc-cert.sh` creates/keeps the app JWT keypair (no `app/` tree to do it); allowlist guidance after the H2 genesis freeze | `terraform/runner/region-guard.tf`, `scripts/pki/`, `scripts/permissioning/` |
+| `9c61683` (2026-10-09) | Live account allowlist becomes **Job-owned** (create-if-absent from an inert `-seed`), so a `besu-genesis` upgrade cannot drop runtime onboardings; `migrate-allowlist-ownership.sh` for older chains | `helm/charts/besu-genesis/`, `scripts/maintenance/` |
+
+Not carried over: the `besu-aws` doc edits (`CHANGELOG.md`, `PRODUCTION-DEPLOYMENT.md`,
+`docs/explained/`, `manual-deployment-guide.md`) — those files do not exist here — and the
+runbook's A.10 secret-sweep scoping, which has no equivalent step in `docs/RUNBOOK.md`.
+**Never run live here** (no in-cluster deploy yet — the ECR mirror is empty).
+
 ## Next: the port
 
 Work `Remaining` above in order. The four-root split comes first because every

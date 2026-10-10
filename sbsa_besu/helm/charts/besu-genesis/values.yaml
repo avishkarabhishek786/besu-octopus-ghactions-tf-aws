@@ -69,21 +69,23 @@ fundedAccounts: []
 # dropped smart-contract permissioning in 25.6.0 (F17, CHANGELOG 25.6.0 /
 # PR hyperledger/besu#8597) so it could never run on our pinned version. The
 # supported replacement is FILE-BASED ("local") account permissioning (C6,
-# implemented 2026-07-05): the accounts-allowlist below is seeded into the
-# besu-account-allowlist ConfigMap (permissions-accounts-configmap.yaml) that
-# every enforcing node reads. History in docs 02 §2.5.
+# implemented 2026-07-05): the accounts-allowlist below is rendered into the
+# inert besu-account-allowlist-seed ConfigMap (permissions-accounts-configmap.yaml);
+# the genesis Job creates the live besu-account-allowlist that every enforcing
+# node reads from it, once, if absent (job.yaml). History in docs 02 §2.5.
 permissioning:
   accountMode: "off" # off | local (file-based account allowlist — backlog C6)
   nodeMode: local    # file-based node allowlist (permissions_config.toml)
   # Admin + initial allowlist accounts are alloc'd a genesis balance (F20) so
   # they can transact from block 0, AND (when accountMode=local) seed the
-  # besu-account-allowlist ConfigMap. Empty seed + accountMode=local fails a
+  # live besu-account-allowlist ConfigMap via <name>-seed. Empty seed + accountMode=local fails a
   # render-time preflight (an empty allowlist denies every sender).
   adminAccount: ""
   initialAccountAllowlist: []
 
-# Name of the ConfigMap holding the file-based account allowlist (accountMode=
-# local). Single source of truth; the besu-node chart mounts it read-only.
+# Name of the LIVE ConfigMap holding the file-based account allowlist (accountMode=
+# local). Single source of truth; the besu-node chart mounts it read-only. The
+# genesis Job owns it (create-if-absent); Helm renders only <name>-seed.
 # Terraform overrides this from the module so both charts agree on one name.
 accountAllowlist:
   configMapName: besu-account-allowlist
