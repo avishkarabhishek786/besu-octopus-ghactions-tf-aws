@@ -25,7 +25,10 @@ person, an instance or an account (CD-10). Design record: `docs/CICD_DESIGN_NOTE
 cd octopus/aws-trust && terraform init -backend-config=… key=besu/octopus/aws-trust.tfstate … && terraform apply -var-file=environments/sit/aws-trust.tfvars
 # 2. Environment config into the env's secret (laptop, after mimic/hand-over files exist)
 ENV=sit AWS_REGION=af-south-1 scripts/runner/push-deploy-config.sh <prefix>-sit-octopus-deploy-config
-# 3. The space (human, Space-manager key in OCTOPUS_APIKEY)
+# 3. The space (human, Space-manager key in OCTOPUS_APIKEY). The KEY's access level must be
+#    read-write ("FullAccess"): a ReadOnly key on a Space-manager account plans cleanly, then
+#    every create fails "Missing permission: EnvironmentCreate []" (seen 2026-10-10).
+#    Check: GET /api/users/<id>/apikeys → AccessLevel.
 cd octopus/terraform && terraform init -backend-config=… key=besu/octopus/space.tfstate … && terraform apply -var-file=environments/sit/space.tfvars
 # 4. Releases come from release.yml; deployments from Octopus
 ```
