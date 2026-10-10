@@ -33,33 +33,33 @@
 # =============================================================================
 
 # --- the 8 platform images (mirror var.container_images) ---------------------
-image	besu	docker.io	hyperledger/besu	26.6.1	-
-image	tools	docker.io	alpine/k8s	1.30.13	-
-image	blockscout	ghcr.io	blockscout/blockscout	9.0.2	-
-image	frontend	ghcr.io	blockscout/frontend	v2.3.5	-
-image	stats	ghcr.io	blockscout/stats	v2.16.0	-
-image	visualizer	ghcr.io	blockscout/visualizer	v0.2.1	-
-image	proxy	docker.io	nginx	1.27-alpine	-
-image	postgres	docker.io	postgres	16-alpine	-
+image	besu	docker.io	hyperledger/besu	26.6.1	sha256:ac85d23b4250308ce5f6d004fff7fa6779f82932d1ba32fd3d4811531d43d0bc
+image	tools	docker.io	alpine/k8s	1.30.13	sha256:3ac15bcb3e6f959336928f536f9e25056e5503c4037bb00ff7ecf0f97fdb1681
+image	blockscout	ghcr.io	blockscout/blockscout	9.0.2	sha256:7659f168e4e2f6b73dd559ae5278fe96ba67bc2905ea01b57a814c68adf5a9dc
+image	frontend	ghcr.io	blockscout/frontend	v2.3.5	sha256:4b69f44148414b55c6b8550bc3270c63c9f99e923d54ef0b307e762af6bac90a
+image	stats	ghcr.io	blockscout/stats	v2.16.0	sha256:560a4c02b4cbc02c3c056998f3c7e8691e33eadcb8e51f460db42d95d3a15030
+image	visualizer	ghcr.io	blockscout/visualizer	v0.2.1	sha256:ffce88a765b0466824175cc8fed6e6b31d682310a96933b98451aefdfffecdc7
+image	proxy	docker.io	nginx	1.27-alpine	sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+image	postgres	docker.io	postgres	16-alpine	sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
 
 # --- the 15 chart-carried images ---------------------------------------------
 # Enumerated 2026-08-30 by `helm template` at the pinned chart versions below,
 # not from memory. Reproduce with the appendix of ../CHART_IMAGES.md.
-image	csi-driver	registry.k8s.io	csi-secrets-store/driver	v1.6.0	-
-image	csi-driver-crds	registry.k8s.io	csi-secrets-store/driver-crds	v1.6.0	-
-image	csi-node-registrar	registry.k8s.io	sig-storage/csi-node-driver-registrar	v2.16.0	-
-image	csi-livenessprobe	registry.k8s.io	sig-storage/livenessprobe	v2.18.0	-
-image	csi-provider-aws	public.ecr.aws	aws-secrets-manager/secrets-store-csi-driver-provider-aws	3.1.1	-
-image	fluent-bit	public.ecr.aws	aws-observability/aws-for-fluent-bit	3.2.1	-
-image	lb-controller	public.ecr.aws	eks/aws-load-balancer-controller	v3.4.0	-
-image	prometheus	quay.io	prometheus/prometheus	v3.12.0-distroless	-
-image	alertmanager	quay.io	prometheus/alertmanager	v0.33.0	-
-image	node-exporter	quay.io	prometheus/node-exporter	v1.11.1-distroless	-
-image	prometheus-operator	quay.io	prometheus-operator/prometheus-operator	v0.91.0	-
-image	k8s-sidecar	quay.io	kiwigrid/k8s-sidecar	2.7.3	-
-image	kube-state-metrics	registry.k8s.io	kube-state-metrics/kube-state-metrics	v2.19.1	-
-image	grafana	docker.io	grafana/grafana	13.0.2	-
-image	kube-webhook-certgen	ghcr.io	jkroepke/kube-webhook-certgen	1.8.3	-
+image	csi-driver	registry.k8s.io	csi-secrets-store/driver	v1.6.0	sha256:110344819630bfd41e0c6d3f215d325ad1a4d5d5b1d298f8af7d0edf4df64a4e
+image	csi-driver-crds	registry.k8s.io	csi-secrets-store/driver-crds	v1.6.0	sha256:2419b318a1c17bd741686bf1994cd37cee7162039c019435b8f534f2846fe488
+image	csi-node-registrar	registry.k8s.io	sig-storage/csi-node-driver-registrar	v2.16.0	sha256:ab482308a4921e28a6df09a16ab99a457e9af9641ff44fb1be1a690d07ce8b70
+image	csi-livenessprobe	registry.k8s.io	sig-storage/livenessprobe	v2.18.0	sha256:c4cc074199c045dd73ab85f28897e2a32f4d6f38ffdba4f3b13b8007ccbd3570
+image	csi-provider-aws	public.ecr.aws	aws-secrets-manager/secrets-store-csi-driver-provider-aws	3.1.1	sha256:076848ab9b131eef31faeeddee68225c99a8298205501979b700e3a4b2b013c9
+image	fluent-bit	public.ecr.aws	aws-observability/aws-for-fluent-bit	3.2.1	sha256:a480a12417203e628fe71ca1186f7dad1b465104e12493925a0159041f9b80bf
+image	lb-controller	public.ecr.aws	eks/aws-load-balancer-controller	v3.4.0	sha256:f3b4a1c3ecd84d249c665508a0430b6c20b639b2511e8e3df1b0cc19a4cf75b4
+image	prometheus	quay.io	prometheus/prometheus	v3.12.0-distroless	sha256:f39df5334dee301b885f77e0ff1159f5d8a43bf9db518f885544594799a1e3c2
+image	alertmanager	quay.io	prometheus/alertmanager	v0.33.0	sha256:af26fbe4dd1886ac0efd7bd55cd9027da262e105b137a376522b7c14c3626e4a
+image	node-exporter	quay.io	prometheus/node-exporter	v1.11.1-distroless	sha256:6112664fd761bb964d8a2d3d0119d6c8402618a89edbb3a43c8f7b4090fb53c9
+image	prometheus-operator	quay.io	prometheus-operator/prometheus-operator	v0.91.0	sha256:9e53e13139218aca79ee000172de73355e9174ef2904585bfad9497fc71aae2d
+image	k8s-sidecar	quay.io	kiwigrid/k8s-sidecar	2.7.3	sha256:694950d736c8b532eba4006527ccbdac98fefc9f30b3346ba2de50b6cad91c94
+image	kube-state-metrics	registry.k8s.io	kube-state-metrics/kube-state-metrics	v2.19.1	sha256:85108987d044b18a098126732f98602df408888c0f7d456241f5abefb9744bc1
+image	grafana	docker.io	grafana/grafana	13.0.2	sha256:5dad0df181cb644a14e13617b913b261a54f7d4fd4510721dba420929f35bea2
+image	kube-webhook-certgen	ghcr.io	jkroepke/kube-webhook-certgen	1.8.3	sha256:8ce13c365c8e9ced0aad5ef350a53c50b7ca5817f99d856b9eec895db1056728
 
 # --- the 5 Helm charts -------------------------------------------------------
 # D-22: charts must reach an air-gapped cluster, so they are pushed to ECR as

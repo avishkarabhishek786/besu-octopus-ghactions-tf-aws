@@ -106,7 +106,7 @@ if [[ "$CHECK_DRIFT" == true ]]; then
   TFVARS="$REPO_ROOT/terraform/chain/variables.tf"
   [[ -f "$TFVARS" ]] || die "not found: $TFVARS"
   FAIL=0
-  while IFS=$'\t' read -r _ name source path version _; do
+  while IFS=$'\t' read -r _ name source path version digest; do
     line=$(grep -E "^[[:space:]]*${name}[[:space:]]*=[[:space:]]*\{" "$TFVARS" || true)
     if [[ -z "$line" ]]; then
       # Only the 8 platform keys exist in Terraform; the 15 chart-carried ones
@@ -116,11 +116,20 @@ if [[ "$CHECK_DRIFT" == true ]]; then
     tf_host=$(sed -n 's/.*host[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$line")
     tf_repo=$(sed -n 's/.*repository[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$line")
     tf_tag=$( sed -n 's/.*tag[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$line")
-    if [[ "$tf_host" == "$source" && "$tf_repo" == "$path" && "$tf_tag" == "$version" ]]; then
-      ok "drift check: $name = $source/$path:$version"
-    else
+    tf_dig=$( sed -n 's/.*digest[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$line")
+    [[ "$digest" == "-" ]] && digest=""
+    if [[ "$tf_host" != "$source" || "$tf_repo" != "$path" || "$tf_tag" != "$version" ]]; then
       err "DRIFT: $name — manifest says $source/$path:$version, Terraform says $tf_host/$tf_repo:$tf_tag"
       FAIL=$((FAIL+1))
+    # Digests too, once either side pins one (H38). The tag agreeing is not
+    # enough: a re-recorded manifest digest with a stale Terraform pin deploys
+    # bytes the mirror no longer vouches for, and the reverse pins bytes that
+    # were never mirrored — ImagePullBackOff on a registry that looks complete.
+    elif [[ "$tf_dig" != "$digest" ]]; then
+      err "DRIFT: $name — manifest pins ${digest:-no digest}, Terraform pins ${tf_dig:-no digest}"
+      FAIL=$((FAIL+1))
+    else
+      ok "drift check: $name = $source/$path:$version${digest:+@${digest:0:19}…}"
     fi
   done < <(rows image)
   [[ "$FAIL" -eq 0 ]] || die "$FAIL platform image(s) disagree between the manifest and Terraform"

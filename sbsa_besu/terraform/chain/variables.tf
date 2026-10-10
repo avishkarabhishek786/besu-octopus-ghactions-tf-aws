@@ -948,15 +948,19 @@ variable "container_images" {
     digest     = optional(string, "")
   }))
 
+  # Digests recorded 2026-10-10 from the first workflow mirror (run 38040455269):
+  # read back from ECR, which crane wrote BY DIGEST, so they are upstream's own
+  # (D-18). They must equal mirror.manifest's digest column — --check-drift
+  # enforces it. A version bump changes tag AND digest here and in the manifest.
   default = {
-    besu       = { host = "docker.io", repository = "hyperledger/besu", tag = "26.6.1" }
-    tools      = { host = "docker.io", repository = "alpine/k8s", tag = "1.30.13" }
-    blockscout = { host = "ghcr.io", repository = "blockscout/blockscout", tag = "9.0.2" }
-    frontend   = { host = "ghcr.io", repository = "blockscout/frontend", tag = "v2.3.5" }
-    stats      = { host = "ghcr.io", repository = "blockscout/stats", tag = "v2.16.0" }
-    visualizer = { host = "ghcr.io", repository = "blockscout/visualizer", tag = "v0.2.1" }
-    proxy      = { host = "docker.io", repository = "nginx", tag = "1.27-alpine" }
-    postgres   = { host = "docker.io", repository = "postgres", tag = "16-alpine" }
+    besu       = { host = "docker.io", repository = "hyperledger/besu", tag = "26.6.1", digest = "sha256:ac85d23b4250308ce5f6d004fff7fa6779f82932d1ba32fd3d4811531d43d0bc" }
+    tools      = { host = "docker.io", repository = "alpine/k8s", tag = "1.30.13", digest = "sha256:3ac15bcb3e6f959336928f536f9e25056e5503c4037bb00ff7ecf0f97fdb1681" }
+    blockscout = { host = "ghcr.io", repository = "blockscout/blockscout", tag = "9.0.2", digest = "sha256:7659f168e4e2f6b73dd559ae5278fe96ba67bc2905ea01b57a814c68adf5a9dc" }
+    frontend   = { host = "ghcr.io", repository = "blockscout/frontend", tag = "v2.3.5", digest = "sha256:4b69f44148414b55c6b8550bc3270c63c9f99e923d54ef0b307e762af6bac90a" }
+    stats      = { host = "ghcr.io", repository = "blockscout/stats", tag = "v2.16.0", digest = "sha256:560a4c02b4cbc02c3c056998f3c7e8691e33eadcb8e51f460db42d95d3a15030" }
+    visualizer = { host = "ghcr.io", repository = "blockscout/visualizer", tag = "v0.2.1", digest = "sha256:ffce88a765b0466824175cc8fed6e6b31d682310a96933b98451aefdfffecdc7" }
+    proxy      = { host = "docker.io", repository = "nginx", tag = "1.27-alpine", digest = "sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10" }
+    postgres   = { host = "docker.io", repository = "postgres", tag = "16-alpine", digest = "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea" }
   }
 
   validation {
