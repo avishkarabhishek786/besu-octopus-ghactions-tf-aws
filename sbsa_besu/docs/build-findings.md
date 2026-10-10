@@ -107,6 +107,35 @@ rules it reports all three runner → control-plane pairs BLOCKED.
 
 ## Closed
 
+### B42 — `release.yml` could not find the deployment it had just started
+**Provenance:** tooling (CD-68) · **Found:** 2026-10-10, run `38059442057` · **Fixed:** same day
+
+"Find the SIT deployment" asked for `projects/<slug>/releases/<version>`. That route answers
+**404 "not found in the current space context" when given a slug**, even though the project
+route itself accepts one. The release existed (`Releases-61`), and the step died with a
+bare `curl -f` exit 22 that the run page could not explain. Fixed: the step now resolves
+the slug to a project ID first, and every API call reports its HTTP status and Octopus's
+message when it fails. That reporting is how the 404 was found. Re-run against the real
+release: it finds `ServerTasks-1516`.
+
+**Found by:** the first real release. My earlier route check had used the project ID.
+
+---
+
+### B41 — `terraform version | head -1` killed the first `besu-infra` step (exit 141)
+**Provenance:** port-induced (B38's `lib.sh`) · **Found:** 2026-10-10, `ServerTasks-1516` · **Fixed:** same day
+
+`head` exits after one line. Terraform, still writing its five-line version banner, takes
+SIGPIPE, and under `set -o pipefail` the step fails with **141** right after printing
+`Terraform v1.16.1`. It failed before any AWS call, so nothing was created and nothing
+billed. Intermittent by nature: in the worker-tools image, `head` failed 1 time in 30 and
+`sed -n 1p` 0 times. The local container test had passed by luck. Now `sed -n 1p`, which
+reads all its input.
+
+**Found by:** the first real deployment, at zero cost.
+
+---
+
 ### B40 — the F-8 proxy reply had no NACL rule of its own; `egress_proxy_cidr` was unset in SIT
 **Provenance:** tooling + mimic · **Found:** 2026-10-10, preparing the first Octopus run · **Fixed:** same day, offline-proven
 

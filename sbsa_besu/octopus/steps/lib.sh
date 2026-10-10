@@ -22,7 +22,10 @@ install_pinned_terraform() {
       || { mkdir -p "$HOME/.local/bin"; install -m 0755 "$tmp/terraform" "$HOME/.local/bin/terraform"; export PATH="$HOME/.local/bin:$PATH"; }
     hash -r
   fi
-  terraform version | head -1
+  # sed, not head: head exits after one line, terraform takes SIGPIPE writing
+  # the rest, and under `set -o pipefail` the step dies with exit 141 — which
+  # is exactly what the first besu-infra deployment did (ServerTasks-1516).
+  terraform version | sed -n 1p
 }
 
 # init a root on this environment's state (besu/<env>/<root>.tfstate — the <env>

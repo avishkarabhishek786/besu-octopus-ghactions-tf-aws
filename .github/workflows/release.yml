@@ -293,9 +293,24 @@ jobs:
           set -euo pipefail
           [ "$AWAIT_MINUTES" -ge 1 ] && [ "$AWAIT_MINUTES" -le 160 ] || { echo "::error::await_minutes must be 1..160 (job ceiling 180)"; exit 1; }
           echo "timeout=$(( AWAIT_MINUTES * 60 ))" >> "$GITHUB_OUTPUT"
-          api() { curl -fsS -H "Authorization: Bearer ${OCTOPUS_ACCESS_TOKEN}" "${OCTOPUS_URL%/}/api/$1"; }
+          # On failure, say WHICH call and WHAT Octopus answered — a bare curl -f
+          # exit 22 is undiagnosable from the run page (run 38059442057).
+          api() {
+            local out code
+            out="$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer ${OCTOPUS_ACCESS_TOKEN}" "${OCTOPUS_URL%/}/api/$1")"
+            code="${out##*$'\n'}"; out="${out%$'\n'*}"
+            if [ "$code" != 200 ]; then
+              echo "::error::GET /api/$1 -> HTTP $code: ${out:0:400}" >&2
+              return 1
+            fi
+            printf '%s' "$out"
+          }
           sid="$(api spaces/all | python3 -c 'import json,os,sys; print(next(s["Id"] for s in json.load(sys.stdin) if s["Name"]==os.environ["SPACE"]))')"
-          rid="$(api "$sid/projects/$PROJECT/releases/$VERSION" | python3 -c 'import json,sys; print(json.load(sys.stdin)["Id"])')"
+          # The release route needs the project ID: by slug it answers 404 "not
+          # found in the current space context" (run 38059442057), although the
+          # project route itself accepts the slug.
+          pid="$(api "$sid/projects/$PROJECT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["Id"])')"
+          rid="$(api "$sid/projects/$pid/releases/$VERSION" | python3 -c 'import json,sys; print(json.load(sys.stdin)["Id"])')"
           task=""
           for _ in $(seq 1 18); do
             task="$(api "$sid/releases/$rid/deployments" | python3 -c 'import json,sys; i=json.load(sys.stdin)["Items"]; print(i[0]["TaskId"] if i else "")')"
