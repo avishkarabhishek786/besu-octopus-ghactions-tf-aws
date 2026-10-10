@@ -217,10 +217,17 @@ if [[ "$CREATE_REPOS" == true ]]; then
   done < <(missing_repos)
 else
   MISS=$(missing_repos)
-  [[ -z "$MISS" ]] || {
+  if [[ -n "$MISS" && "$DRY_RUN" == true ]]; then
+    # A dry run reports, it does not stop at the first precondition. Before
+    # the first real run NO repository exists, and dying here meant the dry
+    # run never resolved a single upstream digest — the part most worth
+    # rehearsing (seen 2026-10-10, the workflow's second run).
+    warn "$(echo "$MISS" | wc -l) ECR repositories do not exist — a real run needs --create-repos, or a request for them (R-5b):"
+    echo "$MISS" | sed 's/^/    /' >&2
+  elif [[ -n "$MISS" ]]; then
     err "these ECR repositories do not exist:"; echo "$MISS" | sed 's/^/    /' >&2
     die "re-run with --create-repos, or request them (R-5b)"
-  }
+  fi
 fi
 
 COPIED=0; SKIPPED=0; FAILED=0
