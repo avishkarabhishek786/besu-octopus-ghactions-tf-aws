@@ -1,0 +1,20 @@
+# =============================================================================
+# mimic_registry — SIT example. COPY to registry.tfvars (gitignored, CD-10).
+# =============================================================================
+
+environment    = "sit"
+deletion_group = "sbsa-registry-sit-001" # this grant is long-lived; the registry has no expiry
+owner          = "ledger-platform"
+cost_center    = "REPLACE-ME"
+region         = "af-south-1" # MUST be the VPC's region (CD-28)
+
+github_repository = "<owner>/<name>"
+# main for push-triggered runs; add the branch you dispatch from while it is unmerged.
+allowed_refs = ["refs/heads/main"]
+
+ecr_prefix                = "mirror"
+allow_create_repositories = true
+
+# Fill ONLY from the workflow's "Show the OIDC subject" output, if the plain
+# repo:<owner>/<name>:ref:<ref> form is refused.
+extra_subjects = []

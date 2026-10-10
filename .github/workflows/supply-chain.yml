@@ -216,6 +216,25 @@ jobs:
       # "Not authorized to perform sts:AssumeRoleWithWebIdentity". Use
       # StringLike with wildcards, and if auth fails, decode the actual token
       # claim rather than guessing at the policy.
+      # Print the `sub` claim GitHub put in THIS run's token — the subject only,
+      # never the token (it is masked before anything else touches it). The
+      # trust policy must match `sub` EXACTLY, and its format differs between
+      # older repositories and those created after 2026-07-15 (note above), so
+      # when the next step is refused this line is the value to send to whoever
+      # owns the role, instead of a guess or a wildcard. Harmless when it works.
+      # Needs curl and python3 on the runner; it never fails the job.
+      - name: Show the OIDC subject
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          tok="$(curl -fsSL -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+                 "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
+                 | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+          echo "::add-mask::${tok}"
+          sub="$(python3 -c 'import base64,json,sys; p=sys.argv[1].split(".")[1]; p+="="*(-len(p)%4); print(json.loads(base64.urlsafe_b64decode(p))["sub"])' "$tok")"
+          echo "OIDC sub: ${sub}"
+          echo "**OIDC subject:** \`${sub}\`" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Assume the ECR push role
         uses: aws-actions/configure-aws-credentials@v6
         with:
