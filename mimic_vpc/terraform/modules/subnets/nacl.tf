@@ -164,9 +164,9 @@ locals {
         [for c in(local.wide ? local.role_cidrs["data"] : [var.vpc_cidr]) : { n = 160, proto = "tcp", from = local.eph.from, to = local.eph.to, cidr = c, flow = "F-9 return from the explorer database" }],
         [{ n = 170, proto = "udp", from = local.eph.from, to = local.eph.to, cidr = var.vpc_cidr, flow = "F-10 DNS replies from the VPC resolver + C-2 replies from CoreDNS" }],
         # --- the cluster's own flows (B27) and F-7's missing half (B32) -----
-        # Appended, never inserted: a rule's for_each key is its list index, so
-        # an insertion would replace every rule after it. Bands are 10 apart
-        # because these fan out over up to 6 CIDRs in narrow mode.
+        # Appended, never inserted — not for the keys (they are content-based)
+        # but for the rule NUMBERS, which are band + position. Bands are 10
+        # apart because these fan out over up to 6 CIDRs in narrow mode.
         [for c in(local.wide ? local.api_client_cidrs : [var.vpc_cidr]) : { n = 200, proto = "tcp", from = 443, to = 443, cidr = c, flow = "C-1 nodes -> cluster API (control-plane ENIs) + F-7 In-VPC EC2 Runner -> cluster API" }],
         [for c in(local.wide ? local.cluster_cidrs : [var.vpc_cidr]) : { n = 210, proto = "udp", from = 53, to = 53, cidr = c, flow = "C-2 pods -> CoreDNS (udp)" }],
         [for c in(local.wide ? local.cluster_cidrs : [var.vpc_cidr]) : { n = 220, proto = "tcp", from = 53, to = 53, cidr = c, flow = "C-2 pods -> CoreDNS (tcp)" }],
@@ -270,7 +270,12 @@ locals {
     for sk, sv in var.subnets : [
       for dir in ["ingress", "egress"] : [
         for i, r in local.nacl_flows_merged[local.role_ruleset[sv.role]][dir] : {
-          key    = "${sk}-${dir}-${i}"
+          # Keyed by WHAT the rule is, not where it sits in the list. An index
+          # key meant any insertion — or a duplicate appearing or vanishing in
+          # nacl_flows_merged — shifted every later key, and Terraform replaced
+          # those rules on a live VPC (briefly denying their traffic). Unique
+          # because nacl_flows_merged leaves one rule per signature.
+          key    = "${sk}-${dir}-${r.proto}-${r.from}-${r.to}-${r.cidr}"
           subnet = sk
           egress = dir == "egress"
           # The authored `n` is a BAND; the offset is this rule's position among
