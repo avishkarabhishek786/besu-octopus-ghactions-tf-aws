@@ -325,12 +325,14 @@ subnet can remove them, and nothing we deploy could then tell why. In our own te
 environment, with NACLs limited to the table above, a node in the one AZ without a
 control-plane interface **never joined the cluster**:
 
-| Flow | Port / protocol | Between |
-|---|---|---|
-| Nodes → cluster API (control-plane ENIs) | 443 TCP | every node subnet → every subnet holding a control-plane ENI, **across AZs** |
-| Control plane → kubelet, and to webhook / metrics-server pods | 10250 and the webhook ports, TCP | control-plane ENI subnets → node subnets |
-| Pods → CoreDNS | 53 UDP **and** TCP | node subnet ↔ node subnet, **across AZs** (CoreDNS replicas sit on some nodes, not all) |
-| Pod ↔ pod, node ↔ node (CNI, kube-proxy) | as your CNI requires | node subnet ↔ node subnet |
+| # | Flow | Port / protocol | Between |
+|---|---|---|---|
+| C-1 | Nodes → cluster API (control-plane ENIs) | 443 TCP | every node subnet → every subnet holding a control-plane ENI, **across AZs** |
+| C-2 | Pods → CoreDNS | 53 UDP **and** TCP | node subnet ↔ node subnet, **across AZs** (CoreDNS replicas sit on some nodes, not all) |
+| C-3 | Control plane → kubelet, and to webhook / metrics-server pods | 10250 and the webhook ports, TCP | control-plane ENI subnets → node subnets |
+| C-4 | Pod ↔ pod, node ↔ node (CNI, kube-proxy) | as your CNI requires | node subnet ↔ node subnet |
+
+*(Our checker cites these as `#34 C-n`, as it does `#34 F-n` for the table above.)*
 
 If the rules are NACLs this adds rules to the count in point 1 below.
 

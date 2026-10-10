@@ -36,14 +36,22 @@
 #       --node subnet-a,subnet-b,subnet-c \
 #       --lb   subnet-d,subnet-e,subnet-f \
 #       [--endpoint subnet-g,...] [--data subnet-h,...] [--runner subnet-i] \
+#       [--control-plane subnet-j,...] \
 #       [--node-sg sg-xxx] [--proxy 10.9.0.0/24:3128] [--sipn 10.200.0.0/16]
 #
 # The subnet IDs come from the cluster hand-over (#34's three placement facts).
 # Anything not supplied is SKIPPED AND COUNTED, never passed — see the summary.
+#
+# --control-plane is the subnets that hold the cluster's control-plane ENIs:
+#   aws eks describe-cluster --name <c> --query 'cluster.resourcesVpcConfig.subnetIds'
+# (EKS may place an ENI in any of them). It drives #34's CLUSTER flows C-1..C-3
+# and F-7. Those were missing until 2026-10-10: the checker passed 28/28 against
+# NACLs on which a node in one AZ could never join the cluster (B27), and F-7 —
+# the In-VPC EC2 Runner's only way to the API — had no section at all (B32).
 # =============================================================================
 set -euo pipefail
 
-REGION=""; NODE=""; LB=""; ENDPOINT=""; DATA=""; RUNNER=""; NODE_SG=""
+REGION=""; NODE=""; LB=""; ENDPOINT=""; DATA=""; RUNNER=""; CP=""; NODE_SG=""
 PROXY=""; SIPN=""; P2P_PORT=30303; RPC_PORTS="8545-8546"; METRICS_PORT=9545; PG_PORT=5432
 
 while [[ $# -gt 0 ]]; do
@@ -54,10 +62,11 @@ while [[ $# -gt 0 ]]; do
     --endpoint) ENDPOINT="$2"; shift 2 ;;
     --data)     DATA="$2"; shift 2 ;;
     --runner)   RUNNER="$2"; shift 2 ;;
+    --control-plane) CP="$2"; shift 2 ;;
     --node-sg)  NODE_SG="$2"; shift 2 ;;
     --proxy)    PROXY="$2"; shift 2 ;;
     --sipn)     SIPN="$2"; shift 2 ;;
-    -h|--help)  sed -n '2,46p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,54p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -78,7 +87,7 @@ note() { printf '        %s\n' "$*"; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 A=(aws --region "$REGION")
 
-ALL_IDS="$(printf '%s,%s,%s,%s,%s' "$NODE" "$LB" "$ENDPOINT" "$DATA" "$RUNNER" | tr ',' '\n' | grep -v '^$' | sort -u | tr '\n' ' ')"
+ALL_IDS="$(printf '%s,%s,%s,%s,%s,%s' "$NODE" "$LB" "$ENDPOINT" "$DATA" "$RUNNER" "$CP" | tr ',' '\n' | grep -v '^$' | sort -u | tr '\n' ' ')"
 
 printf '\n=== #34 subnet rules, %s ===\n' "$REGION"
 
@@ -186,8 +195,13 @@ nacl_eval() {
 #         used `eph` for every flow and declared F-1 UDP blocked against a
 #         fixture that was correct.
 #   none  no return check (the counterparty is outside the NACL's scope).
+#
+# ${10} = "eph-ok" for a flow whose port has no fixed value and is EXPECTED to
+# ride an ephemeral-range rule (C-3: kubelet 10250 and arbitrary webhook ports).
+# The "permitted INCIDENTALLY" warning exists for OUR service ports, where a
+# dedicated rule was asked for; on C-3 it would fire on every correct ruleset.
 check_flow() {
-  local flow="$1" desc="$2" scidr="$3" ssub="$4" dcidr="$5" dsub="$6" proto="$7" port="$8" ret="${9:-eph}"
+  local flow="$1" desc="$2" scidr="$3" ssub="$4" dcidr="$5" dsub="$6" proto="$7" port="$8" ret="${9:-eph}" ephok="${10:-}"
   local sacl dacl r verdict rule rcidr cover rports label problems=() broad=() incidental=() unchecked=()
 
   [[ -n "$scidr" && -n "$dcidr" ]] || { skip "$flow $desc — subnet not supplied"; return; }
@@ -218,7 +232,7 @@ check_flow() {
         # and it happens to cover this port because every port this platform
         # listens on is inside 1024-65535. Removing the flow's own rule would
         # not change the verdict, so the pass says nothing about the flow.
-        [[ "${rports%%-*}" -le 1024 && "${rports##*-}" -ge 65535 && "$p" -ge 1024 ]] \
+        [[ "$ephok" != eph-ok && "${rports%%-*}" -le 1024 && "${rports##*-}" -ge 65535 && "$p" -ge 1024 ]] \
           && incidental+=("$acl $dir rule $rule covers $p only because its range is $rports ($label)")
         ;;
       deny)  problems+=("DENIED by $acl $dir rule $rule ($rcidr) — $label") ;;
@@ -287,6 +301,7 @@ LB_CIDRS=();  LB_IDS=();  [[ -n "$LB" ]]       && { LB_CIDRS=($(cidrs_of "$LB"))
 EP_CIDRS=();  EP_IDS=();  [[ -n "$ENDPOINT" ]] && { EP_CIDRS=($(cidrs_of "$ENDPOINT"));       EP_IDS=(${ENDPOINT//,/ }); }
 DT_CIDRS=();  DT_IDS=();  [[ -n "$DATA" ]]     && { DT_CIDRS=($(cidrs_of "$DATA"));           DT_IDS=(${DATA//,/ }); }
 RN_CIDR="";   [[ -n "$RUNNER" ]]               && RN_CIDR="$(cidr_of "$RUNNER")"
+CP_CIDRS=();  CP_IDS=();  [[ -n "$CP" ]]       && { CP_CIDRS=($(cidrs_of "$CP"));             CP_IDS=(${CP//,/ }); }
 
 sec "F-1  validator peer-to-peer — BOTH protocols, every AZ pair"
 note "Validators are deliberately spread across three AZs, so every pair crosses"
@@ -399,6 +414,81 @@ else
   fi
 fi
 
+sec "F-7  In-VPC EC2 Runner -> cluster API (control-plane ENIs)"
+if [[ -z "$RN_CIDR" || ${#CP_IDS[@]} -eq 0 ]]; then
+  skip "F-7 — needs --runner <subnet> and --control-plane <subnets>"
+  note "The runner's ONLY path to a private API endpoint. Blocked, every kubectl,"
+  note "helm and Octopus step on the runner hangs on connect."
+else
+  for j in "${!CP_IDS[@]}"; do
+    # Traffic inside one subnet is not NACL-evaluated — nothing to check.
+    [[ "$RUNNER" == "${CP_IDS[$j]}" ]] && continue
+    check_flow "F-7" "runner $RN_CIDR -> control plane ${CP_CIDRS[$j]}" \
+      "$RN_CIDR" "$RUNNER" "${CP_CIDRS[$j]}" "${CP_IDS[$j]}" tcp 443 eph
+  done
+fi
+
+# =============================================================================
+# THE CLUSTER'S OWN FLOWS — #34's second table (B27, 2026-10-10)
+# =============================================================================
+# These are the cloud team's, and on a cluster they already run they work today.
+# They are checked because a NACL written for one tenant's subnet can remove
+# them, and the symptom names no rule: a node that never joins, or DNS that
+# fails for the pods on some nodes and not others. The first mimic_eks apply
+# hit exactly that with every F-n check passing.
+#
+# Pairs inside ONE subnet are skipped: AWS does not evaluate a NACL for traffic
+# that stays in its subnet. That is why two of three nodes joined on 2026-10-09
+# — each had a control-plane ENI in its own subnet — and why the third did not.
+sec "C-1  nodes -> cluster API (control-plane ENIs), across subnets"
+if [[ ${#CP_IDS[@]} -eq 0 ]]; then
+  skip "C-1 — no --control-plane subnets supplied; node registration was NOT verified"
+else
+  for i in "${!NODE_IDS[@]}"; do
+    for j in "${!CP_IDS[@]}"; do
+      [[ "${NODE_IDS[$i]}" == "${CP_IDS[$j]}" ]] && continue
+      check_flow "C-1" "node ${NODE_CIDRS[$i]} -> control plane ${CP_CIDRS[$j]}" \
+        "${NODE_CIDRS[$i]}" "${NODE_IDS[$i]}" "${CP_CIDRS[$j]}" "${CP_IDS[$j]}" tcp 443 eph
+    done
+  done
+  note "A node that cannot reach ANY control-plane ENI never registers:"
+  note "NodeCreationFailure, with bootstrap and kubelet both reporting healthy."
+fi
+
+sec "C-2  pods -> CoreDNS, across node subnets — BOTH protocols"
+note "CoreDNS runs on some nodes, not all. Blocked across subnets, DNS fails for"
+note "pods on the other nodes only — the F27 race again, by a different road."
+for i in "${!NODE_IDS[@]}"; do
+  for j in "${!NODE_IDS[@]}"; do
+    [[ "$i" == "$j" || "${NODE_IDS[$i]}" == "${NODE_IDS[$j]}" ]] && continue
+    # The client sends from an ephemeral port to 53 and the reply comes back to
+    # it — so `eph`, unlike F-1 UDP. Note: the UDP reply needs an EGRESS rule
+    # for udp/1024-65535 on CoreDNS's subnet, which no F-n flow requires.
+    check_flow "C-2" "${NODE_CIDRS[$i]} -> CoreDNS ${NODE_CIDRS[$j]} [udp]" \
+      "${NODE_CIDRS[$i]}" "${NODE_IDS[$i]}" "${NODE_CIDRS[$j]}" "${NODE_IDS[$j]}" udp 53 eph
+    check_flow "C-2" "${NODE_CIDRS[$i]} -> CoreDNS ${NODE_CIDRS[$j]} [tcp]" \
+      "${NODE_CIDRS[$i]}" "${NODE_IDS[$i]}" "${NODE_CIDRS[$j]}" "${NODE_IDS[$j]}" tcp 53 eph
+  done
+done
+
+sec "C-3  control plane -> kubelet (10250) and webhook pods, across subnets"
+if [[ ${#CP_IDS[@]} -eq 0 ]]; then
+  skip "C-3 — no --control-plane subnets supplied"
+else
+  for j in "${!CP_IDS[@]}"; do
+    for i in "${!NODE_IDS[@]}"; do
+      [[ "${NODE_IDS[$i]}" == "${CP_IDS[$j]}" ]] && continue
+      check_flow "C-3" "control plane ${CP_CIDRS[$j]} -> kubelet ${NODE_CIDRS[$i]}" \
+        "${CP_CIDRS[$j]}" "${CP_IDS[$j]}" "${NODE_CIDRS[$i]}" "${NODE_IDS[$i]}" tcp 10250 eph eph-ok
+    done
+  done
+  note "Blocked: kubectl logs/exec fail, and admission webhooks time out — which"
+  note "on a cluster with a fail-closed webhook refuses every pod we create."
+fi
+skip "C-4 pod <-> pod / node <-> node — 'as the CNI requires'; not evaluable generically"
+note "The VPC CNI needs no overlay port. TCP above 1024 between node subnets is"
+note "what C-3 exercised; a pod listening below 1024 needs its own rule."
+
 sec "F-10  DNS"
 note "Network ACLs do NOT apply to the Amazon-provided resolver at the VPC+2"
 note "address, so there is usually nothing to check. Listed because if pods"
@@ -451,7 +541,7 @@ fi
 printf '\n=== %d passed, %d failed, %d warnings, %d skipped ===\n' "$PASS" "$FAIL" "$WARN" "$SKIP"
 if [[ "$SKIP" -gt 0 ]]; then
   printf '\033[36m%d check(s) were SKIPPED and are NOT passes.\033[0m Supply the missing subnet IDs\n' "$SKIP"
-  printf '(--lb, --endpoint, --data, --runner, --node-sg, --proxy) before treating the\n'
+  printf '(--lb, --endpoint, --data, --runner, --control-plane, --node-sg, --proxy) before treating the\n'
   printf 'flow table as verified. #34 asks the cloud team for exactly these placements.\n'
 fi
 [[ "$FAIL" -eq 0 ]] || { echo "Flows are blocked. Quote the #34 F-n citations above back to the cloud team." >&2; exit 1; }

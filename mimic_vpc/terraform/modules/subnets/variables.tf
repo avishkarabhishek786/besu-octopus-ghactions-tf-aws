@@ -67,7 +67,8 @@ variable "vpc_cidr" {
 variable "nacl_mode" {
   description = <<-EOT
     "flows"      — DEFAULT (D-32). Deny by default; permit only requirement
-                   #34's F-1..F-10. This is the mode the platform's
+                   #34's F-1..F-10 and the cluster's own C-1..C-4 (B27,
+                   2026-10-10). This is the mode the platform's
                    verify-subnet-rules.sh is written against.
     "permissive" — the pre-2026-10-09 allow-all baseline. Retained for ONE
                    legitimate use: bisecting a connectivity problem to decide

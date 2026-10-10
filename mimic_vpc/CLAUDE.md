@@ -29,9 +29,9 @@ silently diverging.
 >    less.
 > 2. ~~**§3.5's permissive NACL baseline must flip to deny-by-default** (D-32).~~
 >    **DONE 2026-10-09** — `modules/subnets/nacl.tf`. A NACL on **every** role subnet,
->    deny-by-default, permitting only #34's F-1..F-10, each rule carrying the flow it
->    implements. `nacl_mode = "permissive"` survives for bisecting a connectivity problem;
->    `"none"` models a security-groups-only cloud team (question C). `nacl_break_flow`
+>    deny-by-default, permitting only #34's F-1..F-10 and (since 2026-10-10, B27) the
+>    cluster's own C-1..C-4, each rule carrying the flow(s) it implements.
+>    `nacl_mode = "permissive"` survives for bisecting a connectivity problem; `"none"` models a security-groups-only cloud team (question C). `nacl_break_flow`
 >    drops one flow on purpose, which is how the platform's `verify-subnet-rules.sh` was
 >    proven to detect an **absent** rule — the B12 lesson, applied.
 >
@@ -213,14 +213,22 @@ platform's checker would have been written against something that could never fa
 `modules/subnets/nacl.tf` now authors them. Three modes (`nacl_mode`):
 
 - **`flows`** (default) — a NACL on **every** role subnet, deny-by-default, permitting only
-  requirement #34's F-1..F-10. Every rule carries its flow label, so a
-  `verify-subnet-rules.sh` failure and a rule here can be matched by eye.
-  > ⚠️ **B27 (OPEN, 2026-10-09): this mode cannot host an EKS cluster across three AZs.**
-  > It permits only *our* flows, none of the cluster's own (nodes → API 443 and pods →
-  > CoreDNS 53 across subnets). On the first `mimic_eks` apply the node in the AZ without
-  > a control-plane ENI never joined. **Use `-var nacl_mode=permissive` whenever a cluster
-  > is built on this VPC** — and on its destroy — until `nacl.tf` gains the cluster flows.
-  > `flows` is still the right mode for `verify-subnet-rules.sh` runs with no cluster.
+  requirement #34's F-1..F-10 **and the cluster's own C-1..C-4** (#34's second table). Every
+  rule carries its flow label — several, where flows share one rule (rules identical in
+  protocol, ports and CIDR are merged, B33) — so a `verify-subnet-rules.sh` failure and a
+  rule here can be matched by eye.
+  > **B27 (fixed in code 2026-10-10, live proof pending).** Until then this mode could not
+  > host an EKS cluster across three AZs: it carried none of the cluster's own flows, and on
+  > the first `mimic_eks` apply the node in the AZ without a control-plane ENI never joined.
+  > F-7 (runner → API) was blocked by the same omission (B32). Both were proven fixed
+  > offline (the real checker against each plan's rules); **the next `mimic_eks` run on
+  > `flows` is the live proof** — run the checker with `--control-plane` first.
+  > Rule budget in the default `summarised` source mode: workload NACLs at **16 in / 19
+  > out** (with the F-8 proxy rule), **17 / 20** with two enumerated `s3_cidrs` — at the
+  > limit. A strict (`#28`) cluster joins without `ledger_subnets_in_use`, because in this
+  > mode the cluster flows use the VPC CIDR; setting it adds the ledger F-1 peer rules and
+  > exceeds 20 (that is #34's quota finding, unchanged). In `narrow` mode set
+  > `ledger_subnets_in_use = true` for a strict cluster, or its subnets are not sources.
 - **`permissive`** — the old allow-all baseline. Retained for one legitimate use: deciding
   whether the NACLs are the cause of a connectivity problem. Anything else returns the
   fixture to a state where the platform's checker cannot fail.

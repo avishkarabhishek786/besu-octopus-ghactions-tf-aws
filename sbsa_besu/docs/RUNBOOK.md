@@ -380,8 +380,12 @@ Only once the registry is populated and `scripts/preflight/verify-images.sh -e s
 > # 5. the cloud team's SUBNET RULES against our flow table (#34). Rule-order aware,
 > #    both protocols, and the stateless return path — which is where half the
 > #    failures in this class live.
+> #    --control-plane is the cluster's subnets (where its control-plane ENIs may go):
+> #      aws eks describe-cluster --name <c> --query 'cluster.resourcesVpcConfig.subnetIds'
+> #    Without it the CLUSTER's own flows C-1..C-3 and F-7 are skipped — and those are
+> #    what stopped a node joining on 2026-10-09 (B27) while every F-n check passed.
 > scripts/preflight/verify-subnet-rules.sh --region af-south-1 \
->     --node <node subnets> --lb <lb subnets> \
+>     --node <node subnets> --lb <lb subnets> --control-plane <cluster subnets> \
 >     [--endpoint <ids>] [--data <ids>] [--runner <id>] [--node-sg sg-xxx]
 > ```
 >

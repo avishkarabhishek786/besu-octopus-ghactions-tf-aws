@@ -44,7 +44,7 @@ AWS-managed ECR in-region through the cluster's `ecr.api`/`ecr.dkr` endpoints.
 ---
 
 ### B27 — the restrictive NACLs model only OUR flows, so a node in one AZ never joined
-**Provenance:** tooling (fixture) · **Found:** 2026-10-09, first `mimic_eks` apply · **Status:** OPEN
+**Provenance:** tooling (fixture) · **Found:** 2026-10-09, first `mimic_eks` apply · **Status:** FIXED IN CODE 2026-10-10, proven offline — **live proof pending**
 
 `mimic_vpc`'s `nacl_mode = "flows"` (D-32) permits exactly #34's F-1..F-10 — the flows *we*
 listed. It permits none of the **cluster's own**: nodes → API server (443) across node
@@ -57,11 +57,44 @@ nodes worked only because traffic inside one subnet is not NACL-evaluated.
 listed — the omission is in the flow table, so no checker built from it can see it.
 Requirements #34 now has a table of the cluster's own flows (2026-10-09).
 
-**Open work:** add the cluster flows to `nacl.tf`. That pushes each app/ledger NACL past the
-20-rule default — the quota point #34 already records. Until then, run `mimic_vpc` with
-`nacl_mode = "permissive"` whenever a cluster is built on it.
+**Fix (2026-10-10):** `nacl.tf` carries the cluster's own flows, now numbered in #34's
+second table — **C-1** nodes → API 443, **C-2** pods → CoreDNS 53 udp+tcp (and the UDP
+reply, which needed the workload NACLs' first-ever egress rule for udp/1024-65535), **C-3**
+control plane → kubelet/webhooks, **C-4** pod ↔ pod. In `summarised` mode C-1 and C-2 get
+VPC-CIDR rules on their low ports, and C-3/C-4 ride the existing VPC-CIDR ephemeral rules,
+whose labels now say so. It **fits the 20-rule default** — workload NACLs at 16 in / 19 out
+with the F-8 proxy rule, 17 / 20 with two enumerated S3 ranges — only because B33 freed a
+rule in each direction. `narrow` is 39 / 32 against a quota of 40. `verify-subnet-rules.sh`
+gained `--control-plane` and C-1..C-3 sections, so the omission is now checkable.
+
+**Proven offline**, by serving the real checker each plan's rules through a fake `aws`
+(no apply): the 10-09 rules → **21 FAIL** (C-1 ×6, C-2 ×12, F-7 ×3); the fixed rules →
+exit 0; `nacl_break_flow = "C-1"` → exactly C-1 ×6 + F-7 ×3; `"C-2 CoreDNS replies"` → the
+six UDP pairs, each naming `RETURN DENIED … egress rule 32767`. **Still to prove live:** a
+`mimic_eks` apply on `nacl_mode = "flows"` with all nodes joining. Until it has run,
+`permissive` remains the safe choice for a run whose purpose is something else.
 
 **Found by:** the first apply of anything that needed nodes in all three AZs. Detail: `docs/deploy-run-2026-10-09-ct5-gates-and-regression.md` §A3.
+
+---
+
+### B32 — F-7 (runner → cluster API) was blocked by the mimic and never checked
+**Provenance:** tooling (fixture + checker) · **Found:** 2026-10-10, while fixing B27 · **Status:** FIXED IN CODE, proven offline — **live proof pending**
+
+Two halves of one omission. `nacl.tf` gave the runner's subnet an **egress** 443 rule for
+F-7, but no node subnet had an **ingress** 443 rule, so the control-plane ENIs could never
+answer it. And `verify-subnet-rules.sh` had **no F-7 section** — it took `--runner` and used
+it only for F-5 and F-8. Every run with a runner used `permissive` NACLs, so it never
+showed; under `flows` the runner could not have reached a private API endpoint at all,
+and nothing would have named a rule.
+
+Fix: the C-1 ingress rule's sources include the runner's (ledger) subnets, and the F-7
+egress rule targets every cluster subnet, the ledger ones too when #28 is granted. The
+checker has an F-7 section driven by `--runner` + `--control-plane`; against the 10-09
+rules it reports all three runner → control-plane pairs BLOCKED.
+
+**Found by:** reading the checker for a B27 test and noticing `--runner` drove no F-7 check
+— the B27 shape again: a check built from a list cannot see what the list leaves out.
 
 ---
 
@@ -84,8 +117,30 @@ Requirements #34 now has a table of the cluster's own flows (2026-10-09).
 
 ## Closed
 
-> **2026-10-09 run** (`docs/deploy-run-2026-10-09-ct5-gates-and-regression.md`): B25, B28, B29, B31 and P-1 fixed in `6d12b47`; B27 and B30
-> are under **Open**. **B26 was withdrawn** the same day — tracked `*.plan` files are the
+### B33 — `summarised` NACLs carried duplicate rules, so `nacl_break_flow` could not break a flow
+**Provenance:** tooling (fixture) · **Found:** 2026-10-10, offline B27 proof · **Fixed:** same day
+
+In `summarised` mode several flows reduce to the same AWS rule — F-3's and F-4's replies
+are both tcp/1024-65535 to the VPC CIDR, and so are the F-5 and F-9 returns inbound — and
+each was authored separately. Two costs: a wasted rule per direction on NACLs that B27's
+cluster flows filled to exactly 20 (with two enumerated S3 ranges, 21 — over); and a
+fixture knob that lied: `nacl_break_flow = "C-3"` removed one twin, the other carried the
+traffic, and the checker reported **0 FAIL** for a flow that was supposedly broken. A
+break that breaks nothing would have "proven" any checker correct.
+
+Fix: `nacl_flows_merged` collapses rules with identical (protocol, ports, CIDR) into one
+whose label names every flow it carries; the first occurrence keeps its band and number.
+Breaking any of those flows now removes the shared rule, as it would on a real subnet —
+`"C-3"` now fails C-1, C-2, C-3, F-1, F-2, F-5, F-7 and F-9, because in `summarised` mode
+they really do share one return rule. That is the header's point about stateless return
+rules, now visible in the checker's output.
+
+**Found by:** the B27 offline matrix — a deliberate break that produced a pass.
+
+---
+
+> **2026-10-09 run** (`docs/deploy-run-2026-10-09-ct5-gates-and-regression.md`): B25, B28, B29, B31 and P-1 fixed in `6d12b47`; B30 is
+> under **Open**, and B27 too until its fix (2026-10-10) is proven live. **B26 was withdrawn** the same day — tracked `*.plan` files are the
 > recorded `c0717ec` decision, and all nine pass its `PRIVATE KEY` check.
 
 ### P-1 — under the quota we ask for, every validator pod was refused at admission

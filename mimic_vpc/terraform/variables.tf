@@ -159,7 +159,7 @@ variable "flow_log_retention_days" {
 # =============================================================================
 
 variable "nacl_mode" {
-  description = "flows (default — deny by default, only #34's F-1..F-10) | permissive (the old allow-all baseline, for bisecting a connectivity problem) | none (no NACLs; models a security-groups-only cloud team, question C)."
+  description = "flows (default — deny by default, only #34's F-1..F-10 and the cluster's own C-1..C-4) | permissive (the old allow-all baseline, for bisecting a connectivity problem) | none (no NACLs; models a security-groups-only cloud team, question C)."
   type        = string
   default     = "flows"
 }

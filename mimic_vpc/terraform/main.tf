@@ -42,7 +42,8 @@ module "subnets" {
   simulate_central_endpoints     = var.simulate_central_endpoints
 
   # CT-1a / D-32 — the cloud team's subnet security rules. Deny-by-default,
-  # permitting only requirement #34's F-1..F-10. The old allow-all baseline is
+  # permitting only requirement #34's F-1..F-10 and the cluster's own C-1..C-4
+  # (B27). The old allow-all baseline is
   # still reachable as nacl_mode = "permissive", but it is no longer the default,
   # because a fixture that cannot reject anything cannot prove a checker works.
   vpc_cidr          = var.vpc_cidr

@@ -94,6 +94,51 @@ locals {
   ledger_peer_cidrs = var.ledger_subnets_in_use ? local.role_cidrs["ledger"] : []
 
   # ---------------------------------------------------------------------------
+  # THE CLUSTER'S OWN FLOWS (C-1..C-4) — added 2026-10-10 for B27.
+  # ---------------------------------------------------------------------------
+  # #34's F-1..F-10 are OUR flows. The first mimic_eks apply (2026-10-09) proved
+  # that a NACL carrying only those cannot host a cluster across three AZs: EKS
+  # put control-plane ENIs in two of the three node subnets, the node in the
+  # third reached them only across a NACL with no ingress 443, and it never
+  # joined. Traffic inside one subnet is not NACL-evaluated, which is the only
+  # reason the other two nodes worked. The same table is in #34 for the cloud
+  # team ("The cluster's own flows must keep working too"):
+  #
+  #   C-1  nodes -> cluster API (control-plane ENIs)   tcp 443, across subnets
+  #   C-2  pods -> CoreDNS                             udp+tcp 53, across subnets
+  #   C-3  control plane -> kubelet 10250 / webhooks   tcp high ports
+  #   C-4  pod <-> pod, node <-> node                  as the CNI requires
+  #
+  # mimic_eks puts its control-plane ENIs in the NODE subnets (cluster
+  # subnet_ids = node subnets): the app subnets, or the ledger subnets when #28
+  # is granted (strict). So the cluster's subnets are the workload subnets, and
+  # ledger_subnets_in_use must be true whenever a strict cluster is built here.
+  #
+  # F-7 (In-VPC EC2 Runner -> cluster API) was broken by the same omission and
+  # nobody saw it (B32): the runner's 443 rule was EGRESS only, the control-plane
+  # ENIs' subnets had no ingress 443, and verify-subnet-rules.sh had no F-7
+  # section. The runner sits in a ledger subnet, so the API's ingress sources
+  # include the ledger subnets even when #28 is not granted.
+  #
+  # WHERE EACH CLUSTER FLOW RIDES, PER MODE — read before using nacl_break_flow:
+  #   summarised  C-1, C-2 get their own VPC-CIDR rules on the low ports (443,
+  #               53), which no existing rule covered. C-3/C-4 and every TCP
+  #               return ride the VPC-CIDR ephemeral rules F-5 (in) and F-4
+  #               (out), merged with F-9's and F-3's identical rules (see
+  #               nacl_flows_merged) — so breaking "C-3" removes those rules and
+  #               F-5/F-9/F-4/F-3 with them. That is the truth about one
+  #               shared rule, not a side effect to work around. C-2's egress
+  #               rides F-10's DNS rules, labelled likewise.
+  #   narrow      per-subnet rules for every cluster flow, including an explicit
+  #               ephemeral rule between cluster subnets. Needs the 40 quota.
+  cluster_cidrs    = distinct(concat(local.role_cidrs["app"], local.ledger_peer_cidrs))
+  api_client_cidrs = distinct(concat(local.cluster_cidrs, local.role_cidrs["ledger"]))
+
+  # The labels of the summarised-mode rules that also carry a cluster flow.
+  c3_in_label  = local.wide ? "" : " + C-3 control plane -> kubelet/webhooks, C-4 pod<->pod, and the tcp returns of the API and DNS flows"
+  c3_out_label = local.wide ? "" : " + C-3 control plane -> kubelet/webhooks, C-4 pod<->pod, and the tcp returns of the API and DNS flows"
+
+  # ---------------------------------------------------------------------------
   # The rule set, per role and direction. Each rule CITES ITS FLOW, so a
   # verify-subnet-rules.sh failure and a mimic rule can be matched by eye.
   # ---------------------------------------------------------------------------
@@ -111,10 +156,18 @@ locals {
         [for c in local.ledger_peer_cidrs : { n = 115, proto = "udp", from = 30303, to = 30303, cidr = c, flow = "F-1 peer UDP (ledger subnets, #28)" }],
         [for c in local.role_cidrs["lb"] : { n = 120, proto = "tcp", from = 8545, to = 8546, cidr = c, flow = "F-2 RPC + health checks from the NLBs" }],
         [for c in(local.wide ? local.role_cidrs["app"] : [var.vpc_cidr]) : { n = 130, proto = "tcp", from = 9545, to = 9545, cidr = c, flow = "F-4 metrics scrape" }],
-        [for c in(local.wide ? local.role_cidrs["endpoint"] : [var.vpc_cidr]) : { n = 140, proto = "tcp", from = local.eph.from, to = local.eph.to, cidr = c, flow = "F-5 return from the interface endpoints" }],
+        [for c in(local.wide ? local.role_cidrs["endpoint"] : [var.vpc_cidr]) : { n = 140, proto = "tcp", from = local.eph.from, to = local.eph.to, cidr = c, flow = "F-5 return from the interface endpoints${local.c3_in_label}" }],
         [for c in local.s3_cidrs : { n = 150, proto = "tcp", from = local.eph.from, to = local.eph.to, cidr = c, flow = "F-6 return from S3 (image layers, state, bundle)" }],
         [for c in(local.wide ? local.role_cidrs["data"] : [var.vpc_cidr]) : { n = 160, proto = "tcp", from = local.eph.from, to = local.eph.to, cidr = c, flow = "F-9 return from the explorer database" }],
-        [{ n = 170, proto = "udp", from = local.eph.from, to = local.eph.to, cidr = var.vpc_cidr, flow = "F-10 DNS replies from the VPC resolver" }],
+        [{ n = 170, proto = "udp", from = local.eph.from, to = local.eph.to, cidr = var.vpc_cidr, flow = "F-10 DNS replies from the VPC resolver + C-2 replies from CoreDNS" }],
+        # --- the cluster's own flows (B27) and F-7's missing half (B32) -----
+        # Appended, never inserted: a rule's for_each key is its list index, so
+        # an insertion would replace every rule after it. Bands are 10 apart
+        # because these fan out over up to 6 CIDRs in narrow mode.
+        [for c in(local.wide ? local.api_client_cidrs : [var.vpc_cidr]) : { n = 200, proto = "tcp", from = 443, to = 443, cidr = c, flow = "C-1 nodes -> cluster API (control-plane ENIs) + F-7 In-VPC EC2 Runner -> cluster API" }],
+        [for c in(local.wide ? local.cluster_cidrs : [var.vpc_cidr]) : { n = 210, proto = "udp", from = 53, to = 53, cidr = c, flow = "C-2 pods -> CoreDNS (udp)" }],
+        [for c in(local.wide ? local.cluster_cidrs : [var.vpc_cidr]) : { n = 220, proto = "tcp", from = 53, to = 53, cidr = c, flow = "C-2 pods -> CoreDNS (tcp)" }],
+        [for c in(local.wide ? local.api_client_cidrs : []) : { n = 230, proto = "tcp", from = local.eph.from, to = local.eph.to, cidr = c, flow = "C-3 control plane -> kubelet/webhooks, C-4 pod<->pod, and the tcp returns of the API and DNS flows" }],
       )
       egress = concat(
         [for c in local.role_cidrs["app"] : { n = 100, proto = "tcp", from = 30303, to = 30303, cidr = c, flow = "F-1 peer TCP" }],
@@ -122,16 +175,24 @@ locals {
         [for c in local.ledger_peer_cidrs : { n = 110, proto = "tcp", from = 30303, to = 30303, cidr = c, flow = "F-1 peer TCP (ledger subnets, #28)" }],
         [for c in local.ledger_peer_cidrs : { n = 115, proto = "udp", from = 30303, to = 30303, cidr = c, flow = "F-1 peer UDP (ledger subnets, #28)" }],
         [for c in(local.wide ? local.role_cidrs["lb"] : [var.vpc_cidr]) : { n = 120, proto = "tcp", from = local.eph.from, to = local.eph.to, cidr = c, flow = "F-3 return to the NLBs (ONLY needed because NACLs are stateless)" }],
-        [for c in(local.wide ? local.role_cidrs["app"] : [var.vpc_cidr]) : { n = 130, proto = "tcp", from = local.eph.from, to = local.eph.to, cidr = c, flow = "F-4 metrics reply" }],
+        [for c in(local.wide ? local.role_cidrs["app"] : [var.vpc_cidr]) : { n = 130, proto = "tcp", from = local.eph.from, to = local.eph.to, cidr = c, flow = "F-4 metrics reply${local.c3_out_label}" }],
         [for c in local.role_cidrs["endpoint"] : { n = 140, proto = "tcp", from = 443, to = 443, cidr = c, flow = "F-5 AWS APIs via interface endpoints" }],
         [for c in local.s3_cidrs : { n = 150, proto = "tcp", from = 443, to = 443, cidr = c, flow = "F-6 S3 gateway" }],
         [for c in local.role_cidrs["data"] : { n = 160, proto = "tcp", from = 5432, to = 5432, cidr = c, flow = "F-9 explorer database" }],
-        [{ n = 170, proto = "udp", from = 53, to = 53, cidr = var.vpc_cidr, flow = "F-10 DNS" }],
-        [{ n = 175, proto = "tcp", from = 53, to = 53, cidr = var.vpc_cidr, flow = "F-10 DNS over TCP" }],
+        [{ n = 170, proto = "udp", from = 53, to = 53, cidr = var.vpc_cidr, flow = "F-10 DNS + C-2 pods -> CoreDNS" }],
+        [{ n = 175, proto = "tcp", from = 53, to = 53, cidr = var.vpc_cidr, flow = "F-10 DNS over TCP + C-2 pods -> CoreDNS" }],
         # F-7 and F-8 ride the workload subnets because that is where the
         # In-VPC EC2 Runner lives (CT-1a leaves its subnet to them).
-        [for c in(local.wide ? local.role_cidrs["app"] : [var.vpc_cidr]) : { n = 180, proto = "tcp", from = 443, to = 443, cidr = c, flow = "F-7 In-VPC EC2 Runner -> cluster API (control-plane ENIs)" }],
+        # The target is every subnet that can hold a control-plane ENI, which is
+        # the cluster's subnets — the ledger ones too when #28 is granted. Up to
+        # 6 CIDRs, so 180..185; F-8's band at 190 is clear.
+        [for c in(local.wide ? local.cluster_cidrs : [var.vpc_cidr]) : { n = 180, proto = "tcp", from = 443, to = 443, cidr = c, flow = "F-7 In-VPC EC2 Runner -> cluster API (control-plane ENIs) + C-1 nodes -> cluster API" }],
         var.egress_proxy_cidr == "" ? [] : [{ n = 190, proto = "tcp", from = var.egress_proxy_port, to = var.egress_proxy_port, cidr = var.egress_proxy_cidr, flow = "F-8 In-VPC EC2 Runner -> egress proxy (R-10)" }],
+        # --- the cluster's own flows (B27) — appended, as on ingress ---------
+        # CoreDNS answers from 53 to the client's ephemeral port. No existing
+        # egress rule carried UDP above 1024 at all.
+        [for c in(local.wide ? local.cluster_cidrs : [var.vpc_cidr]) : { n = 200, proto = "udp", from = local.eph.from, to = local.eph.to, cidr = c, flow = "C-2 CoreDNS replies (udp)" }],
+        [for c in(local.wide ? local.api_client_cidrs : []) : { n = 210, proto = "tcp", from = local.eph.from, to = local.eph.to, cidr = c, flow = "C-3 control plane -> kubelet/webhooks, C-4 pod<->pod, and the tcp returns of the API and DNS flows" }],
       )
     }
 
@@ -172,6 +233,31 @@ locals {
   }
 
   # ---------------------------------------------------------------------------
+  # MERGE IDENTICAL RULES — one AWS rule per (protocol, port range, CIDR).
+  # ---------------------------------------------------------------------------
+  # In summarised mode several flows reduce to the SAME rule: F-3's and F-4's
+  # replies are both tcp/1024-65535 to the VPC CIDR, and so are the F-5 and F-9
+  # returns inbound. Until 2026-10-10 each was authored as its own AWS rule,
+  # which (1) spent a rule per direction for nothing, on NACLs the B27 cluster
+  # flows filled to exactly 20; and (2) made nacl_break_flow lie — breaking one
+  # flow left its twin carrying the traffic, so the checker passed with the
+  # "broken" flow still working (seen offline: nacl_break_flow = "C-3", 0 FAIL).
+  # Merged, the rule's label names every flow it carries, so breaking any of
+  # them removes the rule — which is what would happen on the real subnet.
+  # The first occurrence keeps its band, so the rule's number does not move.
+  _sig = { for rs, dirs in local.nacl_flows : rs => { for dir, rules in dirs : dir => [for r in rules : "${r.proto}|${r.from}|${r.to}|${r.cidr}"] } }
+  nacl_flows_merged = {
+    for rs, dirs in local.nacl_flows : rs => {
+      for dir, rules in dirs : dir => [
+        for sig in distinct(local._sig[rs][dir]) : merge(
+          [for i, r in rules : r if local._sig[rs][dir][i] == sig][0],
+          { flow = join(" + ", distinct([for i, r in rules : r.flow if local._sig[rs][dir][i] == sig])) }
+        )
+      ]
+    }
+  }
+
+  # ---------------------------------------------------------------------------
   # Flatten (subnet, direction, rule) and allocate a unique rule number inside
   # each (subnet, direction). The authored `n` is a BAND, not the final number:
   # a flow fanning out over three AZ CIDRs needs three distinct numbers, and
@@ -180,17 +266,18 @@ locals {
   nacl_rule_list = flatten([
     for sk, sv in var.subnets : [
       for dir in ["ingress", "egress"] : [
-        for i, r in local.nacl_flows[local.role_ruleset[sv.role]][dir] : {
+        for i, r in local.nacl_flows_merged[local.role_ruleset[sv.role]][dir] : {
           key    = "${sk}-${dir}-${i}"
           subnet = sk
           egress = dir == "egress"
           # The authored `n` is a BAND; the offset is this rule's position among
-          # those sharing it. Bands are 5 apart and a flow fans out over at most
-          # 3 AZ CIDRs, so 100/105 become 100,101,102 / 105,106,107 and never
-          # collide. Gaps are deliberate: a NACL rule number IS the rule's
+          # those sharing it. Bands below 200 are 5 apart and fan out over at
+          # most 3 AZ CIDRs (F-7's 180 over up to 6, clear of F-8's 190); the
+          # cluster-flow bands from 200 are 10 apart for up to 6. So 100/105
+          # become 100,101,102 / 105,106,107 and never collide. Gaps are deliberate: a NACL rule number IS the rule's
           # identity, so inserting a flow must not renumber its neighbours.
           rule_num = r.n + length([
-            for j, x in local.nacl_flows[local.role_ruleset[sv.role]][dir] : j
+            for j, x in local.nacl_flows_merged[local.role_ruleset[sv.role]][dir] : j
             if x.n == r.n && j < i
           ])
           proto = r.proto
@@ -293,7 +380,7 @@ resource "aws_network_acl_rule" "permissive" {
 }
 
 # -----------------------------------------------------------------------------
-# FLOW MODE (default) — deny by default; only #34's F-1..F-10.
+# FLOW MODE (default) — deny by default; only #34's F-1..F-10 and C-1..C-4.
 # -----------------------------------------------------------------------------
 # `nacl_break_flow` drops every rule whose flow label contains the given string,
 # which is how verify-subnet-rules.sh is proven to detect a MISSING rule rather
