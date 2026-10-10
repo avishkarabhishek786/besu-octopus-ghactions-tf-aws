@@ -2,7 +2,7 @@
 
 **To:** Cloud Platform Team
 **From:** Ledger Platform Engineering
-**Date:** 2026-10-09
+**Date:** 2026-10-09 (updated 2026-10-10: R-10 item 7 and the F-8 return, both found in our first deployment)
 **Region:** `af-south-1`
 **Status:** Open — we need your answers before we deploy into the shared cluster
 
@@ -307,7 +307,7 @@ ourselves:
 | F-5 | AWS APIs via interface endpoints | 443 TCP | application and In-VPC EC2 Runner subnets → endpoint subnet (+ return if stateless) |
 | F-6 | S3 gateway — image layers, Terraform state, our tool bundle | 443 TCP | application and In-VPC EC2 Runner subnets → **the S3 prefix list** (a NACL cannot reference it; the rule must cover S3's regional ranges) |
 | F-7 | In-VPC EC2 Runner → cluster API | 443 TCP | its subnet → the control-plane ENIs' subnets |
-| F-8 | In-VPC EC2 Runner → egress proxy VIP | the proxy port | its subnet → the egress prefix (R-10, unchanged) |
+| F-8 | In-VPC EC2 Runner → egress proxy VIP | the proxy port | its subnet → the egress prefix (R-10), **+ return if stateless**: 1024–65535 TCP from the egress prefix back to its subnet |
 | F-9 | Explorer database | 5432 TCP | intra-namespace, or application → data subnet (#37) |
 | F-10 | DNS | 53 UDP/TCP | to the VPC resolver. Listed for completeness: network ACLs do not apply to the Amazon-provided resolver, so there is probably nothing to do — but if pods resolve through anything else, it needs a rule |
 
@@ -708,7 +708,7 @@ machine, new name.
 
 | Ask | What we need | Priority |
 |---|---|---|
-| **R-10** — egress for our deployment agent | (1) the **proxy address**, `host:port`, as seen from the ledger VPC; (2) a **source allowlist** entry for our In-VPC EC2 Runner's fixed private IP (a /32 — we will send it), or its subnet /24; (3) **destinations** `<instance>.octopus.app` and `polling.<instance>.octopus.app`, port 443, `CONNECT` only, outbound only; (4) **no TLS decryption** on those two — the Octopus agent pins certificates on both ends and needs an uninterrupted TLS tunnel; (5) a **route** from the In-VPC EC2 Runner's subnet to the proxy's prefix over the Transit Gateway — never a default route; (6) whether the proxy **requires credentials**. We are **not** asking for general internet access, an Internet Gateway, a public cluster endpoint, any inbound rule, or how the egress is built | **High** |
+| **R-10** — egress for our deployment agent | (1) the **proxy address**, `host:port`, as seen from the ledger VPC; (2) a **source allowlist** entry for our In-VPC EC2 Runner's fixed private IP (a /32 — we will send it), or its subnet /24; (3) **destinations** `<instance>.octopus.app` and `polling.<instance>.octopus.app`, port 443, `CONNECT` only, outbound only; (4) **no TLS decryption** on those two — the Octopus agent pins certificates on both ends and needs an uninterrupted TLS tunnel; (5) a **route** from the In-VPC EC2 Runner's subnet to the proxy's prefix over the Transit Gateway — never a default route; (6) whether the proxy **requires credentials**; (7) **an explicit subnet CIDR reservation on that /32** in the In-VPC EC2 Runner's subnet (`create-subnet-cidr-reservation --reservation-type explicit`). Your cluster's nodes share that subnet, and the VPC CNI keeps a warm pool of addresses drawn from it at random. In our test it took the runner's address, and EC2 refused to launch the runner. With the reservation, AWS gives the address out only on explicit request, which is how we launch the runner. It costs nothing and changes no rule. We are **not** asking for general internet access, an Internet Gateway, a public cluster endpoint, any inbound rule, or how the egress is built | **High** |
 | **R-3** — account rules | A dedicated IAM path or role-name prefix for our roles; any **mandatory permissions boundary**; **Service Control Policies** that would deny creating KMS keys, IAM roles or specific instance types (an SCP denial is invisible until an apply fails mid-way); a **mandatory tag set**; **service quotas** we share with other tenants; **CloudTrail read access** for our resources — we audit every KMS decrypt of a validator key | High |
 | **R-6** — the VPC endpoints | Covered in §7: **SSM trio first**, plus `ec2:DescribeVpcEndpoints` for our read-only check and notice before any endpoint-policy change | High |
 | **R-7** — CI runner identity | How your runners get AWS credentials — **GitHub OIDC, IRSA, or an instance profile** (it changes our workflow code, not just a setting); **ECR push** rights for that identity under our prefix; which **runner labels** to target; whether GitHub-hosted runners may be used for jobs that handle only public artefacts | High |
