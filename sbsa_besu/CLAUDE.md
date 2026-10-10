@@ -5,8 +5,8 @@
 > `mimic_vpc` and `mimic_eks` (built and **first applied live 2026-10-09**; **hostile by default** —
 > it exists to make this platform's gates fail, so they can be trusted when they pass. On
 > that run every `cluster-contract` gate was seen to refuse, and only the expected ones
-> against strict; open: B30, and B27/B32 fixed in code 2026-10-10 but not yet proven live —
-> `docs/build-findings.md`).
+> against strict. B27 fixed and **proven live 2026-10-10**; open: B30, B34, and B32's runner
+> half — `docs/build-findings.md`).
 
 You (Claude Code) are building a production Hyperledger Besu (QBFT) ledger and an
 application platform in **a namespace of a shared EKS cluster another team runs, inside a

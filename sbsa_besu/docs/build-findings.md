@@ -43,43 +43,33 @@ AWS-managed ECR in-region through the cluster's `ecr.api`/`ecr.dkr` endpoints.
 
 ---
 
-### B27 — the restrictive NACLs model only OUR flows, so a node in one AZ never joined
-**Provenance:** tooling (fixture) · **Found:** 2026-10-09, first `mimic_eks` apply · **Status:** FIXED IN CODE 2026-10-10, proven offline — **live proof pending**
 
-`mimic_vpc`'s `nacl_mode = "flows"` (D-32) permits exactly #34's F-1..F-10 — the flows *we*
-listed. It permits none of the **cluster's own**: nodes → API server (443) across node
-subnets, pods → CoreDNS (53 tcp/udp) across AZs, control plane → kubelet/webhooks. EKS put
-its control-plane ENIs in two of the three app subnets; the node in the third reached them
-only across a NACL with no ingress 443, and `NodeCreationFailure` followed. The other two
-nodes worked only because traffic inside one subnet is not NACL-evaluated.
+### B34 — `mimic_eks` teardown leaks a VPC CNI ENI, which pins the EKS cluster SG and blocks the VPC delete
+**Provenance:** tooling (fixture teardown) · **Found:** 2026-10-10, B27 live run · **Status:** OPEN
 
-`verify-subnet-rules.sh` passed 28/28 against those NACLs, because it checks the flows we
-listed — the omission is in the flow table, so no checker built from it can see it.
-Requirements #34 now has a table of the cluster's own flows (2026-10-09).
+After the `mimic_eks` destroy (20 destroyed, state empty), one VPC CNI secondary ENI from a
+terminated node stayed `available` in its subnet (`eks:eni:owner=amazon-vpc-cni`,
+`cluster.k8s.amazonaws.com/name=<cluster>`), and the EKS-managed cluster security group
+(`eks-cluster-sg-<cluster>-*`, tag `aws:eks:cluster-name`) was never deleted — most likely
+because that ENI still referenced it when EKS deleted the cluster, and EKS does not retry.
+Neither is in Terraform state, so `terraform destroy` reports success. The `mimic_vpc`
+destroy then deleted every subnet and **retried `DeleteVpc` for 10 minutes** against the
+orphaned group (≈ 1 min on 10-09, which did not leak — the leak is intermittent).
 
-**Fix (2026-10-10):** `nacl.tf` carries the cluster's own flows, now numbered in #34's
-second table — **C-1** nodes → API 443, **C-2** pods → CoreDNS 53 udp+tcp (and the UDP
-reply, which needed the workload NACLs' first-ever egress rule for udp/1024-65535), **C-3**
-control plane → kubelet/webhooks, **C-4** pod ↔ pod. In `summarised` mode C-1 and C-2 get
-VPC-CIDR rules on their low ports, and C-3/C-4 ride the existing VPC-CIDR ephemeral rules,
-whose labels now say so. It **fits the 20-rule default** — workload NACLs at 16 in / 19 out
-with the F-8 proxy rule, 17 / 20 with two enumerated S3 ranges — only because B33 freed a
-rule in each direction. `narrow` is 39 / 32 against a quota of 40. `verify-subnet-rules.sh`
-gained `--control-plane` and C-1..C-3 sections, so the omission is now checkable.
+Both were deleted by hand after confirming ownership (tags, creation time, instance
+terminated, no remaining references). **Open work:** a read-only-then-delete sweep by the
+cluster tag between the `mimic_eks` destroy and the `mimic_vpc` destroy — RUNBOOK §E.2
+step 8 now carries the commands; it belongs in a `mimic_eks` teardown script. It is the
+same class as CLAUDE.md §9's leaked-ENI sweep, which the platform's own teardown already
+requires: the platform will hit it on the shared cluster's subnets too, where a leaked ENI
+is the cloud team's scarce address space.
 
-**Proven offline**, by serving the real checker each plan's rules through a fake `aws`
-(no apply): the 10-09 rules → **21 FAIL** (C-1 ×6, C-2 ×12, F-7 ×3); the fixed rules →
-exit 0; `nacl_break_flow = "C-1"` → exactly C-1 ×6 + F-7 ×3; `"C-2 CoreDNS replies"` → the
-six UDP pairs, each naming `RETURN DENIED … egress rule 32767`. **Still to prove live:** a
-`mimic_eks` apply on `nacl_mode = "flows"` with all nodes joining. Until it has run,
-`permissive` remains the safe choice for a run whose purpose is something else.
-
-**Found by:** the first apply of anything that needed nodes in all three AZs. Detail: `docs/deploy-run-2026-10-09-ct5-gates-and-regression.md` §A3.
+**Found by:** the destroy taking ten times as long as the last one, and asking why.
 
 ---
 
 ### B32 — F-7 (runner → cluster API) was blocked by the mimic and never checked
-**Provenance:** tooling (fixture + checker) · **Found:** 2026-10-10, while fixing B27 · **Status:** FIXED IN CODE, proven offline — **live proof pending**
+**Provenance:** tooling (fixture + checker) · **Found:** 2026-10-10, while fixing B27 · **Status:** FIXED IN CODE · NACL half **proven live** 2026-10-10 (the az3 node used the C-1 ingress 443 rule F-7 shares) · **runner half open** — no runner has exercised F-7 yet
 
 Two halves of one omission. `nacl.tf` gave the runner's subnet an **egress** 443 rule for
 F-7, but no node subnet had an **ingress** 443 rule, so the control-plane ENIs could never
@@ -117,6 +107,46 @@ rules it reports all three runner → control-plane pairs BLOCKED.
 
 ## Closed
 
+### B27 — the restrictive NACLs model only OUR flows, so a node in one AZ never joined
+**Provenance:** tooling (fixture) · **Found:** 2026-10-09, first `mimic_eks` apply · **Fixed:** 2026-10-10 (`862f6c2`) · **Proven live:** 2026-10-10
+
+`mimic_vpc`'s `nacl_mode = "flows"` (D-32) permits exactly #34's F-1..F-10 — the flows *we*
+listed. It permits none of the **cluster's own**: nodes → API server (443) across node
+subnets, pods → CoreDNS (53 tcp/udp) across AZs, control plane → kubelet/webhooks. EKS put
+its control-plane ENIs in two of the three app subnets; the node in the third reached them
+only across a NACL with no ingress 443, and `NodeCreationFailure` followed. The other two
+nodes worked only because traffic inside one subnet is not NACL-evaluated.
+
+`verify-subnet-rules.sh` passed 28/28 against those NACLs, because it checks the flows we
+listed — the omission is in the flow table, so no checker built from it can see it.
+Requirements #34 now has a table of the cluster's own flows (2026-10-09).
+
+**Fix (2026-10-10):** `nacl.tf` carries the cluster's own flows, now numbered in #34's
+second table — **C-1** nodes → API 443, **C-2** pods → CoreDNS 53 udp+tcp (and the UDP
+reply, which needed the workload NACLs' first-ever egress rule for udp/1024-65535), **C-3**
+control plane → kubelet/webhooks, **C-4** pod ↔ pod. In `summarised` mode C-1 and C-2 get
+VPC-CIDR rules on their low ports, and C-3/C-4 ride the existing VPC-CIDR ephemeral rules,
+whose labels now say so. It **fits the 20-rule default** — workload NACLs at 16 in / 19 out
+with the F-8 proxy rule, 17 / 20 with two enumerated S3 ranges — only because B33 freed a
+rule in each direction. `narrow` is 39 / 32 against a quota of 40. `verify-subnet-rules.sh`
+gained `--control-plane` and C-1..C-3 sections, so the omission is now checkable.
+
+**Proven offline**, by serving the real checker each plan's rules through a fake `aws`
+(no apply): the 10-09 rules → **21 FAIL** (C-1 ×6, C-2 ×12, F-7 ×3); the fixed rules →
+exit 0; `nacl_break_flow = "C-1"` → exactly C-1 ×6 + F-7 ×3; `"C-2 CoreDNS replies"` → the
+six UDP pairs, each naming `RETURN DENIED … egress rule 32767`. **Proven live 2026-10-10** (`docs/deploy-run-2026-10-10-b27-live.md`), repeating the
+10-09 failure exactly — hostile, nodes in the app subnets, `flows`: checker live =
+the offline prediction (46/0/12/4; C-1 broken → C-1 ×6 + F-7 ×3); **3/3 nodes joined**,
+with control-plane ENIs in az1 and az2 only, so the az3 node registered across a NACL;
+logs fetched from pods on the az3 node (C-3); and with C-1 removed on the live cluster
+**only the az3 node went NotReady** (~54 s), back to Ready ~10 s after the restore.
+C-2 is still offline-proven only — no image with a shell can be pulled until the mirror.
+
+**Found by:** the first apply of anything that needed nodes in all three AZs. Detail: `docs/deploy-run-2026-10-09-ct5-gates-and-regression.md` §A3.
+
+---
+
+
 ### B33 — `summarised` NACLs carried duplicate rules, so `nacl_break_flow` could not break a flow
 **Provenance:** tooling (fixture) · **Found:** 2026-10-10, offline B27 proof · **Fixed:** same day
 
@@ -140,7 +170,8 @@ rules, now visible in the checker's output.
 ---
 
 > **2026-10-09 run** (`docs/deploy-run-2026-10-09-ct5-gates-and-regression.md`): B25, B28, B29, B31 and P-1 fixed in `6d12b47`; B30 is
-> under **Open**, and B27 too until its fix (2026-10-10) is proven live. **B26 was withdrawn** the same day — tracked `*.plan` files are the
+> under **Open**. **B27** was fixed 2026-10-10 and **proven live** the same day
+> (`docs/deploy-run-2026-10-10-b27-live.md`), which also found **B34** (Open). **B26 was withdrawn** the same day — tracked `*.plan` files are the
 > recorded `c0717ec` decision, and all nine pass its `PRIVATE KEY` check.
 
 ### P-1 — under the quota we ask for, every validator pod was refused at admission

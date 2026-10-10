@@ -15,7 +15,7 @@ cluster the bank's cloud team runs**, inside a **VPC that team owns and hands ov
 | `besu-aws` (beside this repository, not in it) | **Frozen. Reference only.** The pre-redesign build. Not modified. |
 | `../mimic_vpc` | A throwaway mimic of the VPC the cloud team will hand over, so the contract can be tested for free. |
 | `../mimic_egress` | A throwaway mimic of the bank's shared egress proxy, so the Octopus polling-Tentacle path can be tested before the real egress is wired. |
-| `../mimic_eks` | **Built and first applied live 2026-10-09** (all 12 `cluster-contract` gate blocks seen to refuse; open: B30, and B27/B32 fixed in code with live proof pending) — a throwaway mimic of the shared EKS cluster and the namespace allotted to us (CT-5, D-32). Two profiles; the default is **hostile**, which breaks every gate in `modules/cluster-contract` and every runner preflight on purpose. Watch them fail before trusting them. |
+| `../mimic_eks` | **Built and first applied live 2026-10-09** (all 12 `cluster-contract` gate blocks seen to refuse; B27 proven fixed live 2026-10-10; open: B30, B34, B32's runner half) — a throwaway mimic of the shared EKS cluster and the namespace allotted to us (CT-5, D-32). Two profiles; the default is **hostile**, which breaks every gate in `modules/cluster-contract` and every runner preflight on purpose. Watch them fail before trusting them. |
 | **`sbsa_besu`** (this) | The platform: ~~everything from EKS upwards~~ **everything inside our namespace, plus the AWS resources beside the cluster** (KMS, Secrets Manager, NLBs, IAM, SNS/SQS, S3, the runner). |
 
 Why one repository, and how the "never create network resources" rule is

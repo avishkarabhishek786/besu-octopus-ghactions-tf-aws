@@ -446,7 +446,12 @@ CD-56..CD-61 confirmed. The table below carries what that run taught, step by st
 route to app/lb/endpoint/data tables; run `install-tentacle.sh --skip-probe` against the
 bank's proxy.
 
-### E.2 — B27 live proof: a cluster on the restrictive NACLs (≈ $1.5–2, ≈ 1.5 h) — NOT YET RUN
+### E.2 — B27 live proof: a cluster on the restrictive NACLs (≈ $0.5, ≈ 1 h) ✅ RUN 2026-10-10
+
+> **Result:** every prediction below held — checker live 46/0/12/4, break → C-1 ×6 + F-7 ×3;
+> 3/3 nodes joined with control-plane ENIs in az1/az2 only; C-3 live; C-1 removed → only the
+> az3 node NotReady, restored → Ready. B27 closed. The teardown found **B34** (step 8 now
+> sweeps for it). Full log: `docs/deploy-run-2026-10-10-b27-live.md`.
 
 **Why.** On 2026-10-09 a node in the one AZ without a control-plane ENI never joined, because
 `mimic_vpc`'s `flows` NACLs carried none of the cluster's own traffic (B27). The fix
@@ -575,6 +580,18 @@ reproduced and cured on demand, on a live cluster.
 
 ```bash
 cd mimic_eks/terraform && terraform plan -destroy -var-file=environments/sit/mimic.tfvars -out=$SP/hostile-destroy.plan && terraform apply $SP/hostile-destroy.plan
+
+# B34 — EKS leaves things Terraform never owned. LOOK first, delete only what carries the
+# cluster's tag and is unattached; then the VPC destroy is ~1 min instead of a 10-min retry.
+C=sbsa-besu-sit-shared
+aws ec2 describe-network-interfaces --region af-south-1 \
+  --filters Name=tag:cluster.k8s.amazonaws.com/name,Values=$C Name=status,Values=available \
+  --query 'NetworkInterfaces[].[NetworkInterfaceId,Description,SubnetId]' --output text
+#   → aws ec2 delete-network-interface --network-interface-id <each>
+aws ec2 describe-security-groups --region af-south-1 --filters Name=tag:aws:eks:cluster-name,Values=$C \
+  --query 'SecurityGroups[].[GroupId,GroupName]' --output text
+#   → aws ec2 delete-security-group --group-id <each>   (after the ENIs: they reference it)
+
 # shared: as in the 10-09 log teardown
 cd mimic_vpc/terraform && terraform plan -destroy -var-file=environments/sit/primary.tfvars -out=$SP/mvpc-destroy.plan && terraform apply $SP/mvpc-destroy.plan
 ```

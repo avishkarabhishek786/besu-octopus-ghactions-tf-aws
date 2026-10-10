@@ -217,12 +217,14 @@ platform's checker would have been written against something that could never fa
   rule carries its flow label — several, where flows share one rule (rules identical in
   protocol, ports and CIDR are merged, B33) — so a `verify-subnet-rules.sh` failure and a
   rule here can be matched by eye.
-  > **B27 (fixed in code 2026-10-10, live proof pending).** Until then this mode could not
+  > **B27 (fixed and PROVEN LIVE 2026-10-10** — `../sbsa_besu/docs/deploy-run-2026-10-10-b27-live.md`:
+  > a hostile cluster joined 3/3 on `flows`, and removing C-1 took down exactly the node
+  > with no control-plane ENI in its subnet. `flows` is now safe for cluster runs; the
+  > `permissive` workaround is retired.) Before the fix this mode could not
   > host an EKS cluster across three AZs: it carried none of the cluster's own flows, and on
   > the first `mimic_eks` apply the node in the AZ without a control-plane ENI never joined.
   > F-7 (runner → API) was blocked by the same omission (B32). Both were proven fixed
-  > offline (the real checker against each plan's rules); **the next `mimic_eks` run on
-  > `flows` is the live proof** — run the checker with `--control-plane` first.
+  > offline, then live. Run the checker with `--control-plane` before any cluster apply.
   > Rule budget in the default `summarised` source mode: workload NACLs at **16 in / 19
   > out** (with the F-8 proxy rule), **17 / 20** with two enumerated `s3_cidrs` — at the
   > limit. A strict (`#28`) cluster joins without `ledger_subnets_in_use`, because in this
