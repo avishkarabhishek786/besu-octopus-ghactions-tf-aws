@@ -1,9 +1,23 @@
 # =============================================================================
-# besu-account-allowlist ConfigMap — the FILE-BASED account (tx-sender) allowlist.
+# <configMapName>-seed ConfigMap — the GENESIS SEED of the file-based account
+# (tx-sender) allowlist. NOT read by any node.
 # -----------------------------------------------------------------------------
-# Rendered ONLY when account_permissioning_mode="local" (backlog C6). This is the
-# single SOURCE OF TRUTH for the account allowlist (Model B, decided 2026-07-05):
-#   * seeded here from permissioning_admin_account + initial_account_allowlist;
+# OWNERSHIP SPLIT (post-H2 follow-up, 2026-10-09). Helm renders only this SEED.
+# The LIVE allowlist (<configMapName>, default besu-account-allowlist) is created
+# by the genesis Job (job.yaml, publish step) CREATE-IF-ABSENT from this seed, so
+# Helm never owns it. Why: H2 froze this release with ignore_changes=[values],
+# which made Terraform reuse the ORIGINAL seed values on any later upgrade of the
+# release (chart version bump, manual helm upgrade). When Helm owned the live
+# ConfigMap, such an upgrade re-rendered it from that seed and Helm's three-way
+# merge silently dropped every runtime onboarding and restored revoked senders.
+# Now an upgrade only re-renders this inert seed. The Job resets the live list
+# to the seed ONLY on a deliberate re-genesis (allowRegenesis=true).
+# Chains created before this change: run
+# scripts/maintenance/migrate-allowlist-ownership.sh BEFORE any genesis upgrade.
+#
+# The LIVE ConfigMap is the single SOURCE OF TRUTH for the account allowlist
+# (Model B, decided 2026-07-05):
+#   * seeded from permissioning_admin_account + initial_account_allowlist (here);
 #   * mounted READ-ONLY into every enforcing besu-node pod (validators + all RPC
 #     pools), which point --permissions-accounts-config-file at it;
 #   * runtime onboarding patches THIS ConfigMap, then reloads/restarts the pods
@@ -40,18 +54,15 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Values.accountAllowlist.configMapName }}
+  name: {{ .Values.accountAllowlist.configMapName }}-seed
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "besu-genesis.labels" . | nindent 4 }}
 data:
   # A valid Besu permissions TOML holding ONLY the accounts key (the nodes key is
-  # in each pod's /data/permissions_config.toml). perm_reloadPermissionsFromFile
-  # re-reads this file; a pod restart re-reads the current ConfigMap. Runtime edits
-  # via scripts/permissioning/add-account.sh patch this ConfigMap in place — to
-  # persist across a helm/terraform apply, ALSO add the address to
-  # initial_account_allowlist in the env tfvars (the apply would otherwise revert
-  # the ConfigMap to the seed).
+  # in each pod's /data/permissions_config.toml). The genesis Job copies this
+  # verbatim into the live ConfigMap if that does not exist yet. Runtime edits
+  # (scripts/permissioning/add-account.sh) patch the LIVE ConfigMap, never this.
   permissions_accounts.toml: |
     accounts-allowlist=[{{ range $i, $a := $accts }}{{ if $i }},{{ end }}{{ $a | quote }}{{ end }}]
 {{- end }}

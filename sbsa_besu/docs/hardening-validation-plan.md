@@ -272,7 +272,8 @@ Follow guide §12.6/§12.7 (app-identity already generated in §1):
 ```bash
 cd terraform && terraform apply -var-file=environments/prod/primary.tfvars \
   -var-file=environments/prod/app-identity.tfvars -var-file=environments/prod/hardening-validation.tfvars
-AWS_REGION=us-east-1 ./app/scripts/gen-app-identity.sh --push-secrets
+# (sbsa_besu: there is no app/ tree, so the JWT keypair that gen-app-identity.sh --push-secrets
+#  wrote is now created by issue-app-rpc-cert.sh on first run — besu-aws cdbd6be)
 AWS_REGION=<r> scripts/pki/issue-app-rpc-cert.sh
 aws ec2 accept-vpc-endpoint-connections --service-id <svc> --vpc-endpoint-ids <ep>
 cd app/infra && terraform init && terraform apply

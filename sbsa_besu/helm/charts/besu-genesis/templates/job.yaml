@@ -56,6 +56,12 @@ spec:
         - name: qbft-config
           configMap:
             name: {{ .Release.Name }}-qbft-config
+        {{- if eq .Values.permissioning.accountMode "local" }}
+        # Genesis seed of the account allowlist (permissions-accounts-configmap.yaml).
+        - name: allowlist-seed
+          configMap:
+            name: {{ .Values.accountAllowlist.configMapName }}-seed
+        {{- end }}
       initContainers:
         {{- if .Values.providedValidatorKeys }}
         # C4 (provided validator keys): fetch the operator-supplied validator keys
@@ -248,6 +254,34 @@ spec:
               echo "[publish] patched genesis extraData from provided keys: $ED"
               {{- end }}
 
+              {{- if eq .Values.permissioning.accountMode "local" }}
+              # LIVE account allowlist — Job-owned, CREATE-IF-ABSENT (post-H2 follow-up).
+              # Helm renders only the inert <name>-seed; the live list is created here so a
+              # later upgrade of this release can never re-render it and drop runtime
+              # onboardings (see permissions-accounts-configmap.yaml). Runs BEFORE the H2
+              # guard below so it also covers a chain that switches accountMode to local.
+              # Reset to the seed ONLY on a deliberate re-genesis (allowRegenesis=true).
+              AL_CM="{{ .Values.accountAllowlist.configMapName }}"
+              AL_SEED=/allowlist-seed/permissions_accounts.toml
+              [ -s "$AL_SEED" ] || { echo "PREFLIGHT FAIL: allowlist seed $AL_SEED is empty"; exit 1; }
+              if kubectl get configmap "$AL_CM" -n {{ .Release.Namespace }} >/dev/null 2>&1; then
+                if [ "{{ .Values.allowRegenesis | default false }}" = "true" ]; then
+                  echo "[publish] WARNING: allowRegenesis=true — resetting $AL_CM to the genesis seed"
+                  kubectl create configmap "$AL_CM" --namespace {{ .Release.Namespace }} \
+                    --from-file=permissions_accounts.toml="$AL_SEED" \
+                    --dry-run=client -o yaml | kubectl replace -f -
+                else
+                  echo "[publish] $AL_CM already exists — kept (live allowlist is operator-owned; seed not re-applied)"
+                fi
+              else
+                echo "[publish] creating live account allowlist $AL_CM from the genesis seed"
+                kubectl create configmap "$AL_CM" --namespace {{ .Release.Namespace }} \
+                  --from-file=permissions_accounts.toml="$AL_SEED"
+              fi
+              kubectl label configmap "$AL_CM" --namespace {{ .Release.Namespace }} --overwrite \
+                app.kubernetes.io/managed-by=besu-genesis-job >/dev/null
+              {{- end }}
+
               # H2 (re-genesis guard): NEVER overwrite an existing genesis ConfigMap
               # unless an operator explicitly opted into a destructive re-genesis.
               # Re-publishing genesis.json on a live chain changes the genesis hash and
@@ -275,3 +309,6 @@ spec:
               echo "[publish] complete"
           volumeMounts:
             - { name: work, mountPath: /work }
+            {{- if eq .Values.permissioning.accountMode "local" }}
+            - { name: allowlist-seed, mountPath: /allowlist-seed, readOnly: true }
+            {{- end }}

@@ -36,18 +36,34 @@ Everything below is for changes **after** that initial deploy.
 ## Mental model (read once)
 
 - **Single source of truth = the `besu-account-allowlist` ConfigMap** (Model B).
-  It holds `accounts-allowlist=["0x…", …]` and is mounted **read-only** into every
-  enforcing node at `/config/perm-accounts/permissions_accounts.toml`.
+  It holds `accounts-allowlist=["0x…", …]`. On each pod start, the `build-config`
+  init container copies it to a writable, besu-owned
+  `/data/permissions_accounts.toml` (F32/F32b), and Besu reads that copy. The main
+  container does not see later ConfigMap edits, which is why every change needs a
+  restart or the H3 hot reconcile.
 - **Deny-by-default, sender-only.** Only listed addresses may be the `from` of a
   transaction. Recipients (`to`) are **not** gated — so *funding* a new address is
   independent of *allowlisting* it (either order).
 - **Node-local, not chain state.** The allowlist is per-node config, so a change
   must be applied to **every enforcing node** (all validators + every RPC pool).
   The scripts do that fan-out for you.
-- **Two truths to keep in sync.** The *live* ConfigMap (what these scripts patch)
-  and the *durable* tfvars (`initial_account_allowlist`). A runtime patch is
-  **reverted on the next `terraform apply`/`helm upgrade`** — so persist every
-  onboarding to tfvars too (the auditable path).
+- **After genesis, the live ConfigMap is the only truth; tfvars is just the seed.**
+  Helm renders only an inert `besu-account-allowlist-seed`. The genesis Job creates
+  the live ConfigMap from it **once, if absent**, and Helm never owns it. So:
+  - editing `initial_account_allowlist` and running `terraform apply` changes
+    **nothing** on a live chain;
+  - neither a routine apply nor a `besu-genesis` upgrade (chart bump,
+    `helm upgrade`) reverts the scripts' changes;
+  - only a deliberate re-genesis (`allow_regenesis=true`) resets the live list to
+    the seed.
+
+  Use these scripts for every change, keep your own change record, and mirror the
+  final set into `initial_account_allowlist` only so a **future rebuild** seeds the
+  same accounts.
+- ⚠️ **Chains created before the ownership split** still have a Helm-owned
+  ConfigMap, which a genesis upgrade would delete and re-seed. Run
+  `scripts/maintenance/migrate-allowlist-ownership.sh --apply` once, before any
+  genesis upgrade. It only annotates and labels the ConfigMap; the data is untouched.
 - **Zero-gas funding caveat (F20).** On this free-gas chain a **zero-balance
   sender's tx is never mined**. An allowlisted account still can't transact until
   it holds a balance — see [Funding](#funding-an-account).
@@ -114,18 +130,20 @@ FAUCET_KEY_SECRET=besu-faucet-key PF_STATEFULSET=besu-explorer-rpc-1 \
 # c) verify every enforcing pod sees it, and the balance landed
 scripts/permissioning/list-accounts.sh --live
 
-# d) PERSIST — add 0x<newSender> to initial_account_allowlist in the env tfvars
-#    and commit, so the next `terraform apply` doesn't revert the ConfigMap.
+# d) RECORD it — log the change (who/when/why), and mirror the address into
+#    initial_account_allowlist in the env tfvars so a FUTURE rebuild seeds it.
+#    (On the live chain this tfvars edit is inert: the genesis release is frozen, H2.)
 ```
 
 Steps (a) and (b) are independent (recipient isn't gated), so order doesn't
-matter. Do **not** skip (d) — the runtime patch is not durable on its own.
+matter. The ConfigMap patch from (a) survives `terraform apply` and genesis
+upgrades. Only a deliberate re-genesis resets it.
 
 ### 2) Revoke a sender
 
 ```bash
 scripts/permissioning/remove-account.sh 0x<sender>   # refuses to remove the LAST entry
-# then delete it from initial_account_allowlist in tfvars and commit.
+# then record it, and delete it from initial_account_allowlist in tfvars (rebuild seed).
 ```
 
 Revocation stops *future* transactions from that sender; it does not touch any
@@ -134,8 +152,13 @@ back to a treasury with a tx signed by that account.
 
 ### 3) You changed the allowlist in tfvars and applied
 
-`terraform apply` regenerates the ConfigMap but does **not** restart the
-StatefulSets, so running pods keep the old in-memory list. Propagate:
+On a live chain **this does nothing**: Helm renders only the inert seed, and the
+genesis Job never overwrites an existing live ConfigMap. Use
+`add-account.sh` / `remove-account.sh` instead.
+
+`reload-permissions.sh` is for the remaining case, where the ConfigMap changed but
+the pods were not propagated. Examples: a `PROPAGATE=none` patch, a propagation
+that failed part-way, or a deliberate re-genesis that reset it to the seed.
 
 ```bash
 scripts/permissioning/reload-permissions.sh            # default: rolling restart
@@ -207,6 +230,7 @@ Notes:
 | `ConfigMap 'besu-account-allowlist' not found` | Account permissioning is `off`. Enable `account_permissioning_mode="local"` (seeded) and apply. |
 | A newly-added sender's tx is rejected | It isn't funded — run `fund-account.sh` (F20). Or a pod hasn't propagated yet — `list-accounts.sh --live` and re-`reload-permissions.sh`. |
 | `PROPAGATE=hot` fails on a validator | The ops listener isn't enabled. Set `opsRpc.enabled=true` (exposes `PERM` internally) or use the default `restart`. |
-| Change disappeared after a deploy | You skipped persisting to tfvars — the ConfigMap was reverted on `terraform apply`. Add the address to `initial_account_allowlist` and commit. |
+| Change disappeared after a deploy | Either a re-genesis ran (`allow_regenesis=true` resets to the seed), or the chain predates the ownership split and a `besu-genesis` upgrade deleted and re-seeded the Helm-owned ConfigMap. Re-apply your recorded changes with `add-account.sh` / `remove-account.sh`, and run `scripts/maintenance/migrate-allowlist-ownership.sh --apply`. |
+| tfvars allowlist edit had no effect | Expected after genesis (H2 freeze). Use `add-account.sh` / `remove-account.sh`. |
 | `remove-account.sh` refuses | You'd empty the allowlist (denies all senders). Disable account permissioning via tfvars instead of emptying it. |
 | `fund-account.sh`: faucet has ZERO balance | The faucet address isn't a genesis-funded allowlist member. Use the admin or an `initial_account_allowlist` account. |

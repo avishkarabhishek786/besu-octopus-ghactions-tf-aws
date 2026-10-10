@@ -27,13 +27,15 @@
 #             besu container does NOT mount the ConfigMap, so a patch never reached
 #             that file at runtime → the reload was a SILENT NO-OP: a REVOCATION
 #             reported "Success" while the compromised sender kept transacting.
-#   none    — mutate the ConfigMap only; print how to propagate later (e.g. when
-#             you will `terraform apply` the tfvars change and reload separately).
+#   none    — mutate the ConfigMap only; print how to propagate later
+#             (reload-permissions.sh).
 #
-# ⚠️ DRIFT: the ConfigMap is Helm/Terraform-managed (seeded from
-# permissioning_admin_account + initial_account_allowlist). A patch here is
-# reverted on the next `terraform apply`/`helm upgrade`. To persist an onboarding,
-# ALSO add the address to initial_account_allowlist in the env tfvars.
+# ⚠️ OWNERSHIP: the LIVE ConfigMap is created ONCE (create-if-absent) by the genesis
+# Job from the Helm-rendered <name>-seed (permissioning_admin_account +
+# initial_account_allowlist). Helm never owns it, so after genesis the LIVE ConfigMap
+# is the truth: a tfvars allowlist edit is inert, and neither `terraform apply` nor a
+# besu-genesis upgrade reverts a patch made here. Only allowRegenesis=true resets it.
+# Chains created before this split: scripts/maintenance/migrate-allowlist-ownership.sh.
 #
 # RUN FROM the In-VPC EC2 Runner (private EKS endpoint), repo root, after
 #   `aws eks update-kubeconfig --name <cluster> --region <region>`.
@@ -72,7 +74,7 @@ cm_require() {
 }
 
 # cm_write <addr...> : rewrite the allowlist to EXACTLY the given (deduped) set,
-# via a merge-patch of the data key (preserves the ConfigMap's Helm-owned metadata).
+# via a merge-patch of the data key (preserves the ConfigMap's metadata/labels).
 cm_write() {
   local addrs body toml first=1
   addrs=$(printf '%s\n' "$@" | awk 'NF' | sort -u)
@@ -281,8 +283,9 @@ propagate() {
 # Reminder printed after a ConfigMap mutation.
 persist_reminder() {
   cat <<EOF
-[$(_ts)] NOTE  This changed the LIVE ConfigMap only. It is reverted on the next
-              \`terraform apply\`/\`helm upgrade\`. To persist, add the address(es)
-              to initial_account_allowlist in the env tfvars and commit.
+[$(_ts)] NOTE  The LIVE ConfigMap is the source of truth (Job-owned, not Helm): neither
+              \`terraform apply\` nor a genesis upgrade reverts this, and tfvars
+              allowlist edits do not reach it. Record the change, and mirror it into
+              initial_account_allowlist only as the seed for a FUTURE rebuild.
 EOF
 }
