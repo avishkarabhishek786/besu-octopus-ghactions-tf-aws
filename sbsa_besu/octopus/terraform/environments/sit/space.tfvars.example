@@ -1,0 +1,20 @@
+# =============================================================================
+# octopus/terraform — example. COPY to space.tfvars (gitignored, CD-10).
+# One state per Octopus space; list every environment the space promotes through.
+# =============================================================================
+octopus_server_url = "https://<instance>.octopus.app"
+space_name         = "Default"
+environments       = ["SIT", "UAT", "PROD"]
+approval_environments = ["UAT", "PROD"]   # CD-41. besu-validators gates in EVERY environment regardless (CD-5)
+manage_environments   = true              # false if the environments already exist in the space
+
+aws_region = "af-south-1"
+aws_role_arns = {                          # octopus/aws-trust output deploy_role_arns
+  sit  = "arn:aws:iam::<account>:role/<prefix>-sit-octopus-deploy"
+  uat  = "arn:aws:iam::<account>:role/<prefix>-uat-octopus-deploy"
+  prod = "arn:aws:iam::<account>:role/<prefix>-prod-octopus-deploy"
+}
+state_bucket  = "<state-bucket>"
+state_region  = "<state-region>"
+cluster_names = { SIT = "<cluster>", UAT = "<cluster>", PROD = "<cluster>" }
+tools_image   = "<account>.dkr.ecr.<region>.amazonaws.com/mirror/alpine/k8s@sha256:<digest>"   # mirror.manifest
