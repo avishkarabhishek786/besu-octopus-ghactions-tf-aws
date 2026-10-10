@@ -446,6 +446,148 @@ CD-56..CD-61 confirmed. The table below carries what that run taught, step by st
 route to app/lb/endpoint/data tables; run `install-tentacle.sh --skip-probe` against the
 bank's proxy.
 
+### E.2 — B27 live proof: a cluster on the restrictive NACLs (≈ $1.5–2, ≈ 1.5 h) — NOT YET RUN
+
+**Why.** On 2026-10-09 a node in the one AZ without a control-plane ENI never joined, because
+`mimic_vpc`'s `flows` NACLs carried none of the cluster's own traffic (B27). The fix
+(`862f6c2`, keys `d12903e`) adds #34's C-1..C-4 and F-7's missing half (B32), and was
+proven **offline only**: the real checker against each plan's rules. This run repeats the
+exact 10-09 failure — **hostile profile, nodes in the app subnets, `nacl_mode = flows`** —
+and expects it not to happen.
+
+**What it proves:** the rules exist in AWS as planned (the checker reads them live); C-1 (a
+node registering across a NACL); C-3 (API server → kubelet across a NACL); and, optionally,
+that removing C-1 takes a joined node down. **What it does not:** **C-2** — no image with a
+shell can be pulled yet (ECR is empty, no `crane` on the laptop, the add-on images have no
+shell), so pods → CoreDNS stays offline-proven until the mirror runs; and **F-7 as a runner
+path** — no runner is built. F-7 shares C-1's ingress 443 rule on the control-plane subnets,
+so C-1's evidence covers the rule, not the runner.
+
+Advise-only (§0.6): every command below is for the operator. Times and outputs go in a
+`docs/deploy-run-<date>-b27-live.md` log, as on 10-09. `$SP` is any scratch directory.
+
+**0. Pre-checks** — the account is clean; same commands as the 10-09 log §0 (VPCs, EKS,
+KMS aliases, log groups, `sbsa*` roles all empty; only the two kept Octopus secrets).
+
+**1. `mimic_vpc` on `flows` (free).** Do **not** pass `-var nacl_mode=…`: `flows` is the
+default and is the thing under test.
+
+```bash
+cd mimic_vpc/terraform
+sed -i 's/sbsa-net-sit-2026-10-09/sbsa-net-sit-<DATE>/' environments/sit/primary.tfvars
+terraform init      # backend already on besu/sit/network.tfstate
+terraform plan -var-file=environments/sit/primary.tfvars -out=$SP/mvpc.plan   # expect 333 to add
+terraform apply $SP/mvpc.plan
+cd .. && ./scripts/verify-contract.sh && ./scripts/emit-handover.sh            # 27 passed
+```
+
+**2. The checker, live — positive (free).** `--control-plane` is the app subnets because the
+hostile cluster is built in them (`mimic_eks` `node_subnet_ids`; the cluster's subnets are
+the node subnets).
+
+```bash
+H=mimic_vpc/network-handover.auto.tfvars
+j(){ grep "^$1 " $H | sed 's/^[^=]*= *//' | jq -r '[.[]]|join(",")'; }
+RUNNER_SUBNET=$(grep "^ledger_subnet_ids " $H | sed 's/^[^=]*= *//' | jq -r '.["afs1-az1"]')
+sbsa_besu/scripts/preflight/verify-subnet-rules.sh --region af-south-1 \
+  --node "$(j app_subnet_ids)" --control-plane "$(j app_subnet_ids)" \
+  --lb "$(j lb_subnet_ids)" --endpoint "$(j endpoint_subnet_ids)" --data "$(j data_subnet_ids)" \
+  --runner "$RUNNER_SUBNET"
+```
+
+Expected (computed offline from the same plan): **exit 0, `46 passed, 0 failed, 12
+warnings, 4 skipped`**. The warnings are all expected and none is a pass in disguise:
+C-1 ×6 and F-7 ×3 *"permitted, but only by a 0.0.0.0/0 rule"* — outbound 443 matches
+F-6's S3 rule (150, `0.0.0.0/0` while `s3_cidrs` is empty) before F-7's own rule (180);
+F-9 ×3 *incidental*, as on 10-09. Skipped: F-8 (no `--proxy`), F-10, C-4, #33. **Any FAIL
+here means the live rules differ from the plan — stop and diff `nacl_rules_authored`
+against the checker's output.**
+
+**3. The checker, live — negative (free).** Remove C-1 and watch the checker name it.
+
+```bash
+cd mimic_vpc/terraform
+terraform plan -var-file=environments/sit/primary.tfvars -var 'nacl_break_flow=C-1' -out=$SP/break.plan
+#   expect: 0 to add, 1 to change (nacl_budget), 12 to destroy — every one tcp/443
+terraform apply $SP/break.plan
+# re-run step 2 → exit 1, `46 passed, 9 failed, 3 warnings, 4 skipped`: C-1 ×6 + F-7 ×3, nothing else
+terraform plan -var-file=environments/sit/primary.tfvars -out=$SP/restore.plan   # 12 to add, 1 to change
+terraform apply $SP/restore.plan
+# re-run step 2 → back to exit 0
+```
+
+**4. `shared` — billing starts (≈ $0.45/h).** As in the 10-09 log §2: bump `deletion_group`
+in `environments/sit/common.tfvars`, `init` on `besu/sit/shared.tfstate`, plan (27 to add),
+apply. The nodes cannot bootstrap without these endpoints.
+
+**5. `mimic_eks` hostile — the reproduction (≈ 25 min).**
+
+```bash
+cd mimic_eks/terraform
+cp ../../mimic_vpc/network-handover.auto.tfvars .
+sed -i 's/mimic-eks-sit-2026-10-09/mimic-eks-sit-<DATE>/' environments/sit/mimic.tfvars
+terraform plan -var-file=environments/sit/mimic.tfvars -out=$SP/hostile.plan     # 20 to add, 1.37, 3 × m6i.xlarge
+terraform apply $SP/hostile.plan
+aws eks update-kubeconfig --name sbsa-besu-sit-shared --region af-south-1 --kubeconfig $SP/kc
+KUBECONFIG=$SP/kc kubectl get nodes -o wide
+```
+
+**Pass:** the apply completes (no `NodeCreationFailure`), the node group is `ACTIVE`, and
+**3 nodes are Ready, one per app subnet**. On 10-09 this was `CREATE_FAILED` with 2.
+
+**6. Was the cross-subnet path actually exercised?** EKS chooses where its control-plane
+ENIs go. If every app subnet holds one, every node reached the API inside its own subnet,
+where NACLs do not apply — and step 5 proved nothing about C-1.
+
+```bash
+aws ec2 describe-network-interfaces --region af-south-1 \
+  --filters "Name=description,Values=Amazon EKS sbsa-besu-sit-shared" \
+  --query 'NetworkInterfaces[].[SubnetId,PrivateIpAddress]' --output text
+```
+
+At least one app subnet with **no** ENI → its node registered across a NACL: **C-1 proven
+live**. All three hold one → record **inconclusive for C-1** and do not close B27 on it.
+
+**7. C-3 live, and the optional decisive negative.** For a node in an ENI-less subnet (from
+step 6), its `aws-node` pod's logs travel API server → kubelet 10250 across a NACL:
+
+```bash
+KUBECONFIG=$SP/kc kubectl -n kube-system get pods -l k8s-app=aws-node -o wide
+KUBECONFIG=$SP/kc kubectl -n kube-system logs <aws-node pod on that node> -c aws-node --tail=3   # returns lines = C-3 live
+```
+
+*Optional, ≈ 5 min, the strongest evidence available:* make a **fresh** break plan (step
+3's is stale — its restore apply changed the state, and Terraform refuses a stale saved
+plan) and apply it with the cluster up:
+
+```bash
+cd mimic_vpc/terraform
+terraform plan -var-file=environments/sit/primary.tfvars -var 'nacl_break_flow=C-1' -out=$SP/break2.plan && terraform apply $SP/break2.plan
+KUBECONFIG=$SP/kc kubectl get nodes -w        # ~1 min
+terraform plan -var-file=environments/sit/primary.tfvars -out=$SP/restore2.plan && terraform apply $SP/restore2.plan
+```
+
+Expect **only** the node(s) in ENI-less subnets to go `NotReady` (kubelet can no longer
+reach the API), the others to stay Ready — then all Ready after the restore. That is B27
+reproduced and cured on demand, on a live cluster.
+
+**8. Teardown — reverse order, same vars as each apply.**
+
+```bash
+cd mimic_eks/terraform && terraform plan -destroy -var-file=environments/sit/mimic.tfvars -out=$SP/hostile-destroy.plan && terraform apply $SP/hostile-destroy.plan
+# shared: as in the 10-09 log teardown
+cd mimic_vpc/terraform && terraform plan -destroy -var-file=environments/sit/primary.tfvars -out=$SP/mvpc-destroy.plan && terraform apply $SP/mvpc-destroy.plan
+```
+
+`mimic_vpc`'s destroy takes **no** `nacl_mode` var this time — it was applied on the
+default. If step 7's break was left applied, the destroy still works (it removes what is
+there), but restore first so the destroy plan is the one you expect. Then the 10-09
+zero-check by direct describes, both regions.
+
+**9. Record.** The run log; a row in `docs/test-run-log.md`; and in `build-findings.md`
+move **B27** to Closed citing steps 5–7 (or leave it open with "inconclusive" if step 6 says
+so). **B32** stays open for its runner half until a run with a runner exercises F-7 itself.
+
 ---
 
 ## Phase F — Switch to production (af-south-1)
