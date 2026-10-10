@@ -43,7 +43,139 @@ AWS-managed ECR in-region through the cluster's `ecr.api`/`ecr.dkr` endpoints.
 
 ---
 
+### B27 — the restrictive NACLs model only OUR flows, so a node in one AZ never joined
+**Provenance:** tooling (fixture) · **Found:** 2026-10-09, first `mimic_eks` apply · **Status:** OPEN
+
+`mimic_vpc`'s `nacl_mode = "flows"` (D-32) permits exactly #34's F-1..F-10 — the flows *we*
+listed. It permits none of the **cluster's own**: nodes → API server (443) across node
+subnets, pods → CoreDNS (53 tcp/udp) across AZs, control plane → kubelet/webhooks. EKS put
+its control-plane ENIs in two of the three app subnets; the node in the third reached them
+only across a NACL with no ingress 443, and `NodeCreationFailure` followed. The other two
+nodes worked only because traffic inside one subnet is not NACL-evaluated.
+
+`verify-subnet-rules.sh` passed 28/28 against those NACLs, because it checks the flows we
+listed — the omission is in the flow table, so no checker built from it can see it.
+Requirements #34 now has a table of the cluster's own flows (2026-10-09).
+
+**Open work:** add the cluster flows to `nacl.tf`. That pushes each app/ledger NACL past the
+20-rule default — the quota point #34 already records. Until then, run `mimic_vpc` with
+`nacl_mode = "permissive"` whenever a cluster is built on it.
+
+**Found by:** the first apply of anything that needed nodes in all three AZs. Detail: `docs/deploy-run-2026-10-09-ct5-gates-and-regression.md` §A3.
+
+---
+
+### B30 — `mimic_eks` strict claims add-ons it never installs, and `verify-contract.sh` misjudges access entries
+**Provenance:** tooling (fixture) · **Found:** 2026-10-09 · **Status:** OPEN
+
+1. The strict hand-over says `cluster_provides_lbc = true` (and the other add-ons), but the
+   mimic installs no add-on and no CRD. `verify-cluster.sh` and `verify-admission.sh`
+   correctly reported the hand-over disagreeing with the live cluster — the gap is in the
+   fixture. Strict should install at least the four CRDs (#30).
+2. `verify-contract.sh` judges **every** cluster-scoped access entry, so strict FAILs on the
+   creator (`tfuser`) and the AWS service-linked role. It should judge only
+   `runner_role_arn`'s entry.
+3. It reports `nodes=` from the node group's **desired** size, so a `CREATE_FAILED` group
+   with two of three nodes joined (B27) still read as three.
+
+**Found by:** the first strict run. Detail: `docs/deploy-run-2026-10-09-ct5-gates-and-regression.md` §A4, §A8.
+
+---
+
 ## Closed
+
+> **2026-10-09 run** (`docs/deploy-run-2026-10-09-ct5-gates-and-regression.md`): B25, B28, B29, B31 and P-1 fixed in `6d12b47`; B27 and B30
+> are under **Open**. **B26 was withdrawn** the same day — tracked `*.plan` files are the
+> recorded `c0717ec` decision, and all nine pass its `PRIVATE KEY` check.
+
+### P-1 — under the quota we ask for, every validator pod was refused at admission
+**Provenance:** inherited · **Found:** 2026-10-09, first run against a namespace with a `ResourceQuota` · **Fixed:** same day
+
+The `besu-node` init containers (`wait-peer-dns`, `build-config`) declared **no resources**.
+A `ResourceQuota` that names a resource makes Kubernetes refuse any pod with a container —
+init containers included — that does not declare it. Under the exact quota requirements #27
+asks for, `verify-admission.sh` got `failed quota: must specify limits.memory for:
+build-config,wait-peer-dns`. Our own clusters never had a quota, so it never showed.
+
+Fix: an `initResources` value (requests 50m / 64Mi, memory limit 256Mi, no CPU limit)
+on both init containers. The requirements now also ask for **no `limits.cpu`** in the
+quota: our charts set none, so such a quota would refuse every pod regardless.
+
+**Not done:** the same audit of the other charts' init containers (`besu-blockscout`
+backend and stats have them).
+
+**Found by:** a fixture namespace with a quota — `mimic_eks`'s, then one shaped exactly like
+our own request, to separate the two causes.
+
+---
+
+### B31 — `verify-cluster.sh` failed a cluster that DOES enforce NetworkPolicy
+**Provenance:** tooling · **Found:** 2026-10-09, first live run · **Fixed:** same day
+
+#35 read only the `aws-node` container's env. On current VPC CNI add-ons (here
+`v1.22.4-eksbuild.3`, `enableNetworkPolicy: "true"`) the switch is the
+**`aws-eks-nodeagent`** container's argument `--enable-network-policy=true`; `aws-node`'s
+env carries only `NETWORK_POLICY_ENFORCING_MODE`, present whether policy is on or off.
+Fixed to accept either form; an explicit `=false` still fails. The same blind spot was in
+the requirements' §4 command 2, which now prints the node agent's argument too.
+
+**Found by:** the strict (compliant) profile — the positive control. Against hostile
+(policy off) the FAIL was the right answer, so nothing there looked wrong.
+
+---
+
+### B29 — `verify-admission.sh` never reached Pod Security, and blamed RBAC for it
+**Provenance:** tooling · **Found:** 2026-10-09, first live run · **Fixed:** same day
+
+Three layers, each hiding the next:
+
+1. `classify` was a `case`, so it named only the **first** matching cause. A manifest
+   refused for Pod Security *and* a missing CRD was reported as Pod Security only, and the
+   CRD pattern did not match `kubectl apply`'s wording (`resource mapping not found`).
+2. The bare-Pod probe kept the chart's ServiceAccount, which does not exist before the
+   first apply. The ServiceAccount admission plugin runs **before** Pod Security, so the
+   probe never got a PSA verdict — and a catch-all `*[Ff]orbidden*` reported it as **#32
+   RBAC**, a grant problem that did not exist.
+3. A StatefulSet's `volumeClaimTemplates` only become volumes when the controller makes the
+   pod, so the bare Pod was invalid before PSA ran.
+
+Fixed: every matching cause is named; RBAC only on a real `forbidden: User … cannot`; a
+missing SA is "not a cluster finding"; the probe runs as `default` with no token and an
+`emptyDir` per claim template (allowed at every PSA level, so the verdict cannot change).
+Now it reaches the hard `violates PodSecurity "restricted"` refusal D-40 asks for.
+
+**Found by:** the hostile profile, then reading *why* each refusal happened, not just that it did.
+
+---
+
+### B28 — `cluster-contract` refused a correct OIDC issuer as "a DIFFERENT cluster"
+**Provenance:** port-induced · **Found:** 2026-10-09, first run against a live cluster · **Fixed:** same day
+
+CG-4 trimmed only a trailing `/`. EKS reports the issuer as `https://oidc.eks…`; IRSA trust
+conditions, and so the hand-over, use the bare `oidc.eks…` form, and the cloud team may paste
+either. Now compared without the scheme on both sides. Proven both ways: the correct issuer
+passes, a `…/id/DEADBEEF…` issuer is refused with the same message.
+
+**Found by:** the first plan of the gates against a live cluster, whose issuer came back in
+the form EKS reports rather than the form the hand-over carried.
+
+---
+
+### B25 — `mimic_eks` built in us-east-1, and its region gate passed
+**Provenance:** tooling (fixture) · **Found:** 2026-10-09, first `mimic_eks` apply · **Fixed:** same day
+
+There was no `provider "aws"` block, so the provider used the laptop profile's default region.
+IAM roles, the KMS key, the log group and the launch template were created in **us-east-1**,
+then the first VPC-scoped resource failed with `InvalidVpcID.NotFound`. `region_agreement`
+passed throughout: it compared `var.region` with `var.network_region`, two variables that were
+both right, and never asked the provider. Fixed: a provider block like the sibling mimics',
+and a precondition on `data.aws_region.current.name == var.region`. The 13 strays were
+destroyed with the **unfixed** config first, so Terraform could still find them.
+
+**Found by:** the apply failing. Same shape as B19–B24: a gate that checks what it was told
+rather than what is real.
+
+---
 
 ### B24 — Tentacle's instance index lives in `/etc/octopus`, which the service user could not create
 **Provenance:** tooling · **Found:** 2026-09-17, first live `install-tentacle.sh` run · **Fixed:** same day

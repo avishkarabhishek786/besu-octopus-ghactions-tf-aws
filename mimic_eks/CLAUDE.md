@@ -203,6 +203,12 @@ Said plainly, so a pass is never read as proof of something it did not test.
 - **The real #33 grant.** The cloud team's rule would reference *our* NLB security groups.
   Those do not exist until the platform is deployed, and a fixture that cannot be applied
   before the platform is useless, so the mimic admits the VPC CIDR instead.
+- **The four add-ons and their CRDs (#30) — B30, OPEN.** The strict profile's hand-over
+  *says* the cluster provides the LB controller and the rest, but nothing installs them.
+  Against strict, the platform's CRD checks fail correctly and the fixture is what is wrong.
+  `verify-contract.sh` also FAILs strict on the creator's and AWS's own cluster-scoped
+  access entries (it should judge only `runner_role_arn`'s), and reports the node group's
+  desired size, not the nodes that joined. Read its strict output with that in mind.
 - **The cloud team's node-rotation tooling (#29).** There is nothing to configure: #29 is
   an operating agreement between people. The platform's answer is three alarms (D-42), not
   a gate, and this project cannot test it.

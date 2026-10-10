@@ -215,6 +215,12 @@ platform's checker would have been written against something that could never fa
 - **`flows`** (default) — a NACL on **every** role subnet, deny-by-default, permitting only
   requirement #34's F-1..F-10. Every rule carries its flow label, so a
   `verify-subnet-rules.sh` failure and a rule here can be matched by eye.
+  > ⚠️ **B27 (OPEN, 2026-10-09): this mode cannot host an EKS cluster across three AZs.**
+  > It permits only *our* flows, none of the cluster's own (nodes → API 443 and pods →
+  > CoreDNS 53 across subnets). On the first `mimic_eks` apply the node in the AZ without
+  > a control-plane ENI never joined. **Use `-var nacl_mode=permissive` whenever a cluster
+  > is built on this VPC** — and on its destroy — until `nacl.tf` gains the cluster flows.
+  > `flows` is still the right mode for `verify-subnet-rules.sh` runs with no cluster.
 - **`permissive`** — the old allow-all baseline. Retained for one legitimate use: deciding
   whether the NACLs are the cause of a connectivity problem. Anything else returns the
   fixture to a state where the platform's checker cannot fail.

@@ -12,7 +12,7 @@
 
 | | Builds | Proves |
 |---|---|---|
-| **A** — CT-5 gate test | `mimic_vpc` → `shared` → `mimic_eks` (**hostile**, then **strict** with one knob broken) | `mimic_eks` applies at all (first run ever); its own `verify-contract.sh`; that `modules/cluster-contract` (11 plan-time gates), `verify-cluster.sh`, `verify-admission.sh`, `verify-subnet-rules.sh` **fail against the hostile cluster for the reason they name**, and pass against strict |
+| **A** — CT-5 gate test | `mimic_vpc` → `shared` → `mimic_eks` (**hostile**, then **strict** with one knob broken) | `mimic_eks` applies at all (first run ever); its own `verify-contract.sh`; that `modules/cluster-contract` (12 plan-time gate blocks, CG-0..CG-11), `verify-cluster.sh`, `verify-admission.sh`, `verify-subnet-rules.sh` **fail against the hostile cluster for the reason they name**, and pass against strict |
 | **B** — regression | `mimic_vpc` → `mimic_egress` → `shared` → `chain` (own cluster) → `runner` | Nothing broke since 09-17: chart image parameterisation, D-39 required anti-affinity, `verify-deployed.sh`, runner bootstrap |
 
 **Ground rules:** USD 15 cap; same-day teardown; `plan -out` then `apply <file>`; every

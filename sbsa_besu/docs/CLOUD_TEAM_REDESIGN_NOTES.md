@@ -1397,7 +1397,7 @@ changes *values* in a hand-over file, not the gates.
 #### 12.13.6 `modules/cluster-contract` and the cluster hand-over — built 2026-10-09
 
 `terraform/contract/eks-handover.tf` (27 variables, D-25's shape from §12.5) and
-`terraform/modules/cluster-contract/` (11 gates, creates nothing). Both validate; every
+`terraform/modules/cluster-contract/` (12 gate blocks, CG-0..CG-11; creates nothing). Both validate; every
 gate was driven to failure, not read.
 
 **The hand-over file is NOT symlinked into the roots yet**, deliberately. The CT-5 banner
