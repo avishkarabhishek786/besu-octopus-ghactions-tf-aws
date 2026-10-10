@@ -107,6 +107,39 @@ rules it reports all three runner → control-plane pairs BLOCKED.
 
 ## Closed
 
+### B39 — `besu-infra` created the runner before its S3 bundle existed
+**Provenance:** port-induced (CD-67) · **Found:** 2026-10-10, preparing the first Octopus run · **Fixed:** same day, not yet run
+
+The runner's bootstrap is FATAL without `tools/` and `source/` in the artefacts bucket,
+and the only fix it offers is recreating the instance. The bucket is created by `chain`.
+By hand, the bundle went up between the two applies (RUNBOOK E.1 step 4); `besu-infra`
+ran `shared → chain → runner` back to back, so its first deployment would have built a
+dead runner. Fixed with a new step between `chain` and `runner`,
+`octopus/steps/runner-bundle.sh`. It pushes the pinned toolchain and *this release
+package* as the source (`push-runner-bundle.sh --source-dir`, no git needed), and fills
+the runner's own deploy-config secret. Exercised in the worker-tools image with a stub
+`aws`: all five digests verified, 294 MB tools and 320 KB source staged.
+
+**Found by:** reading the runner's bootstrap against the step order, before a billable run.
+
+---
+
+### B38 — every `besu-infra` step needed an AWS CLI that Octopus's hosted worker does not have
+**Provenance:** port-induced (CD-67) · **Found:** 2026-10-10 · **Fixed:** same day, not yet run
+
+All three steps are `Octopus.AwsRunScript` on the Hosted Ubuntu pool. A Script Console
+probe (`ServerTasks-1515`) found Ubuntu 24.04 with curl, python3, unzip, git, jq, kubectl,
+helm and Docker, but **no `aws` and no `terraform`**. The steps now run in an execution
+container, `octopusdeploy/worker-tools:6.6.5-ubuntu.24.04` (pinned tag, digest recorded),
+from Besu's own Docker feed. Running the image locally confirmed aws-cli 2.34 and the
+other tools. Its own Terraform 1.15.8 is replaced by the manifest's pinned 1.16.1
+(`octopus/steps/lib.sh`).
+
+**Found by:** asking the worker what it has before any deployment depended on it. This
+cost nothing, against a failed billable run.
+
+---
+
 ### B37 — `hardening-validation.sh --dry-run` mis-reported four planned tests
 **Provenance:** inherited (`besu-aws`) · **Found:** 2026-10-10, writing `release.yml` · **Fixed:** same day
 

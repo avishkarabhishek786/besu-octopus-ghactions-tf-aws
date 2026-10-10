@@ -30,6 +30,12 @@ locals {
   }
   pkg = "#{Octopus.Action.Package[platform].ExtractedPath}"
 
+  # Hosted-worker steps run inside this (variables.tf: worker_container).
+  worker_container = {
+    feed_id = octopusdeploy_docker_container_registry.worker_tools.id
+    image   = var.worker_container.image
+  }
+
   bash_inline = {
     "Octopus.Action.RunOnServer"         = "true" # = run on a worker, not a deployment target
     "Octopus.Action.Script.ScriptSource" = "Inline"
@@ -177,9 +183,25 @@ resource "octopusdeploy_process_step" "infra_root" {
   name           = "terraform: ${each.key}"
   type           = "Octopus.AwsRunScript"
   worker_pool_id = local.hosted_pool_id
+  container      = local.worker_container
   packages       = local.package_ref
   execution_properties = merge(local.aws_script, {
     "Octopus.Action.Script.ScriptBody" = "${local.infra_env}bash \"${local.pkg}/octopus/steps/infra-terraform.sh\" ${each.key}\n"
+  })
+}
+
+# Between chain and runner: the runner's bootstrap is FATAL without its S3
+# bundle, and the bucket only exists once chain has applied (runner-bundle.sh).
+resource "octopusdeploy_process_step" "infra_bundle" {
+  space_id       = local.space_id
+  process_id     = octopusdeploy_process.infra.id
+  name           = "runner bundle + config"
+  type           = "Octopus.AwsRunScript"
+  worker_pool_id = local.hosted_pool_id
+  container      = local.worker_container
+  packages       = local.package_ref
+  execution_properties = merge(local.aws_script, {
+    "Octopus.Action.Script.ScriptBody" = "${local.infra_env}bash \"${local.pkg}/octopus/steps/runner-bundle.sh\"\n"
   })
 }
 
@@ -189,6 +211,7 @@ resource "octopusdeploy_process_steps_order" "infra" {
   steps = concat(octopusdeploy_process_step.infra_approve[*].id, [
     octopusdeploy_process_step.infra_root["shared"].id,
     octopusdeploy_process_step.infra_root["chain"].id,
+    octopusdeploy_process_step.infra_bundle.id,
     octopusdeploy_process_step.infra_root["runner"].id,
   ])
 }

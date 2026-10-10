@@ -37,6 +37,11 @@
 #                   manifest, then exit. Run once, review, commit the digests.
 #   --tools-only    skip the source archive
 #   --source-only   skip the toolchain (much faster; source changes far more often)
+#   --source-dir D  ship directory D as the source instead of `git archive HEAD`.
+#                   For the besu-infra Octopus step (octopus/steps/runner-bundle.sh):
+#                   D is the extracted release package, itself built from git by
+#                   release.yml, so "committed files only" still holds. Its
+#                   RELEASE.json supplies the ref recorded on the object.
 # =============================================================================
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,14 +50,15 @@ source "${SCRIPT_DIR}/../lib/common.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 MANIFEST="${SCRIPT_DIR}/runner-tools.manifest"
 
-need aws; need tar; need curl; need sha256sum; need git
+need aws; need tar; need curl; need sha256sum
 
-RECORD=false; DO_TOOLS=true; DO_SOURCE=true; BUCKET=""
+RECORD=false; DO_TOOLS=true; DO_SOURCE=true; BUCKET=""; SOURCE_DIR=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --record)      RECORD=true ;;
     --tools-only)  DO_SOURCE=false ;;
     --source-only) DO_TOOLS=false ;;
+    --source-dir)  SOURCE_DIR="${2:?--source-dir needs a directory}"; shift ;;
     -*) die "unknown flag: $1" ;;
     *)  BUCKET="$1" ;;
   esac
@@ -145,7 +151,18 @@ fi
 # (primary.tfvars et al) is delivered separately and deliberately, through
 # Secrets Manager, by push-deploy-config.sh -- it must never land in an S3
 # object alongside the source.
-if [ "$DO_SOURCE" = true ]; then
+if [ "$DO_SOURCE" = true ] && [ -n "$SOURCE_DIR" ]; then
+  [ -d "$SOURCE_DIR/scripts" ] && [ -d "$SOURCE_DIR/terraform" ] || die "--source-dir $SOURCE_DIR is not a platform tree (no scripts/ or terraform/)"
+  REF="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["commit"][:7]+"/"+d["version"])' "$SOURCE_DIR/RELEASE.json" 2>/dev/null || echo unknown)"
+  BRANCH="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["ref"].split("/")[-1])' "$SOURCE_DIR/RELEASE.json" 2>/dev/null || echo unknown)"
+  log "archiving source from ${SOURCE_DIR} (release ${REF})"
+  tar czf "$WORK/source.tar.gz" -C "$SOURCE_DIR" .
+  log "uploading source.tar.gz ($(du -h "$WORK/source.tar.gz" | cut -f1)) -> s3://${BUCKET}/source/"
+  aws s3 cp "$WORK/source.tar.gz" "s3://${BUCKET}/source/source.tar.gz" \
+    --metadata "git-ref=${REF},git-branch=${BRANCH}" --only-show-errors
+  ok "source uploaded (${BRANCH}@${REF})"
+elif [ "$DO_SOURCE" = true ]; then
+  need git
   REF="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
   BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
   if ! git -C "$REPO_ROOT" diff-index --quiet HEAD -- 2>/dev/null; then

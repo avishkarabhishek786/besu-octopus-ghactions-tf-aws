@@ -3,8 +3,10 @@
 # octopus/steps/infra-terraform.sh <root>   — besu-infra, one Terraform root
 # -----------------------------------------------------------------------------
 # Runs on an Octopus HOSTED worker (public AWS APIs only — the AWS layer, CD-34
-# §0.1), inside the extracted platform package, with the per-environment AWS OIDC
-# credentials Octopus put in the environment. One invocation = one root:
+# §0.1), INSIDE the worker-tools execution container (the hosted Ubuntu worker
+# has no AWS CLI — probed 2026-10-10, ServerTasks-1515), in the extracted
+# platform package, with the per-environment AWS OIDC credentials Octopus put
+# in the environment. One invocation = one root:
 #   shared | chain | runner        (apply order, CLAUDE.md §2)
 #
 #   1. install the PINNED terraform from scripts/runner/runner-tools.manifest,
@@ -35,17 +37,11 @@ ENV_LC="$(tr '[:upper:]' '[:lower:]' <<<"$BESU_ENV")"
 
 # shellcheck source=../../scripts/lib/common.sh
 source "$PKG/scripts/lib/common.sh"
+# shellcheck source=lib.sh
+source "$PKG/octopus/steps/lib.sh"
 
 # --- 1. pinned terraform -----------------------------------------------------
-if ! command -v terraform >/dev/null || [[ "$(terraform version -json | python3 -c 'import json,sys;print(json.load(sys.stdin)["terraform_version"])')" != "$(tool_version terraform)" ]]; then
-  tmp="$(mktemp -d)"
-  curl -fsSL -o "$tmp/tf.zip" "$(tool_url terraform)"
-  echo "$(tool_sha terraform)  $tmp/tf.zip" | sha256sum -c -
-  (cd "$tmp" && python3 -c 'import zipfile;zipfile.ZipFile("tf.zip").extract("terraform")') # no unzip dependency
-  install -m 0755 "$tmp/terraform" /usr/local/bin/terraform 2>/dev/null \
-    || { mkdir -p "$HOME/.local/bin"; install -m 0755 "$tmp/terraform" "$HOME/.local/bin/terraform"; export PATH="$HOME/.local/bin:$PATH"; }
-fi
-terraform version | head -1
+install_pinned_terraform
 
 # --- 2. the environment's config, from the one place it lives ----------------
 DEPLOY_CONFIG_SECRET="$BESU_DEPLOY_CONFIG" bash "$PKG/scripts/runner/fetch-deploy-config.sh"
@@ -59,12 +55,8 @@ case "$ROOT" in
 esac
 
 # --- 3. init on this environment's state -------------------------------------
+init_root "$ROOT"
 cd "$PKG/terraform/$ROOT"
-terraform init -input=false -no-color \
-  -backend-config="bucket=${BESU_STATE_BUCKET}" \
-  -backend-config="key=besu/${ENV_LC}/${ROOT}.tfstate" \
-  -backend-config="region=${BESU_STATE_REGION}" \
-  -backend-config="use_lockfile=true"
 
 # --- 4. plan, record, apply exactly what was recorded -------------------------
 terraform plan -input=false -no-color "${VARS[@]}" -out="${ROOT}.plan" | tee "${ROOT}.plan.txt"

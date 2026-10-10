@@ -107,3 +107,23 @@ variable "ledger_namespace" {
   type        = string
   default     = "besu-ledger"
 }
+
+variable "worker_container" {
+  description = <<-EOT
+    The execution container the besu-infra steps run in, on the hosted worker.
+    REQUIRED, not optional: Octopus Cloud's hosted Ubuntu worker has no AWS CLI
+    and no terraform (probed 2026-10-10, ServerTasks-1515), and every besu-infra
+    step is an AWS CLI script. Octopus's worker-tools image carries both (checked
+    by running it: aws-cli 2.34, curl, python3, unzip, git, jq; runs as root).
+    PIN AN EXACT TAG. 6.6.5-ubuntu.24.04 = sha256:c380ea478deabcc41e6c5876e988d8035534c9ed60a8441af6ae80931b23ad6b
+    on 2026-10-10. feed_uri may point at the bank's own registry instead.
+  EOT
+  type = object({
+    feed_uri = string
+    image    = string
+  })
+  default = {
+    feed_uri = "https://index.docker.io"
+    image    = "octopusdeploy/worker-tools:6.6.5-ubuntu.24.04"
+  }
+}

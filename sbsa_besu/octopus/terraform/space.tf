@@ -108,6 +108,16 @@ data "octopusdeploy_feeds" "builtin" {
   feed_type = "BuiltIn"
 }
 
+# Besu's own feed for the worker-tools image, rather than any Docker feed that
+# happens to exist in the space (one did, created by hand): the platform's
+# toolchain source is then part of the reviewed code, and repointing it at the
+# bank's registry is a variable.
+resource "octopusdeploy_docker_container_registry" "worker_tools" {
+  space_id = local.space_id
+  name     = "Besu worker tools"
+  feed_uri = var.worker_container.feed_uri
+}
+
 locals {
   hosted_pool_id = one([for p in data.octopusdeploy_worker_pools.hosted.worker_pools : p.id if p.name == var.hosted_worker_pool_name])
   builtin_feed   = data.octopusdeploy_feeds.builtin.feeds[0].id
