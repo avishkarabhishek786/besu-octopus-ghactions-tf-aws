@@ -8,6 +8,7 @@ person, an instance or an account (CD-10). Design record: `docs/CICD_DESIGN_NOTE
 |---|---|---|
 | `aws-trust/` | The IAM OIDC provider for the Octopus instance; one deploy role per environment, trusted **only** for `space:<s>:project:<p>:environment:<e>`; one empty deploy-config secret per environment | **A human, once per account — never Octopus.** A deploy tool must not be able to edit its own trust |
 | `terraform/` | The Octopus space's objects: environments, the CD-41 lifecycle, a worker pool per environment for the In-VPC EC2 Runner, an AWS OIDC account per environment, the `Besu platform` variable set, and the three projects with their processes | A human with a Space-manager service-account key (`OCTOPUS_APIKEY`) |
+| `ci-trust/` | What GitHub Actions may do in Octopus: the `besu-ci` service account, its GitHub OIDC identities (exact `sub`, one per allowed ref), two narrow custom roles (publish in the Besu projects, deploy in SIT only) and the `Besu CI` team (CD-68) | **An Octopus administrator, once per instance — never CI, never the Space-manager key.** A pipeline must not be able to edit its own permissions |
 | `steps/` | The scripts the project steps run, **from the release package** — so step logic is versioned with what it deploys | Octopus |
 
 ## The three projects (CD-4, CD-5)
@@ -30,7 +31,12 @@ ENV=sit AWS_REGION=af-south-1 scripts/runner/push-deploy-config.sh <prefix>-sit-
 #    every create fails "Missing permission: EnvironmentCreate []" (seen 2026-10-10).
 #    Check: GET /api/users/<id>/apikeys → AccessLevel.
 cd octopus/terraform && terraform init -backend-config=… key=besu/octopus/space.tfstate … && terraform apply -var-file=environments/sit/space.tfvars
-# 4. Releases come from release.yml; deployments from Octopus
+# 4. CI's identity (an Octopus ADMINISTRATOR's key, not besu-terraform's; after step 3 — it looks up the projects)
+cd octopus/ci-trust && terraform init -backend-config=… key=besu/octopus/ci-trust.tfstate … && terraform apply -var-file=environments/sit/ci-trust.tfvars
+#    then GitHub → Settings → Secrets and variables → Actions → Variables (REPOSITORY level):
+#    OCTOPUS_URL, OCTOPUS_SPACE, OCTOPUS_SERVICE_ACCOUNT_ID (the GUID — see `terraform output service_account`)
+# 5. Releases: Actions → release → Run workflow → project. Creating a release DEPLOYS SIT
+#    (lifecycle, CD-41) and the workflow waits for it (CD-21). 'none' publishes the package only.
 ```
 
 ## Known limits, said plainly
