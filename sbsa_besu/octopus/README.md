@@ -15,7 +15,7 @@ person, an instance or an account (CD-10). Design record: `docs/CICD_DESIGN_NOTE
 
 | Project | Runs on | Does |
 |---|---|---|
-| `besu-infra` | Octopus hosted worker + OIDC account | Terraform `shared` → `chain` (AWS layer) → `runner`; each plan attached as an artefact, the attached plan applied. Approval step in the approval environments |
+| `besu-infra` | Octopus hosted worker, inside the pinned `worker-tools` container (B38) + OIDC account | Terraform `shared` → `chain` (AWS layer) → runner bundle + config (B39) → `runner`; each plan attached as an artefact, the attached plan applied. Approval step in the approval environments |
 | `besu-workloads` | The runner's polling Tentacle (`besu-runner-<env>` pool) | Until the CT-5 rewrite: cluster smoke — nodes, a quota'd namespace, the #38 pull canary, C-2 DNS (CD-67). Never the validator release |
 | `besu-validators` | The runner's Tentacle | **Manual intervention in every environment**, then `rolling-besu-apply.sh` — one validator at a time (H1) |
 

@@ -605,10 +605,11 @@ zero-check by direct describes, both regions.
 move **B27** to Closed citing steps 5–7 (or leave it open with "inconclusive" if step 6 says
 so). **B32** stays open for its runner half until a run with a runner exercises F-7 itself.
 
-### E.3 — Octopus as code, and a release from GitHub (CD-67, CD-68) — steps 1–3 ✅ APPLIED 2026-10-10
+### E.3 — Octopus as code, and a release from GitHub (CD-67, CD-68) — ✅ ALL STEPS RUN 2026-10-10
 
 All of it lives in `octopus/` (its README has the exact commands); first run:
-`docs/deploy-run-2026-10-10-octopus-space.md`. **Advise-only**, and every apply below is
+`docs/deploy-run-2026-10-10-octopus-space.md` (steps 1–3) and
+`docs/deploy-run-2026-10-10-octopus-phase4.md` (steps 7–10). **Advise-only**, and every apply below is
 one a person runs.
 
 | Step | Who / where | What | Why |
@@ -620,9 +621,9 @@ one a person runs.
 | 5 | GitHub UI | Repository **variables**: `OCTOPUS_URL`, `OCTOPUS_SPACE`, `OCTOPUS_SERVICE_ACCOUNT_ID` (the GUID: `GET /api/serviceaccounts/<user id>/oidcidentities/v1?skip=0&take=1` → `ExternalId`) | no secret: nothing to rotate |
 | 6 | GitHub Actions | `release` with project **`none`** | proves the checks, the package and the OIDC sign-in without deploying anything |
 | 7 | GitHub Actions | `release` with **`besu-infra`** — **billable**: SIT then applies `shared` → `chain` → "runner bundle + config" → `runner`. Only after `push-deploy-config.sh` has filled `<prefix>-sit-octopus-deploy-config`, and with the runner's /32 **reserved** in its subnet (mimic_vpc `pinned_ip_reservations`; in the bank, the R-10 ask). If `terraform: runner` stops at plan on *"pinned IP … is held by eni-…"* (B43), the message carries the two commands that free it; run them, then re-deploy the same release | the first real deployment, and the first proof of OIDC on a hosted worker. ✅ ServerTasks-1518, 2026-10-10 |
-| 8 | runner (SSM) | `install-tentacle.sh` with `OCTOPUS_WORKER_POOL=besu-runner-sit` (E.1 step 8) | `besu-workloads` and `besu-validators` run on that pool |
-| 9 | GitHub Actions, then Octopus | `release` with `besu-workloads`, then with `besu-validators` (approve the gate in Octopus while the workflow waits) | the smoke path (CD-67), then the manual gate |
-| 10 | teardown | as in E.2, plus the B34 sweep. `aws-trust`, the space and `ci-trust` stay | they're configuration, not compute |
+| 8 | runner (SSM) | `install-tentacle.sh` with `OCTOPUS_WORKER_POOL=besu-runner-sit` (E.1 step 8) | `besu-workloads` and `besu-validators` run on that pool. If a worker with the runner's hostname already exists (an earlier registration), `--force` **updates** it and moves it to this pool; its status stays stale until a health check (Infrastructure → Workers → the worker → Check health). ✅ 2026-10-10 |
+| 9 | GitHub Actions, then Octopus | `release` with `besu-workloads`, then with `besu-validators` (approve the gate in Octopus while the workflow waits) | the smoke path (CD-67), then the manual gate. ✅ ServerTasks-1521, -1522 |
+| 10 | teardown | from the laptop, with the same vars as Octopus used: `runner` → `chain` (incl. `Besu.ChainExtraArgs`) → B34 sweep with `C=<chain cluster name>` → `shared` → `mimic_egress` → any hand-made subnet CIDR reservation → `mimic_vpc`. `aws-trust`, the space and `ci-trust` stay | they're configuration, not compute. ✅ zero-check clean 2026-10-10 |
 
 **What must NOT be done:** put an Octopus API key in GitHub; widen `ci-trust`'s
 `deploy_environments` past SIT; add a `push` trigger to `release.yml` without deciding that

@@ -264,6 +264,16 @@ associates with**, so ownership matters. Provide a variable
 Both are free. Exercise **both paths at least once**, because the real answer to #10
 is not yet known and Phase 2/3 must work either way.
 
+### 3.6a Explicit reservations for pinned addresses (#34 / R-10, B43) — IMPLEMENTED 2026-10-10
+
+`pinned_ip_reservations = { az_id => ip }` (`terraform/reservations.tf`) puts an **explicit
+subnet CIDR reservation** on each address in its ledger subnet. The platform's In-VPC EC2
+Runner is pinned to the egress proxy's allowlisted /32, and the EKS nodes share the ledger
+subnets. On 2026-10-10 the VPC CNI's warm pool took that address and EC2 refused the runner.
+With a reservation, AWS assigns the address only on explicit request. Gated: the AZ must be a
+ledger AZ and the address inside its subnet. SIT sets the runner's `10.60.0.250`. Free.
+In production this is the cloud team's job, on the same R-10 ticket as the allowlist entry.
+
 ### 3.7 What this project must NOT create
 
 Internet Gateway · NAT Gateway · Elastic IP · public subnet · any `0.0.0.0/0` route ·
