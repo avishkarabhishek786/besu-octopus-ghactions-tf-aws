@@ -37,3 +37,16 @@ init_root() {
     -backend-config="region=${BESU_STATE_REGION}" \
     -backend-config="use_lockfile=true"
 }
+
+# The chain root's -var arguments, in ONE place (fills the CHAIN_VARS array).
+# besu-infra (AWS layer, hosted worker) and besu-workloads (in-cluster layer, on
+# the runner) apply the SAME root against the SAME state, so they must pass the
+# same variables: a value only one of them sets is a value the other plans to
+# revert -- with the SIT ChainExtraArgs, an in-cluster apply without them would
+# resize the node group from 4 back to 6. Run from $PKG/terraform/chain.
+chain_tf_vars() {
+  CHAIN_VARS=(-var-file="../environments/${ENV_LC}/common.tfvars" -var-file="../environments/${ENV_LC}/chain.tfvars")
+  # shellcheck disable=SC2206 # deliberate word-splitting of an operator-set list
+  [[ -n "${BESU_CHAIN_EXTRA_ARGS:-}" ]] && CHAIN_VARS+=($BESU_CHAIN_EXTRA_ARGS)
+  return 0
+}

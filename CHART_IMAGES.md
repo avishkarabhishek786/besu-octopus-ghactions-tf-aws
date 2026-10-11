@@ -1,4 +1,10 @@
-# The 15 images carried by upstream Helm charts
+# The 16 images carried by upstream Helm charts
+
+> **2026-10-11 — 16, not 15.** `prometheus-operator/prometheus-config-reloader` was missed
+> (B44): the operator gets it as a command-line flag and injects it at runtime, so it is
+> never an `image:` line. Enumerate by grepping the render for **any** upstream registry
+> reference, not for `image:`. These are now declared in `var.chart_images`
+> (`terraform/chain/variables.tf`) and overridden per chart — the gap below is closed in code.
 
 **— in addition to the 8 in `var.container_images`.** 23 images total. The two lists
 behave completely differently, and conflating them is how a deploy-test dies.
@@ -57,6 +63,7 @@ hang on `ImagePullBackOff`. That gap is PORTING item 4.
 | 13 | `kube-state-metrics/kube-state-metrics:v2.19.1` | registry.k8s.io | kube-prometheus-stack 86.2.3 |
 | 14 | `grafana/grafana:13.0.2` | docker.io | kube-prometheus-stack 86.2.3 |
 | 15 | `jkroepke/kube-webhook-certgen:1.8.3` | ghcr.io | kube-prometheus-stack 86.2.3 |
+| 16 | `prometheus-operator/prometheus-config-reloader:v0.91.0` | quay.io | kube-prometheus-stack 86.2.3 (operator flag, B44) |
 
 ## Upstreams the mirror pipeline must copy from
 
@@ -138,7 +145,9 @@ helm template x secrets-store-csi-driver-provider-aws --version 3.1.1  --repo ht
 helm template x aws-for-fluent-bit                    --version 0.2.0  --repo https://aws.github.io/eks-charts
 helm template x aws-load-balancer-controller          --version 3.4.0  --repo https://aws.github.io/eks-charts --set clusterName=x
 helm template x kube-prometheus-stack                 --version 86.2.3 --repo https://prometheus-community.github.io/helm-charts
-# ... | grep -oE 'image: *"?[^"]+' | sort -u
+# ... | grep -oE '(quay\.io|registry\.k8s\.io|docker\.io|ghcr\.io|public\.ecr\.aws)/[^" ]+' | sort -u
+#   NOT `grep image:` — that misses images passed as flags (B44). quay.io/thanos/thanos also
+#   appears; it is the operator's Thanos Ruler default and is never pulled here.
 ```
 
 All five chart versions resolved and templated successfully, which confirms each

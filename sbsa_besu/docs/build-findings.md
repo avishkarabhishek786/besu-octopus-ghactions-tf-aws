@@ -21,8 +21,84 @@ reports success.
 
 ## Open
 
+> **2026-10-11 — B13 and B44–B48 are fixed in code and not yet proven live.** The first
+> `besu-workloads` in-cluster run proves them; they move to Closed with that run's evidence.
+
+### B44 — `CHART_IMAGES.md` missed `prometheus-config-reloader`, so the mirror never copied it
+**Provenance:** tooling · **Found:** 2026-10-11, rendering the ECR-mirrored charts before the first in-cluster apply · **Fixed in code:** same day
+
+The 08-30 enumeration grepped `helm template` output for `image:` lines. The Prometheus
+operator receives the config-reloader image as a **command-line flag**
+(`--prometheus-config-reloader=quay.io/…:v0.91.0`) and injects it into the Prometheus and
+Alertmanager pods at runtime, so it never appears as an `image:` line, and so it was never
+mirrored. Both pods would have sat in `ImagePullBackOff` on a registry that "had everything".
+
+**Found by** grepping the rendered charts for *any* upstream registry reference
+(`quay.io/…`, `registry.k8s.io/…`, …) rather than `image:` lines, then checking every
+resulting reference against ECR with `describe-images`. `thanos/thanos` turns up the same
+way but is only an operator default for Thanos Ruler, which is not deployed; nothing pulls it.
+
+**Fixed:** a `config-reloader` row in `mirror.manifest` (digest resolved from quay.io with the
+full Accept header — the same request reproduces the operator's recorded `9e53e131…`), a
+`config-reloader` key in `var.chart_images`, and the override in `modules/observability`.
+`CHART_IMAGES.md` now lists 16 and says how to enumerate.
+
+### B45 — node-exporter would have pulled `v1.11.1-distroless-distroless`
+**Provenance:** port-induced · **Found:** 2026-10-11, same render · **Fixed in code:** same day
+
+kube-prometheus-stack sets `prometheus-node-exporter.image.distroless=true`, and the subchart
+**appends** `-distroless` to whatever tag it is given. The mirror holds `v1.11.1-distroless`,
+so overriding the tag with the mirror's tag doubles the suffix. Fixed by setting
+`distroless=false` whenever node-exporter is overridden — the tag in `chart_images` is then
+exactly the tag pulled. A real boolean, so it goes in a `values` entry: the image `set`s are
+`type = "string"`, and the chart's `ternary` would read the string `"false"` as true.
+
+### B46 — D-20 (Terraform providers from a filesystem mirror) was decided and never built
+**Provenance:** port-induced · **Found:** 2026-10-11, planning the first in-cluster apply from the runner · **Fixed in code:** same day
+
+The runner bundle shipped `terraform` but no providers, and nothing configured a mirror. Every
+runner-side `terraform init` so far was never run (the AWS layer is applied by hosted workers),
+so nothing exposed it. The first in-cluster apply would have reached for `registry.terraform.io`
+and **hung** (prime directive 2).
+
+**Fixed:** `push-runner-bundle.sh` runs `terraform providers mirror -platform=linux_amd64` for the
+chain root (against the committed lock file, in a scratch copy so no `.terraform/` reaches the
+source bundle) into `tools/providers`, and writes `tools/terraformrc` with **only** a
+`filesystem_mirror` — no `direct` fallback, so a missing provider fails init instead of hanging.
+The runner's profile exports `TF_CLI_CONFIG_FILE`; `workloads-incluster.sh` sets it and refuses
+to run without it. Tested on the laptop: 5 providers, 194 MB, offline init from the mirror alone.
+
+### B47 — Octopus looked for the validators in `besu-ledger`; the chain deploys them to `besu`
+**Provenance:** port-induced · **Found:** 2026-10-11, wiring the in-cluster step · **Fixed in code:** same day
+
+`Besu.LedgerNamespace` defaulted to `besu-ledger`; the chain root's `besu_namespace` defaults to
+`besu`, and the scripts all assume it. Once validators existed, `besu-validators` would have
+found none in `besu-ledger`, printed "nothing to roll" and **gone green** with the change
+unapplied. The 10-10 run's "nothing to roll" was true only because no chain existed. Fixed: the
+Octopus default is `besu`; the in-cluster step reads the namespace and cluster from the chain
+root's outputs (new `besu_namespace` output), not from Octopus variables.
+
+### B48 — the node-secrets IRSA trust named the literal namespace `"besu"`
+**Provenance:** inherited · **Found:** 2026-10-11, the B47 search · **Fixed in code:** same day
+
+`module "iam"` got `namespace = "besu"` while every release used `var.besu_namespace`. Set the
+variable to anything else and the pods could not assume the role that reads their own node keys.
+Now `var.besu_namespace` — a no-op at the default.
+
 ### B13 — the five upstream Helm charts carry their own images
-**Provenance:** port-induced · **Status:** OPEN, tracked in `PORTING.md` item 4
+**Provenance:** port-induced · **Status:** FIXED IN CODE 2026-10-11 (`PORTING.md` item 4), live proof pending
+
+**The fix:** the charts come from the mirror as OCI (`oci://<registry_host>/<registry_chart_path>`,
+helm provider `registry` block fed by `aws_ecr_authorization_token`), and every chart-carried
+image is declared once in `var.chart_images` and rewritten exactly like `container_images`.
+Each module maps Helm value paths to those keys and emits only the keys present, so an absent
+key keeps the chart default. Verified before any deploy: each mirrored chart rendered with the
+exact `set` entries Terraform produces (evaluated in a scratch root, not hand-copied) has **no**
+upstream reference left except the unused `thanos` default, and every image it names exists in
+ECR — which is how B44 and B45 were found. `mirror.sh --check-drift` now compares the chart
+images too (tag-pinned: host/repository/tag), negative-tested.
+
+*The original finding:*
 
 `var.container_images` covers the eight images this repository names directly. It
 does **not** cover the images the five pinned upstream charts pull themselves:

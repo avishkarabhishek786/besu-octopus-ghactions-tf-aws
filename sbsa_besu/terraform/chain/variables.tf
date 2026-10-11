@@ -974,6 +974,66 @@ variable "container_images" {
   }
 }
 
+variable "registry_chart_path" {
+  description = <<-EOT
+    Path inside registry_host under which the upstream Helm charts are mirrored
+    as OCI artefacts, e.g. "mirror/charts" => oci://<registry_host>/mirror/charts/
+    <chart>. mirror.sh pushes to <ECR_PREFIX>/charts.
+
+    Required whenever registry_host is set: the five upstream charts (LBC, Secrets
+    Store CSI + AWS provider, kube-prometheus-stack, Fluent Bit) otherwise come
+    from their https://*.github.io repositories, which in the VPC is a hang, not
+    an error (PORTING item 4).
+  EOT
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.registry_host == "" || var.registry_chart_path != ""
+    error_message = "registry_chart_path must be set when registry_host is set (e.g. \"mirror/charts\"), or the five upstream charts are fetched from the internet and the in-cluster apply hangs."
+  }
+}
+
+variable "chart_images" {
+  description = <<-EOT
+    Every image the five upstream charts pull on their own -- the list in
+    ../../CHART_IMAGES.md plus prometheus-config-reloader, which the operator
+    injects as a sidecar from a command-line flag and so never appears as an
+    `image:` line in `helm template` (found 2026-10-11). Same shape and same
+    registry rewrite as container_images: `host` is the upstream, used as-is when
+    registry_host is empty, and to look up the mirror's path prefix when not.
+
+    Pinned by TAG, not digest: the charts do not all accept a digest, and the
+    mirror's repositories are tag-immutable (CD-28), so a tag there cannot move.
+    The digests are recorded in scripts/supply-chain/mirror.manifest.
+    Keys match mirror.manifest's name column.
+  EOT
+  type = map(object({
+    host       = string
+    repository = string
+    tag        = string
+  }))
+
+  default = {
+    csi-driver           = { host = "registry.k8s.io", repository = "csi-secrets-store/driver", tag = "v1.6.0" }
+    csi-driver-crds      = { host = "registry.k8s.io", repository = "csi-secrets-store/driver-crds", tag = "v1.6.0" }
+    csi-node-registrar   = { host = "registry.k8s.io", repository = "sig-storage/csi-node-driver-registrar", tag = "v2.16.0" }
+    csi-livenessprobe    = { host = "registry.k8s.io", repository = "sig-storage/livenessprobe", tag = "v2.18.0" }
+    csi-provider-aws     = { host = "public.ecr.aws", repository = "aws-secrets-manager/secrets-store-csi-driver-provider-aws", tag = "3.1.1" }
+    fluent-bit           = { host = "public.ecr.aws", repository = "aws-observability/aws-for-fluent-bit", tag = "3.2.1" }
+    lb-controller        = { host = "public.ecr.aws", repository = "eks/aws-load-balancer-controller", tag = "v3.4.0" }
+    prometheus           = { host = "quay.io", repository = "prometheus/prometheus", tag = "v3.12.0-distroless" }
+    alertmanager         = { host = "quay.io", repository = "prometheus/alertmanager", tag = "v0.33.0" }
+    node-exporter        = { host = "quay.io", repository = "prometheus/node-exporter", tag = "v1.11.1-distroless" }
+    prometheus-operator  = { host = "quay.io", repository = "prometheus-operator/prometheus-operator", tag = "v0.91.0" }
+    config-reloader      = { host = "quay.io", repository = "prometheus-operator/prometheus-config-reloader", tag = "v0.91.0" }
+    k8s-sidecar          = { host = "quay.io", repository = "kiwigrid/k8s-sidecar", tag = "2.7.3" }
+    kube-state-metrics   = { host = "registry.k8s.io", repository = "kube-state-metrics/kube-state-metrics", tag = "v2.19.1" }
+    grafana              = { host = "docker.io", repository = "grafana/grafana", tag = "13.0.2" }
+    kube-webhook-certgen = { host = "ghcr.io", repository = "jkroepke/kube-webhook-certgen", tag = "1.8.3" }
+  }
+}
+
 variable "require_image_digests" {
   description = "Fail the plan unless every image is digest-pinned. Off during bring-up (digests are unknown until the images are mirrored); turn ON for production -- H38."
   type        = bool

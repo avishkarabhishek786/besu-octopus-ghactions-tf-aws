@@ -323,15 +323,37 @@ resource "aws_secretsmanager_secret" "apprpc_jwt_signing_key" {
 # stage-1 driver release. Gated by deploy_in_cluster_resources (needs the
 # private EKS endpoint). depends_on the driver is enforced at the root module
 # level (module.secrets depends_on module.storage_csi).
+locals {
+  # PORTING item 4: Helm value path -> chart_images key. Rendered as one string
+  # `set` per attribute, and only for keys present, so an absent key keeps the
+  # chart's own default rather than nulling it.
+  ascp_image_sets_paths = {
+    "image" = "csi-provider-aws"
+  }
+  ascp_image_sets = merge([for path, key in local.ascp_image_sets_paths :
+    { for attr, val in { repository = "${var.chart_images[key].registry}/${var.chart_images[key].repository}", tag = var.chart_images[key].tag } : "${path}.${attr}" => val }
+    if contains(keys(var.chart_images), key)
+  ]...)
+}
+
 resource "helm_release" "secrets_store_csi_provider_aws" {
   count = var.deploy_in_cluster_resources ? 1 : 0
 
   name             = "secrets-provider-aws"
-  repository       = "https://aws.github.io/secrets-store-csi-driver-provider-aws"
+  repository       = var.chart_repository != "" ? var.chart_repository : "https://aws.github.io/secrets-store-csi-driver-provider-aws"
   chart            = "secrets-store-csi-driver-provider-aws"
   version          = var.aws_provider_chart_version
   namespace        = "kube-system"
   create_namespace = false
+
+  dynamic "set" {
+    for_each = local.ascp_image_sets
+    content {
+      name  = set.key
+      value = set.value
+      type  = "string"
+    }
+  }
 
   # Do NOT let this chart install the generic driver — stage 1 owns it.
   set {

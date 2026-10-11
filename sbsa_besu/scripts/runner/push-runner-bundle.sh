@@ -132,6 +132,34 @@ if [ "$DO_TOOLS" = true ]; then
     exit 0
   fi
 
+  # D-20 — Terraform providers, as a FILESYSTEM mirror inside the bundle. The
+  # runner applies the chain root's in-cluster layer, and `terraform init` there
+  # would otherwise reach for registry.terraform.io: no route, so a hang. Mirrored
+  # with the bundled terraform, against the committed lock file, so the runner
+  # gets exactly the provider builds the lock pins. The terraformrc carries ONLY
+  # the mirror -- no `direct` fallback -- so a provider missing from it fails
+  # init at once instead of hanging. Only the chain root: shared and runner are
+  # applied by hosted workers, which have the internet.
+  # Built in a scratch copy: `providers mirror` needs the local modules installed,
+  # and an init in the source tree would leave a .terraform/ behind.
+  log "  terraform providers (chain root) -> filesystem mirror"
+  cp -r "$REPO_ROOT/terraform" "$WORK/tfsrc"
+  rm -rf "$WORK/tfsrc/chain/.terraform"
+  "$WORK/tools/bin/terraform" -chdir="$WORK/tfsrc/chain" init -backend=false -input=false >/dev/null \
+    || die "terraform init (to resolve modules for the provider mirror) failed"
+  "$WORK/tools/bin/terraform" -chdir="$WORK/tfsrc/chain" providers mirror -platform=linux_amd64 "$WORK/tools/providers" >/dev/null \
+    || die "terraform providers mirror failed"
+  rm -rf "$WORK/tfsrc"
+  cat > "$WORK/tools/terraformrc" <<'RC'
+provider_installation {
+  filesystem_mirror {
+    path    = "/usr/local/besu-tools/providers"
+    include = ["*/*/*"]
+  }
+}
+RC
+  ok "    $(find "$WORK/tools/providers" -name '*.zip' | wc -l) provider package(s) mirrored"
+
   {
     echo "# runner toolchain bundle -- built $(_ts) from runner-tools.manifest"
     printf "%b" "$RECORDED"

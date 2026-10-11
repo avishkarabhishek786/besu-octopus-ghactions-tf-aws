@@ -260,6 +260,8 @@ resource "aws_instance" "runner" {
     cat > /etc/profile.d/besu-tools.sh <<'PROFILE'
     export JAVA_HOME=/usr/local/besu-tools/jvm
     export PATH="/usr/local/besu-tools/bin:$JAVA_HOME/bin:$PATH"
+    # D-20: providers from the bundle's filesystem mirror, never the registry.
+    [ -f /usr/local/besu-tools/terraformrc ] && export TF_CLI_CONFIG_FILE=/usr/local/besu-tools/terraformrc
     PROFILE
     chmod 0644 /etc/profile.d/besu-tools.sh
     export JAVA_HOME="$TOOLS_DIR/jvm"

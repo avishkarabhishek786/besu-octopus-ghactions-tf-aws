@@ -93,7 +93,7 @@ record_digest() {
 }
 
 # =============================================================================
-# --check-drift — the 8 platform images live in TWO places, so prove they agree
+# --check-drift — every image Terraform names lives in TWO places, so prove they agree
 # =============================================================================
 # Terraform owns var.container_images (it is what actually gets deployed) and
 # this manifest owns what gets mirrored. If they disagree, the mirror copies a
@@ -109,8 +109,9 @@ if [[ "$CHECK_DRIFT" == true ]]; then
   while IFS=$'\t' read -r _ name source path version digest; do
     line=$(grep -E "^[[:space:]]*${name}[[:space:]]*=[[:space:]]*\{" "$TFVARS" || true)
     if [[ -z "$line" ]]; then
-      # Only the 8 platform keys exist in Terraform; the 15 chart-carried ones
-      # deliberately do not, so their absence is correct rather than a failure.
+      # Every image row has a Terraform key since 2026-10-11 (var.chart_images,
+      # PORTING item 4); a row without one is mirrored but never deployed.
+      warn "drift check: $name is mirrored but named nowhere in Terraform"
       continue
     fi
     tf_host=$(sed -n 's/.*host[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$line")
@@ -125,6 +126,11 @@ if [[ "$CHECK_DRIFT" == true ]]; then
     # enough: a re-recorded manifest digest with a stale Terraform pin deploys
     # bytes the mirror no longer vouches for, and the reverse pins bytes that
     # were never mirrored — ImagePullBackOff on a registry that looks complete.
+    # var.chart_images pins by TAG: the charts do not all take a digest, and the
+    # registry is tag-immutable, so the manifest's digest is what that tag holds.
+    # Such a line has no digest attribute at all -- compare host/repo/tag only.
+    elif ! grep -q 'digest[[:space:]]*=' <<<"$line"; then
+      ok "drift check: $name = $source/$path:$version (chart image, tag-pinned)"
     elif [[ "$tf_dig" != "$digest" ]]; then
       err "DRIFT: $name — manifest pins ${digest:-no digest}, Terraform pins ${tf_dig:-no digest}"
       FAIL=$((FAIL+1))
@@ -132,8 +138,8 @@ if [[ "$CHECK_DRIFT" == true ]]; then
       ok "drift check: $name = $source/$path:$version${digest:+@${digest:0:19}…}"
     fi
   done < <(rows image)
-  [[ "$FAIL" -eq 0 ]] || die "$FAIL platform image(s) disagree between the manifest and Terraform"
-  ok "manifest and terraform/chain/variables.tf agree on every platform image"
+  [[ "$FAIL" -eq 0 ]] || die "$FAIL image(s) disagree between the manifest and Terraform"
+  ok "manifest and terraform/chain/variables.tf agree on every image"
   exit 0
 fi
 

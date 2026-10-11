@@ -167,15 +167,39 @@ resource "kubernetes_storage_class" "gp3" {
 #
 # count: created only when deploy_in_cluster_resources = true.
 # -----------------------------------------------------------------------------
+locals {
+  # PORTING item 4: Helm value path -> chart_images key. Rendered as one string
+  # `set` per attribute, and only for keys present, so an absent key keeps the
+  # chart's own default rather than nulling it.
+  csi_image_sets_paths = {
+    "linux.image"              = "csi-driver"
+    "linux.crds.image"         = "csi-driver-crds"
+    "linux.registrarImage"     = "csi-node-registrar"
+    "linux.livenessProbeImage" = "csi-livenessprobe"
+  }
+  csi_image_sets = merge([for path, key in local.csi_image_sets_paths :
+    { for attr, val in { repository = "${var.chart_images[key].registry}/${var.chart_images[key].repository}", tag = var.chart_images[key].tag } : "${path}.${attr}" => val }
+    if contains(keys(var.chart_images), key)
+  ]...)
+}
+
 resource "helm_release" "secrets_store_csi_driver" {
   count = var.deploy_in_cluster_resources ? 1 : 0
 
   name             = "csi-secrets-store"
-  repository       = "https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts"
+  repository       = var.chart_repository != "" ? var.chart_repository : "https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts"
   chart            = "secrets-store-csi-driver"
   version          = "1.6.0" # pinned (verified current stable; requires k8s >= 1.30, we run 1.35)
   namespace        = "kube-system"
   create_namespace = false
+  dynamic "set" {
+    for_each = local.csi_image_sets
+    content {
+      name  = set.key
+      value = set.value
+      type  = "string"
+    }
+  }
 
   # Enable secret rotation so rotated keys propagate to pods.
   set {

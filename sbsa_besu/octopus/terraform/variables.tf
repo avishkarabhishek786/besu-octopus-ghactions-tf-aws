@@ -103,9 +103,9 @@ variable "tools_image" {
 }
 
 variable "ledger_namespace" {
-  description = "Namespace the validators live in."
+  description = "Namespace the validators live in. MUST equal the chain root's besu_namespace (default \"besu\") -- this said \"besu-ledger\" until 2026-10-11, which would have let besu-validators report \"nothing to roll\" against a running chain. besu-workloads reads the chain's besu_namespace output instead."
   type        = string
-  default     = "besu-ledger"
+  default     = "besu"
 }
 
 variable "worker_container" {

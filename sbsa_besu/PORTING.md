@@ -139,7 +139,19 @@ an upstream condition and not a wire the port dropped. `swift_permitted_methods`
 is worth a look on its own merits, since method-scoped authorization is described
 as a live control: whatever enforces it, it is not this variable.
 
-### 4. Air-gapped supply chain (§5) — PARTIAL
+### 4. Air-gapped supply chain (§5) — DONE IN CODE 2026-10-11, live proof pending
+
+> **2026-10-11.** The rest of item 4 is built: the five upstream charts install from
+> `oci://<registry_host>/<registry_chart_path>` (helm provider `registry` login from
+> `aws_ecr_authorization_token`); every chart-carried image is declared once in
+> `var.chart_images` (16 — `config-reloader` was missing, B44) and rewritten like
+> `container_images`; `mirror.sh --check-drift` covers them. D-20 (the provider mirror) was
+> also unbuilt and is now in the runner bundle (B46). The in-cluster apply runs as the
+> `besu-workloads` step `workloads-incluster.sh` on the runner. Pinned by TAG for chart
+> images (not all charts take a digest; the registry is tag-immutable). Under CT-5 most of
+> this is mock-only: in the bank the five add-ons are the cloud team's (D-24). Defects:
+> `docs/build-findings.md` B13, B44–B48.
+
 
 **Done 2026-08-30 — image parameterisation:**
 

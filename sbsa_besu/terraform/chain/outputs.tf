@@ -241,3 +241,8 @@ output "blockscout_portforward_command" {
   description = "Open the private Blockscout UI from the In-VPC EC2 Runner (no public endpoint). Empty unless the explorer is deployed."
   value       = module.blockscout.portforward_command
 }
+
+output "besu_namespace" {
+  description = "Namespace the Besu pools, genesis and Blockscout are deployed in. besu-workloads reads it from here rather than restating it (it used to disagree: Octopus said besu-ledger, the chain deployed to besu)."
+  value       = var.besu_namespace
+}

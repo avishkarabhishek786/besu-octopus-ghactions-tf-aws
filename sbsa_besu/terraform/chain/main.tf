@@ -49,6 +49,19 @@ locals {
   besu_image  = local.image_ref["besu"]
   tools_image = local.image_ref["tools"]
 
+  # The upstream charts' own images, rewritten the same way. Kept as registry +
+  # repository rather than one string because kube-prometheus-stack takes them
+  # as separate keys; the other charts take "<registry>/<repository>".
+  chart_images = { for k, v in var.chart_images : k => {
+    registry = var.registry_host != "" ? var.registry_host : v.host
+    repository = (var.registry_host != "" && try(var.registry_repo_prefixes[v.host], "") != ""
+    ? "${var.registry_repo_prefixes[v.host]}/${v.repository}" : v.repository)
+    tag = v.tag
+  } }
+
+  # "" = each module's upstream https repository (only where there is egress).
+  chart_repository = var.registry_host != "" ? "oci://${var.registry_host}/${var.registry_chart_path}" : ""
+
   # F24: the app-rpc POOL (besu-app-rpc-* pods + their TLS secrets) is sized by
   # app_rpc_count, but the app-rpc AWS edge (NLB/PrivateLink) is gated on
   # enable_app_rpc. Those two were independent, so a SWIFT-only chain
@@ -144,7 +157,7 @@ module "iam" {
   name_prefix        = local.name_prefix
   oidc_provider_arn  = module.eks.oidc_provider_arn
   oidc_provider_url  = module.eks.oidc_provider_url
-  namespace          = "besu"
+  namespace          = var.besu_namespace # was the literal "besu": the IRSA trust must name the namespace the pods are in
   secrets_arn_prefix = local.secrets_arn_prefix
   # C12: when set, pod/genesis roles get a scoped kms:Decrypt (+GenerateDataKey)
   # on the node-key CMK so the CSI driver / genesis Job can use CMK-encrypted secrets.
@@ -174,6 +187,9 @@ module "storage_csi" {
   ebs_csi_addon_version       = var.ebs_csi_addon_version          # H10: pin the EBS CSI addon (empty = EKS default)
   data_cmk_arn                = var.data_cmk_arn                   # H20: customer CMK for chain-data PVCs (empty = AWS-managed)
   permissions_boundary        = local.iam_permissions_boundary_arn # H5: cap on the EBS CSI IRSA role
+  # PORTING item 4: upstream charts and their images from the mirror ("" / registry_host unset = upstream).
+  chart_repository = local.chart_repository
+  chart_images     = local.chart_images
 }
 
 # -----------------------------------------------------------------------------
@@ -224,6 +240,10 @@ module "secrets" {
   # C12: encrypt the node-key + CA-private-key secrets with this CMK ("" = the
   # AWS-managed aws/secretsmanager key).
   node_key_cmk_arn = local.node_key_cmk_arn
+
+  # PORTING item 4: upstream charts and their images from the mirror ("" / registry_host unset = upstream).
+  chart_repository = local.chart_repository
+  chart_images     = local.chart_images
 
   depends_on = [module.storage_csi]
 }
@@ -354,6 +374,10 @@ module "rpc_access" {
   app_rpc_ws_port        = var.app_rpc_ws_port
   app_rpc_ws_enabled     = var.app_rpc_ws_enabled
   app_rpc_allowed_cidrs  = var.app_rpc_allowed_cidrs
+
+  # PORTING item 4: upstream charts and their images from the mirror ("" / registry_host unset = upstream).
+  chart_repository = local.chart_repository
+  chart_images     = local.chart_images
 }
 
 # -----------------------------------------------------------------------------
@@ -532,6 +556,10 @@ module "observability" {
   # H5: cap on the fluent-bit + alertmanager IRSA roles.
   permissions_boundary = local.iam_permissions_boundary_arn
 
+  # PORTING item 4: upstream charts and their images from the mirror ("" / registry_host unset = upstream).
+  chart_repository = local.chart_repository
+  chart_images     = local.chart_images
+
   depends_on = [module.rpc_access]
 }
 
@@ -597,7 +625,28 @@ provider "kubernetes" {
   }
 }
 
+# ECR login for the OCI chart repository (PORTING item 4). Read only when the
+# charts come from the registry AND this apply installs them -- an AWS-layer
+# apply has no use for a token, and a 12-hour credential should not be fetched
+# for nothing. registry_id is the account in registry_host, which is a central
+# shared-services account in production (#25b), not necessarily ours.
+data "aws_ecr_authorization_token" "charts" {
+  count    = local.chart_repository != "" && var.deploy_in_cluster_resources ? 1 : 0
+  provider = aws.primary
+
+  registry_id = split(".", var.registry_host)[0]
+}
+
 provider "helm" {
+  dynamic "registry" {
+    for_each = data.aws_ecr_authorization_token.charts
+    content {
+      url      = "oci://${var.registry_host}"
+      username = registry.value.user_name
+      password = registry.value.password
+    }
+  }
+
   kubernetes {
     host                   = module.eks.cluster_endpoint
     cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)

@@ -271,18 +271,72 @@ resource "aws_cloudtrail" "this" {
 # =============================================================================
 # IN-CLUSTER (gated) — kube-prometheus-stack + aws-for-fluent-bit
 # =============================================================================
+locals {
+  # PORTING item 4: Helm value path -> chart_images key. Rendered as one string
+  # `set` per attribute, and only for keys present, so an absent key keeps the
+  # chart's own default rather than nulling it.
+  kps_image_sets_paths = {
+    "prometheusOperator.image"                          = "prometheus-operator"
+    "prometheusOperator.prometheusConfigReloader.image" = "config-reloader"
+    "prometheusOperator.admissionWebhooks.patch.image"  = "kube-webhook-certgen"
+    "prometheus.prometheusSpec.image"                   = "prometheus"
+    "alertmanager.alertmanagerSpec.image"               = "alertmanager"
+    "prometheus-node-exporter.image"                    = "node-exporter"
+    "kube-state-metrics.image"                          = "kube-state-metrics"
+    "grafana.image"                                     = "grafana"
+    "grafana.sidecar.image"                             = "k8s-sidecar"
+  }
+  kps_image_sets = merge([for path, key in local.kps_image_sets_paths :
+    { for attr, val in { registry = var.chart_images[key].registry, repository = var.chart_images[key].repository, tag = var.chart_images[key].tag } : "${path}.${attr}" => val }
+    if contains(keys(var.chart_images), key)
+  ]...)
+
+  # node-exporter: the parent chart sets image.distroless=true, and the subchart
+  # APPENDS "-distroless" to whatever tag it is given -- so the mirror's
+  # "v1.11.1-distroless" would be pulled as "v1.11.1-distroless-distroless". When
+  # we name the tag, it is the exact tag pulled: turn the suffix off. A real
+  # boolean, so a values entry rather than a `set` (whose type is "string").
+  kps_extra_values = { for k in(contains(keys(var.chart_images), "node-exporter") ? ["prometheus-node-exporter"] : []) :
+    k => { image = { distroless = false } }
+  }
+
+  # PORTING item 4: Helm value path -> chart_images key. Rendered as one string
+  # `set` per attribute, and only for keys present, so an absent key keeps the
+  # chart's own default rather than nulling it.
+  fluentbit_image_sets_paths = {
+    "image" = "fluent-bit"
+  }
+  fluentbit_image_sets = merge([for path, key in local.fluentbit_image_sets_paths :
+    { for attr, val in { repository = "${var.chart_images[key].registry}/${var.chart_images[key].repository}", tag = var.chart_images[key].tag } : "${path}.${attr}" => val }
+    if contains(keys(var.chart_images), key)
+  ]...)
+}
+
 resource "helm_release" "kube_prometheus_stack" {
   count = var.deploy_in_cluster_resources ? 1 : 0
 
   name             = "kube-prometheus-stack"
-  repository       = "https://prometheus-community.github.io/helm-charts"
+  repository       = var.chart_repository != "" ? var.chart_repository : "https://prometheus-community.github.io/helm-charts"
   chart            = "kube-prometheus-stack"
   version          = var.kube_prometheus_chart_version
   namespace        = var.monitoring_namespace
   create_namespace = true
   timeout          = 900
 
-  values = [yamlencode({
+  dynamic "set" {
+    for_each = local.kps_image_sets
+    content {
+      name  = set.key
+      value = set.value
+      type  = "string"
+    }
+  }
+
+  values = [local.kps_main_values, yamlencode(local.kps_extra_values)]
+}
+
+locals {
+  kps_main_values = yamlencode({
     # EKS hides these control-plane components — disable their (always-down) monitors.
     kubeEtcd                 = { enabled = false }
     kubeControllerManager    = { enabled = false }
@@ -334,18 +388,27 @@ resource "helm_release" "kube_prometheus_stack" {
         }]
       }
     }
-  })]
+  })
 }
 
 resource "helm_release" "fluentbit" {
   count = var.deploy_in_cluster_resources ? 1 : 0
 
   name       = "aws-for-fluent-bit"
-  repository = "https://aws.github.io/eks-charts"
+  repository = var.chart_repository != "" ? var.chart_repository : "https://aws.github.io/eks-charts"
   chart      = "aws-for-fluent-bit"
   version    = var.fluentbit_chart_version
   namespace  = "kube-system"
   timeout    = 600
+
+  dynamic "set" {
+    for_each = local.fluentbit_image_sets
+    content {
+      name  = set.key
+      value = set.value
+      type  = "string"
+    }
+  }
 
   values = [yamlencode({
     serviceAccount = {

@@ -629,6 +629,59 @@ one a person runs.
 `deploy_environments` past SIT; add a `push` trigger to `release.yml` without deciding that
 every merge should deploy SIT.
 
+### E.4 — The chain itself: the in-cluster layer from Octopus (2026-10-11)
+
+E.3 stops at an empty cluster. This adds the chain root's **in-cluster** layer — the Secrets
+Store CSI driver and AWS provider, the LB controller, kube-prometheus-stack, Fluent Bit,
+genesis, the Besu pools and Blockscout — as a `besu-workloads` step,
+`octopus/steps/workloads-incluster.sh`, on the runner's Tentacle. No SSM shell is needed to
+deploy. What it rests on (all 2026-10-11, `docs/build-findings.md` B13, B44–B48):
+charts as OCI from the mirror and every chart image overridden (PORTING item 4); the
+Terraform providers in the runner bundle (D-20, B46); the namespace taken from the chain
+root, not Octopus (B47).
+
+| Step | Who / where | What | Why |
+|---|---|---|---|
+| 1 | GitHub Actions | `supply-chain.yml` → **Run workflow** on `shared-eks-namespace`, scope `images-only`, `create_repos` **on** | copies `prometheus-config-reloader` (B44) into a new repository. Idempotent for the rest (tag immutability: "already present") |
+| 2 | laptop | in the env's gitignored `chain.tfvars`: `registry_host`, `registry_repo_prefixes`, `registry_chart_path`, `registry_cert_publicly_trusted = true`, and any test sender in `genesis_funded_accounts` (**F20** — funding happens only at genesis). Then `push-deploy-config.sh` to the Octopus deploy-config secret | without `registry_host` every pod pulls from its upstream and hangs; without `registry_chart_path` the plan refuses |
+| 3 | laptop, Space-manager key | `octopus/terraform`: plan → apply | adds the step and changes `Besu.LedgerNamespace` to `besu` (B47). Expect 1 add, 1–2 changes (the steps order, the variable) |
+| 4 | as E.3 | mimics → `release` **besu-infra** → `install-tentacle.sh` (E.3 7–8) | the runner must be built from a bundle **with** `tools/terraformrc`, so it must be a release that contains this change |
+| 5 | GitHub Actions | `release` **besu-workloads** | smoke (#38 canary, C-2) → the in-cluster step: F19 server cert (once — re-running would rotate it) → plan (artifact `chain-incluster-<env>.plan.txt`) → **CD-5 gate** (refuses any update/replace/delete of a validator release) → apply → `verify-deployed.sh` (4 validators, 4 distinct nodes) |
+
+**Reaching it** (no public endpoint — from the laptop, through the runner, two hops):
+
+```bash
+# runner, over SSM: the in-cluster forwards (the explorer's port MUST be 4000 —
+# blockscout_access_host bakes localhost:4000 into the frontend)
+kubectl -n besu port-forward svc/blockscout-proxy 4000:80 &
+kubectl -n besu port-forward svc/<explorer-rpc service> 8545:8545
+# laptop, one per port
+aws ssm start-session --target <runner-id> --region af-south-1 \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["4000"],"localPortNumber":["4000"]}'
+```
+
+The explorer-rpc pool serves ETH/NET/WEB3/DEBUG/TRACE over plain HTTP, ClusterIP only —
+the operator path for a test transaction (chain ID from `chain_id`, gas price 0). The SWIFT
+pool is mTLS + JWT and is not a test path.
+
+**Teardown — the in-cluster layer first.** The laptop cannot reach the private endpoint, so
+it cannot destroy Helm or Kubernetes resources; a destroy with them still in state **hangs**.
+
+```bash
+cd terraform/chain   # initialised on besu/<env>/chain.tfstate, laptop
+# F30: -d '\n' — bare xargs strips the quotes in for_each addresses and silently skips them
+terraform state list | grep -E '(^|\.)(helm_release|kubernetes_[a-z_]+)\.' \
+  | xargs -d '\n' -r -n1 terraform state rm
+terraform state list | grep -cE '(^|\.)(helm_release|kubernetes_[a-z_]+)\.'   # expect 0
+# then E.3 step 10 (runner → chain → B34 sweep → shared → mimics), and AFTER the cluster is
+# gone, the PVC volumes the CSI driver made (Besu data, Blockscout Postgres), by tag (C11):
+aws ec2 describe-volumes --region af-south-1 \
+  --filters Name=tag:DeletionGroup,Values=<deletion_group> \
+  --query 'Volumes[].[VolumeId,State,Size]' --output text
+#   → each `available` one: aws ec2 delete-volume --volume-id <id>
+```
+
 ---
 
 ## Phase F — Switch to production (af-south-1)

@@ -219,12 +219,15 @@ resource "octopusdeploy_process_steps_order" "infra" {
 # =============================================================================
 # besu-workloads — the in-cluster layer, on the runner's Tentacle
 # =============================================================================
-# CD-5: the validator release is NEVER in this project. Until the CT-5 rewrite
-# this runs the smoke/preflight script (CD-67); the Helm steps replace it there.
+# CD-5: the validator release is never CHANGED by this project. The in-cluster
+# step applies the chain root's in-cluster layer, which INSTALLS the validators
+# on a fresh chain (there is no running chain to halt) and is refused by its own
+# plan-safety gate if it would update, replace or delete an existing one
+# (workloads-incluster.sh step 5); after that H1 makes the apply a no-op on them.
 resource "octopusdeploy_project" "workloads" {
   space_id                       = local.space_id
   name                           = "besu-workloads"
-  description                    = "In-cluster layer on the In-VPC EC2 Runner (polling Tentacle). NEVER the validator release (CD-5)."
+  description                    = "In-cluster layer on the In-VPC EC2 Runner (polling Tentacle). Installs validators on a fresh chain; never changes an existing one (CD-5)."
   project_group_id               = octopusdeploy_project_group.besu.id
   lifecycle_id                   = octopusdeploy_lifecycle.besu.id
   included_library_variable_sets = [octopusdeploy_library_variable_set.besu.id]
@@ -264,11 +267,27 @@ resource "octopusdeploy_process_step" "workloads_smoke" {
   })
 }
 
+# After the smoke step, so the #38 pull canary has proved the cluster can pull
+# from the mirror before anything larger is attempted. Same state, same
+# variables as besu-infra's chain step (infra_env + lib.sh chain_tf_vars).
+resource "octopusdeploy_process_step" "workloads_incluster" {
+  space_id             = local.space_id
+  process_id           = octopusdeploy_process.workloads.id
+  name                 = "terraform: chain in-cluster (CSI, LBC, monitoring, Besu, Blockscout)"
+  type                 = "Octopus.Script"
+  worker_pool_variable = "Besu.RunnerPool"
+  packages             = local.package_ref
+  execution_properties = merge(local.bash_inline, {
+    "Octopus.Action.Script.ScriptBody" = "${local.infra_env}${local.runner_env}bash \"${local.pkg}/octopus/steps/workloads-incluster.sh\"\n"
+  })
+}
+
 resource "octopusdeploy_process_steps_order" "workloads" {
   space_id   = local.space_id
   process_id = octopusdeploy_process.workloads.id
   steps = concat(octopusdeploy_process_step.workloads_approve[*].id, [
     octopusdeploy_process_step.workloads_smoke.id,
+    octopusdeploy_process_step.workloads_incluster.id,
   ])
 }
 

@@ -47,9 +47,7 @@ install_pinned_terraform
 DEPLOY_CONFIG_SECRET="$BESU_DEPLOY_CONFIG" bash "$PKG/scripts/runner/fetch-deploy-config.sh"
 VARS=(-var-file="../environments/${ENV_LC}/common.tfvars")
 case "$ROOT" in
-  chain)  VARS+=(-var-file="../environments/${ENV_LC}/chain.tfvars")
-          # shellcheck disable=SC2206 # deliberate word-splitting of an operator-set list
-          [[ -n "${BESU_CHAIN_EXTRA_ARGS:-}" ]] && VARS+=($BESU_CHAIN_EXTRA_ARGS) ;;
+  chain)  chain_tf_vars; VARS=("${CHAIN_VARS[@]}") ;; # shared with workloads-incluster.sh
   runner) VARS=(-var "region=${AWS_REGION}" -var "chain_state_bucket=${BESU_STATE_BUCKET}"
                 -var "chain_state_key=besu/${ENV_LC}/chain.tfstate" -var "chain_state_region=${BESU_STATE_REGION}") ;;
 esac

@@ -137,3 +137,23 @@ variable "permissions_boundary" {
   type        = string
   default     = null
 }
+
+# PORTING item 4 — the upstream chart, and the images it carries, from the
+# private registry. Both come from the root (local.chart_repository /
+# local.chart_images); "" and {} keep the upstream https repository and the
+# chart's own image defaults, which only work where there is egress.
+variable "chart_repository" {
+  description = "OCI repository holding the mirrored upstream charts (oci://<registry>/<path>). Empty = the chart's upstream https repository."
+  type        = string
+  default     = ""
+}
+
+variable "chart_images" {
+  description = "Chart-carried images keyed as in mirror.manifest: registry, repository (path inside the registry) and tag. A missing key leaves that chart's image default."
+  type = map(object({
+    registry   = string
+    repository = string
+    tag        = string
+  }))
+  default = {}
+}

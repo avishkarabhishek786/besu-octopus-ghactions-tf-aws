@@ -68,14 +68,36 @@ resource "aws_iam_role_policy_attachment" "lbc" {
 # -----------------------------------------------------------------------------
 # AWS LOAD BALANCER CONTROLLER — HELM (in-cluster; gated)
 # -----------------------------------------------------------------------------
+locals {
+  # PORTING item 4: Helm value path -> chart_images key. Rendered as one string
+  # `set` per attribute, and only for keys present, so an absent key keeps the
+  # chart's own default rather than nulling it.
+  lbc_image_sets_paths = {
+    "image" = "lb-controller"
+  }
+  lbc_image_sets = merge([for path, key in local.lbc_image_sets_paths :
+    { for attr, val in { repository = "${var.chart_images[key].registry}/${var.chart_images[key].repository}", tag = var.chart_images[key].tag } : "${path}.${attr}" => val }
+    if contains(keys(var.chart_images), key)
+  ]...)
+}
+
 resource "helm_release" "lbc" {
   count = var.deploy_in_cluster_resources ? 1 : 0
 
   name       = "aws-load-balancer-controller"
-  repository = "https://aws.github.io/eks-charts"
+  repository = var.chart_repository != "" ? var.chart_repository : "https://aws.github.io/eks-charts"
   chart      = "aws-load-balancer-controller"
   version    = var.lb_controller_chart_version
   namespace  = "kube-system"
+
+  dynamic "set" {
+    for_each = local.lbc_image_sets
+    content {
+      name  = set.key
+      value = set.value
+      type  = "string"
+    }
+  }
 
   set {
     name  = "clusterName"

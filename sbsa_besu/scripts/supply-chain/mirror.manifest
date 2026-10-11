@@ -56,6 +56,7 @@ image	prometheus	quay.io	prometheus/prometheus	v3.12.0-distroless	sha256:f39df53
 image	alertmanager	quay.io	prometheus/alertmanager	v0.33.0	sha256:af26fbe4dd1886ac0efd7bd55cd9027da262e105b137a376522b7c14c3626e4a
 image	node-exporter	quay.io	prometheus/node-exporter	v1.11.1-distroless	sha256:6112664fd761bb964d8a2d3d0119d6c8402618a89edbb3a43c8f7b4090fb53c9
 image	prometheus-operator	quay.io	prometheus-operator/prometheus-operator	v0.91.0	sha256:9e53e13139218aca79ee000172de73355e9174ef2904585bfad9497fc71aae2d
+image	config-reloader	quay.io	prometheus-operator/prometheus-config-reloader	v0.91.0	sha256:7d9e4eea5f1139e602508871f422b0116c60e87c662f3dcd234d5ab60cd0d8c1
 image	k8s-sidecar	quay.io	kiwigrid/k8s-sidecar	2.7.3	sha256:694950d736c8b532eba4006527ccbdac98fefc9f30b3346ba2de50b6cad91c94
 image	kube-state-metrics	registry.k8s.io	kube-state-metrics/kube-state-metrics	v2.19.1	sha256:85108987d044b18a098126732f98602df408888c0f7d456241f5abefb9744bc1
 image	grafana	docker.io	grafana/grafana	13.0.2	sha256:5dad0df181cb644a14e13617b913b261a54f7d4fd4510721dba420929f35bea2
