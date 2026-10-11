@@ -21,8 +21,36 @@ reports success.
 
 ## Open
 
-> **2026-10-11 — B13 and B44–B50 are fixed in code and not yet proven live.** The first
+> **2026-10-11 — B13 and B44–B51 are fixed in code and not yet proven live.** The first
 > `besu-workloads` in-cluster run proves them; they move to Closed with that run's evidence.
+
+### B51 — a module-level `depends_on` made the in-cluster plan replace the CloudTrail bucket
+**Provenance:** inherited (`depends_on = [module.rpc_access]` on `module "observability"`) · **Found:** 2026-10-11, `ServerTasks-1538` — **refused by the B50 gate** · **Fixed:** same day
+
+The runner's plan was `24 to add, 3 to change, 5 to destroy`: the CloudTrail S3 bucket and its four
+configuration resources **replaced**, the trail updated, and the Fluent Bit and Alertmanager IRSA
+trust policies rewritten. Nothing about them had changed. A **module-level `depends_on`** defers
+every data source inside the module until the dependency has no pending changes; with
+`deploy_in_cluster_resources=true`, `rpc_access` always has one (the LB controller release), so
+`aws_caller_identity` (in the bucket name) and the `aws_iam_policy_document`s became
+`(known after apply)` — a forced replacement. `besu-infra` never sees it: there `rpc_access` has
+nothing pending. **The CD-53 gate, added hours earlier for B50, is what stopped it** —
+`REFUSED: module.observability.aws_s3_bucket.trail[0]: ['delete', 'create']` and seven more; nothing
+was applied.
+
+**Fixed:** the module-level `depends_on` is gone. The ordering it most plausibly existed for (charts
+after the LB controller, whose webhook can refuse Services before its pods are ready) is kept as a
+**reference**: `rpc_access` outputs `lb_controller_release`, and `observability`'s three releases
+use it in their `description` — an edge between resources that defers no data source. **Proven
+before release** from the laptop with the runner's exact command (`-refresh=false`,
+`deploy_in_cluster_resources=true`, Octopus's vars): `19 to add, 0 to change, 0 to destroy`, all
+`helm_release` / `kubernetes_storage_class`, validators `create` only — the step's own CD-53 and
+CD-5 gate code run on that plan JSON both pass. The AWS-layer plan is still `No changes`.
+
+**The pattern:** a module-level `depends_on` is a refresh-time trap whenever the dependency has
+pending changes. `secrets` (→ `storage_csi`) and `blockscout` (→ `besu`, `storage_csi`) carry the same
+construct; neither has a data source that feeds a resource today, which is why the plan was clean —
+worth replacing with references the next time either is touched.
 
 ### B50 — the runner's plan refreshed AWS APIs that have no endpoint in the VPC, and hung
 **Provenance:** port-induced (one root and one state hold both layers; CD-53 split who applies them, not what a plan touches) · **Found:** 2026-10-11, `ServerTasks-1537` · **Fixed:** same day

@@ -45,3 +45,8 @@ output "app_rpc_privatelink_service_name" {
   description = "Dedicated PrivateLink endpoint service name the app VPC connects to. Null if the app edge is disabled."
   value       = var.enable_app_rpc_ingress ? aws_vpc_endpoint_service.app_rpc[0].service_name : null
 }
+
+output "lb_controller_release" {
+  description = "The LB controller's Helm release name, or \"\" when not installed. Consumers reference it to install AFTER the controller (its webhook can refuse Services created before its pods are ready) — a reference orders resources without a module-level depends_on, which would defer every data source in the consumer (B51)."
+  value       = try(helm_release.lbc[0].name, "")
+}

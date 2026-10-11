@@ -560,7 +560,12 @@ module "observability" {
   chart_repository = local.chart_repository
   chart_images     = local.chart_images
 
-  depends_on = [module.rpc_access]
+  # B51: the charts install after the LB controller through this REFERENCE, not a
+  # module-level depends_on. depends_on = [module.rpc_access] deferred every data
+  # source here (account ID, IAM policy documents) whenever rpc_access had pending
+  # changes — i.e. on every in-cluster plan — which planned a CloudTrail bucket
+  # REPLACEMENT and two IRSA trust-policy rewrites. The CD-53 gate refused it.
+  install_after = module.rpc_access.lb_controller_release
 }
 
 # =============================================================================

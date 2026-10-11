@@ -149,3 +149,9 @@ variable "chart_images" {
   }))
   default = {}
 }
+
+variable "install_after" {
+  description = "Name of a release these charts must follow (the LB controller). Used as each release's description, which makes Terraform order them after it — without a module-level depends_on, which defers this module's data sources to apply time and turned the CloudTrail bucket name and two IRSA trust policies into (known after apply) on the runner's plan (B51)."
+  type        = string
+  default     = ""
+}

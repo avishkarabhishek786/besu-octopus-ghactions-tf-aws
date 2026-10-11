@@ -316,6 +316,7 @@ resource "helm_release" "kube_prometheus_stack" {
   count = var.deploy_in_cluster_resources ? 1 : 0
 
   name             = "kube-prometheus-stack"
+  description      = var.install_after != "" ? "installed after ${var.install_after} (B51)" : null
   repository       = var.chart_repository != "" ? var.chart_repository : "https://prometheus-community.github.io/helm-charts"
   chart            = "kube-prometheus-stack"
   version          = var.kube_prometheus_chart_version
@@ -394,12 +395,13 @@ locals {
 resource "helm_release" "fluentbit" {
   count = var.deploy_in_cluster_resources ? 1 : 0
 
-  name       = "aws-for-fluent-bit"
-  repository = var.chart_repository != "" ? var.chart_repository : "https://aws.github.io/eks-charts"
-  chart      = "aws-for-fluent-bit"
-  version    = var.fluentbit_chart_version
-  namespace  = "kube-system"
-  timeout    = 600
+  name        = "aws-for-fluent-bit"
+  description = var.install_after != "" ? "installed after ${var.install_after} (B51)" : null
+  repository  = var.chart_repository != "" ? var.chart_repository : "https://aws.github.io/eks-charts"
+  chart       = "aws-for-fluent-bit"
+  version     = var.fluentbit_chart_version
+  namespace   = "kube-system"
+  timeout     = 600
 
   dynamic "set" {
     for_each = local.fluentbit_image_sets
@@ -438,6 +440,7 @@ resource "helm_release" "besu_monitoring" {
   count = var.deploy_in_cluster_resources ? 1 : 0
 
   name             = "besu-monitoring"
+  description      = var.install_after != "" ? "installed after ${var.install_after} (B51)" : null
   chart            = "${path.module}/../../../helm/charts/besu-monitoring"
   namespace        = var.monitoring_namespace
   create_namespace = false
