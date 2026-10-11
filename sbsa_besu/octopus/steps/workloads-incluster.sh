@@ -21,7 +21,14 @@
 #      at startup, so a pool that boots late is rejected for good). Issued ONCE:
 #      re-running issue-server-cert.sh rotates the cert under running pods;
 #   4. plan -out with exactly besu-infra's variables (lib.sh chain_tf_vars) plus
-#      deploy_in_cluster_resources=true, attached as an artefact;
+#      deploy_in_cluster_resources=true, attached as an artefact. -refresh=false
+#      (B50): a refresh calls every AWS API the chain's state touches, and
+#      resource-groups, CloudTrail and IAM have no endpoint in this VPC — the
+#      plan hangs. besu-infra refreshed and applied the AWS layer just before
+#      this project runs; the runner owns only the in-cluster layer (CD-53);
+#   4b. CD-53 gate: the plan may change ONLY helm_release / kubernetes_*. Any
+#      AWS-layer change means state and reality disagree — that is besu-infra's
+#      to apply, from a host that can reach those APIs;
 #   5. CD-5 / H1 plan-safety gate: the plan may CREATE validator releases (a
 #      first install — there is no running chain to halt) but must never update,
 #      replace or delete one. H1's ignore_changes + OnDelete make that a no-op
@@ -82,11 +89,25 @@ else
 fi
 
 # --- 4. plan, recorded ---------------------------------------------------------
-terraform plan -input=false -no-color "${CHAIN_VARS[@]}" -var deploy_in_cluster_resources=true \
+terraform plan -input=false -no-color -refresh=false "${CHAIN_VARS[@]}" -var deploy_in_cluster_resources=true \
   -out=incluster.plan | tee incluster.plan.txt
 if command -v new_octopusartifact >/dev/null 2>&1; then
   new_octopusartifact "$PWD/incluster.plan.txt" "chain-incluster-${ENV_LC}.plan.txt"
 fi
+
+# --- 4b. CD-53: the runner changes only the in-cluster layer --------------------
+terraform show -json incluster.plan | python3 -c '
+import json, sys
+bad = [(c["address"], c["change"]["actions"])
+       for c in json.load(sys.stdin).get("resource_changes", [])
+       if c["mode"] == "managed"
+       and c["change"]["actions"] not in (["no-op"], ["read"])
+       and not (c["type"] == "helm_release" or c["type"].startswith("kubernetes_"))]
+for a, act in bad:
+    print(f"REFUSED: {a}: {act}", file=sys.stderr)
+sys.exit(1 if bad else 0)
+' || die "CD-53: this plan changes the AWS layer, which the runner cannot reach (B50) and does not own. Re-run besu-infra, then this"
+ok "CD-53 plan boundary: only helm_release / kubernetes_* change"
 
 # --- 5. CD-5 / H1: never touch an existing validator release ------------------
 terraform show -json incluster.plan | python3 -c '

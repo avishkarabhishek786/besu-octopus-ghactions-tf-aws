@@ -21,8 +21,38 @@ reports success.
 
 ## Open
 
-> **2026-10-11 — B13 and B44–B49 are fixed in code and not yet proven live.** The first
+> **2026-10-11 — B13 and B44–B50 are fixed in code and not yet proven live.** The first
 > `besu-workloads` in-cluster run proves them; they move to Closed with that run's evidence.
+
+### B50 — the runner's plan refreshed AWS APIs that have no endpoint in the VPC, and hung
+**Provenance:** port-induced (one root and one state hold both layers; CD-53 split who applies them, not what a plan touches) · **Found:** 2026-10-11, `ServerTasks-1537` · **Fixed:** same day
+
+With B49 fixed, `besu-workloads`' in-cluster plan got past `init`, issued the F19 cert, and then
+printed nothing for 17 minutes. On the runner, `ss` showed the AWS provider in `SYN-SENT` to a
+public IP that the runner's own DNS resolves for `resource-groups.af-south-1.amazonaws.com`. A
+plan **refreshes every managed resource in state**, and the chain root's state holds the resource
+group, the CloudTrail trail and a dozen IAM roles and policies. From the air-gapped VPC:
+`resource-groups`, `cloudtrail` and `iam` (global) resolve to public addresses — no endpoint, so
+a hang (prime directive 2); everything else the root uses (sts, ec2, eks, kms, logs, monitoring,
+sns, sqs, secretsmanager, elasticloadbalancing, ecr) resolves to 10.60.11.x. One **data source**
+had the same problem and would hang even without a refresh: `modules/eks`
+`data "tls_certificate" "oidc"` fetched the OIDC issuer over public HTTPS on every plan.
+
+**Fixed — the runner touches only the in-cluster layer, and that is enforced:**
+1. `workloads-incluster.sh` plans with **`-refresh=false`**. `besu-infra` refreshes and applies
+   the AWS layer immediately before `besu-workloads` runs, from a host that can reach it.
+2. A **CD-53 plan gate**: any managed change other than `helm_release` / `kubernetes_*` refuses
+   the step. Tested both ways on synthetic plans (and the CD-5 gate three ways: create passes,
+   update and replace refuse).
+3. `modules/eks` drops the `tls_certificate` data source and the thumbprint. Provider 5.100.0
+   has `thumbprint_list` optional + computed; IAM does not use it for EKS issuers. **Proven no-op**
+   before release: a laptop plan of the live SIT chain (af-south-1 state, Octopus's vars) →
+   `No changes`.
+
+**Residual, accepted for now:** with `-refresh=false` the runner cannot see AWS-layer drift
+between the two projects; the gate catches only drift Terraform's config would correct. The
+proper end state is a separate in-cluster root with its own state reading the chain's outputs —
+which is also the CT-5 shape (one namespace, no AWS layer of ours in that cluster).
 
 ### B49 — the Terraform state bucket was in us-east-1; the runner, air-gapped in af-south-1, cannot reach it
 **Provenance:** port-induced (the 2026-09-04 move of every environment to af-south-1 left the state bucket behind) · **Found:** 2026-10-11, `ServerTasks-1535` · **Fixed:** same day

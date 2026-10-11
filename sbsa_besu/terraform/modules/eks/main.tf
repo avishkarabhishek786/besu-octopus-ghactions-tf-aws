@@ -197,14 +197,17 @@ resource "aws_eks_cluster" "this" {
 # is what lets pods exchange projected service-account tokens for IAM role
 # credentials (see modules/iam). Without this, IRSA does not work.
 # -----------------------------------------------------------------------------
-data "tls_certificate" "oidc" {
-  url = aws_eks_cluster.this.identity[0].oidc[0].issuer
-}
-
+#
+# NO thumbprint, and no `tls_certificate` data source to compute one (B50). That
+# data source fetched the issuer over public HTTPS on EVERY plan — and data
+# sources are read even with -refresh=false, so the In-VPC EC2 Runner's
+# in-cluster plan hung on it (no route to oidc.eks.<region>.amazonaws.com). IAM
+# does not use the thumbprint for EKS issuers (it trusts its own CA store), and
+# provider 5.x makes `thumbprint_list` optional + computed: left unset, IAM
+# fills it and the plan shows no change on an existing provider.
 resource "aws_iam_openid_connect_provider" "oidc" {
-  url             = aws_eks_cluster.this.identity[0].oidc[0].issuer
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.oidc.certificates[0].sha1_fingerprint]
+  url            = aws_eks_cluster.this.identity[0].oidc[0].issuer
+  client_id_list = ["sts.amazonaws.com"]
 
   tags = merge(var.tags, {
     Name      = "${var.name_prefix}-eks-oidc"
