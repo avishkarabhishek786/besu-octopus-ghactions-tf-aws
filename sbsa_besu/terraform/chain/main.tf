@@ -580,7 +580,7 @@ module "blockscout" {
 
   deploy    = var.deploy_in_cluster_resources && var.enable_blockscout && var.explorer_rpc_count > 0
   namespace = var.besu_namespace
-  chart_dir = "${path.module}/../helm/charts"
+  chart_dir = "${path.module}/../../helm/charts" # B52: this root is terraform/chain/ since the four-root split; ../helm resolved to terraform/helm
 
   chain_id     = var.chain_id
   network_name = var.blockscout_network_name

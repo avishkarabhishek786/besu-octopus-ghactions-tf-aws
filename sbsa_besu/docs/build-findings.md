@@ -21,8 +21,19 @@ reports success.
 
 ## Open
 
-> **2026-10-11 — B13 and B44–B51 are fixed in code and not yet proven live.** The first
+> **2026-10-11 — B13 and B44–B52 are fixed in code and not yet proven live.** The first
 > `besu-workloads` in-cluster run proves them; they move to Closed with that run's evidence.
+
+### B52 — the root's Blockscout chart path pointed at `terraform/helm/`
+**Provenance:** port-induced (the 2026-08-30 four-root split) · **Found:** 2026-10-11, `ServerTasks-1539` · **Fixed:** same day
+
+The first in-cluster apply created 18 of 19 resources and failed on the last:
+`could not download chart: path "./../helm/charts/besu-blockscout" not found`. `chain/main.tf` passes
+`chart_dir = "${path.module}/../helm/charts"` — right when the root was `terraform/`, one level
+short since it became `terraform/chain/`. The modules compute their own paths
+(`modules/besu`, `modules/observability`: `../../../helm`) and were unaffected. Never exposed before:
+no in-cluster apply had run since the split. Fixed to `../../helm/charts`; the next in-cluster plan
+from the laptop is exactly `module.blockscout.helm_release.blockscout[0]` — 1 to add.
 
 ### B51 — a module-level `depends_on` made the in-cluster plan replace the CloudTrail bucket
 **Provenance:** inherited (`depends_on = [module.rpc_access]` on `module "observability"`) · **Found:** 2026-10-11, `ServerTasks-1538` — **refused by the B50 gate** · **Fixed:** same day
