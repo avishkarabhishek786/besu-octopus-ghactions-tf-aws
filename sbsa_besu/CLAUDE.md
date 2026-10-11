@@ -726,7 +726,10 @@ questions CQ-1..CQ-8, R-1..R-10). Load it before touching a workflow or an Octop
       2026-10-10). Its pinned IP must be free: B43, `terraform/runner/ip-guard.tf`.
   Sequence: `docs/RUNBOOK.md` Phase E.1 (✅ 2026-09-17) and E.3. **Mock-deployed end to end
   2026-10-10:** all three projects from GitHub releases, OIDC at both hops
-  (`docs/deploy-run-2026-10-10-octopus-phase4.md`).
+  (`docs/deploy-run-2026-10-10-octopus-phase4.md`). **2026-10-11: the chain itself** — the in-cluster
+  layer from `besu-workloads` on the runner, air-gapped; a transaction seen in Blockscout. Platform
+  state lives in the deploy region (B49); the runner plans the in-cluster layer only, `-refresh=false`
+  behind a CD-53 gate (B50) (`docs/deploy-run-2026-10-11-chain-explorer.md`, RUNBOOK E.4).
 - **No bank-specific value is ever committed** (CD-10) — account IDs, registry hosts,
   org names, runner labels, Octopus URL/space are all GitHub secrets/variables or tfvars.
 

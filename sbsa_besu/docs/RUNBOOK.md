@@ -629,7 +629,12 @@ one a person runs.
 `deploy_environments` past SIT; add a `push` trigger to `release.yml` without deciding that
 every merge should deploy SIT.
 
-### E.4 — The chain itself: the in-cluster layer from Octopus (2026-10-11)
+### E.4 — The chain itself: the in-cluster layer from Octopus — ✅ RUN 2026-10-11
+
+**Result:** 4 validators on 4 distinct nodes producing blocks, Blockscout indexing, and an operator
+transaction (`0xd408b929…4dd6`, block 680) on-chain and in the explorer — after four defects found
+and fixed live (B49–B52). Run log: `docs/deploy-run-2026-10-11-chain-explorer.md`. A clean pass is
+now: steps 1–5 below, **one** `besu-infra`, **one** `besu-workloads`.
 
 E.3 stops at an empty cluster. This adds the chain root's **in-cluster** layer — the Secrets
 Store CSI driver and AWS provider, the LB controller, kube-prometheus-stack, Fluent Bit,
@@ -652,25 +657,47 @@ state only through af-south-1's S3 gateway and STS endpoints; a bucket elsewhere
 | 4 | as E.3 | mimics → `release` **besu-infra** → `install-tentacle.sh` (E.3 7–8) | the runner must be built from a bundle **with** `tools/terraformrc`, so it must be a release that contains this change |
 | 5 | GitHub Actions | `release` **besu-workloads** | smoke (#38 canary, C-2) → the in-cluster step: F19 server cert (once — re-running would rotate it) → plan (artifact `chain-incluster-<env>.plan.txt`) → **CD-5 gate** (refuses any update/replace/delete of a validator release) → apply → `verify-deployed.sh` (4 validators, 4 distinct nodes) |
 
-**Reaching it** (no public endpoint — from the laptop, through the runner, two hops):
+**Reaching it** (no public endpoint — from the laptop, through the runner, two hops). **Start the
+runner side with `send-command`, not in an interactive SSM shell:** on 10-11 hand-typed forwards
+failed twice — `sudo -i` does not carry into a pasted block (kubeconfig written as root, forward run
+as `ssm-user` → `permission denied`), and a `kubectl port-forward` dies with its shell or on the first
+dropped connection. This form survives both:
 
 ```bash
-# runner, over SSM: the in-cluster forwards (the explorer's port MUST be 4000 —
-# blockscout_access_host bakes localhost:4000 into the frontend)
-kubectl -n besu port-forward svc/blockscout-proxy 4000:80 &
-kubectl -n besu port-forward svc/<explorer-rpc service> 8545:8545
-# laptop, one per port
+# laptop → runner, ONCE (root, detached, restarts on drop). The explorer's port MUST be 4000:
+# blockscout_access_host bakes localhost:4000 into the frontend.
+aws ssm send-command --region af-south-1 --instance-ids <runner-id> --document-name AWS-RunShellScript \
+  --parameters 'commands=["export PATH=/usr/local/besu-tools/bin:$PATH KUBECONFIG=/root/kc-pf",
+    "aws eks update-kubeconfig --name <cluster> --region af-south-1 --kubeconfig $KUBECONFIG",
+    "setsid nohup bash -c \"while true; do kubectl -n besu port-forward svc/blockscout-proxy 4000:80; sleep 1; done\" >/tmp/pf-4000.log 2>&1 </dev/null &",
+    "setsid nohup bash -c \"while true; do kubectl -n besu port-forward svc/besu-explorer-rpc-1-rpc 8545:8545; sleep 1; done\" >/tmp/pf-8545.log 2>&1 </dev/null &"]'
+# laptop, one terminal per port, left open:
 aws ssm start-session --target <runner-id> --region af-south-1 \
   --document-name AWS-StartPortForwardingSession \
-  --parameters '{"portNumber":["4000"],"localPortNumber":["4000"]}'
+  --parameters '{"portNumber":["4000"],"localPortNumber":["4000"]}'     # and 8545
 ```
 
 The explorer-rpc pool serves ETH/NET/WEB3/DEBUG/TRACE over plain HTTP, ClusterIP only —
-the operator path for a test transaction (chain ID from `chain_id`, gas price 0). The SWIFT
-pool is mTLS + JWT and is not a test path.
+the operator path for a test transaction. The SWIFT pool is mTLS + JWT and is not a test path.
+
+```bash
+cast chain-id --rpc-url http://localhost:8545            # = chain_id
+read -rs PK                                                # the funded account's key; never on the command line
+cast send --rpc-url http://localhost:8545 --private-key "$PK" --gas-price 0 --priority-gas-price 0 <to> --value 1ether
+```
+
+`--gas-price 0` alone is refused (*max priority fee per gas exceeds max fee per gas*): `cast` sends
+EIP-1559 and that flag sets only the max fee — add `--priority-gas-price 0`, or use `--legacy`.
+**Blockscout shows a genesis-funded account's balance as 0 until the account first appears in a
+block** — it does not import genesis allocations; the chain (`cast balance`) is the truth.
 
 **Teardown — the in-cluster layer first.** The laptop cannot reach the private endpoint, so
 it cannot destroy Helm or Kubernetes resources; a destroy with them still in state **hangs**.
+Since B49 the laptop's `shared`/`chain`/`runner` backends must be (re-)initialised on the
+**af-south-1** bucket (`init -reconfigure -backend-config=bucket=<afs1 bucket> …`) — an old init
+still points at us-east-1, where those keys now hold nothing. Counts on 10-11: in-cluster `state rm`
+**19**; `runner` **13**; `chain` **106** (`state list` shows 157 — 51 are data sources); `shared` 27;
+`mimic_egress` 29; `mimic_vpc` incl. the B43 reservation.
 
 ```bash
 cd terraform/chain   # initialised on besu/<env>/chain.tfstate, laptop

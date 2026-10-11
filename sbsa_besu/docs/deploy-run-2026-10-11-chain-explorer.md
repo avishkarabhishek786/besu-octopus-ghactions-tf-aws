@@ -14,7 +14,13 @@
 3. A transaction from the operator's funded account (`0x9f7e…b248`, genesis-funded, F20),
    visible in Blockscout through the runner.
 
-**Outcome:** *(in progress)*
+**Outcome:** ✅ **all three.** The chain root's in-cluster layer deployed from Octopus for the first
+time, air-gapped (19 releases from the mirror); 4 validators on 4 distinct nodes producing 5-second
+blocks; transaction `0xd408b929…4dd6` (1 ETH, block 680) confirmed on-chain and in Blockscout. On
+the way: **B49–B52** found live and fixed (state bucket region, runner-side refresh, a module
+`depends_on`, a chart path), each gate proven before the run that needed it. `verify-deployed.sh`
+reported **#33 FAIL** (no security-groups-for-pods on the mock's own cluster) — recorded, not
+suppressed.
 
 ---
 
@@ -74,3 +80,58 @@ Committed `f8ad533`; **operator pushed ≈ 11:57**.
 | 14:27 → 14:40 | B51 fix | Claude | module `depends_on` → a reference edge. Laptop reproduction of the runner's plan: **19 add, 0 change, 0 destroy**, all in-cluster; the step's CD-53 and CD-5 gate code → both pass; AWS-layer plan `No changes` |
 | 14:30 → | 7‴ — `release` → `besu-workloads` (run 38147484363, `ServerTasks-1539`, `f671d09`) | Octopus | F19 skipped (already issued) 14:32:54; **`Plan: 19 to add, 0 to change, 0 to destroy`** 14:33:12 — identical to the laptop reproduction; **CD-53 ✅** 14:33:12; **CD-5 ✅** 14:33:17 (4 validators, `create`); apply 14:33 → 14:35:04: **18 of 19 created** — StorageClass, CSI driver + AWS provider, LBC (18 s), genesis, bootnodes ×2, **validators ×4**, RPC ×2, explorer-rpc, rpc-edge, Fluent Bit, kube-prometheus-stack (1m6s, all from the mirror), besu-monitoring. ❌ Blockscout: `path "./../helm/charts/besu-blockscout" not found` — **B52** |
 | 14:38 | B52 fix | Claude | `chart_dir` `../helm` → `../../helm`. Laptop reproduction: **1 to add** (`helm_release.blockscout[0]`) |
+| ~14:40 | **the chain, read-only from the runner** (SSM `kubectl` + port-forward to `besu-explorer-rpc-1-0`) | Claude | ✅ every pod in the cluster Running/Completed; **4 validators on 4 distinct nodes** (10-60-1-164, 10-60-2-190, 10-60-0-11, 10-60-2-159); bootnodes ×2, RPC ×2, explorer-rpc Running; genesis Job Completed. **`eth_blockNumber` 0x2a → 0x2f (42 → 47): producing**; `net_peerCount` 8; `eth_chainId` 0xf1b31 = 990001; **operator account `0x9f7e…b248` balance `0x2000…0` (genesis-funded, F20)**; `eth_gasPrice` 0 |
+| 14:38 → 14:41 | 7⁗ — `release` → `besu-workloads` (run 38147953310, `d8b824e`, `ServerTasks-1540`, 2026.10.11.15) | Octopus | Smoke ✅. **`Plan: 1 to add`**; CD-53 ✅; CD-5 ✅; **`Apply complete! Resources: 1 added`** (Blockscout) 14:40:58. `verify-deployed.sh`: ✅ 4/4 validators Ready; ✅ 4 distinct nodes; ❌ **#33** 0/3 RPC pods carry `vpc.amazonaws.com/pod-eni` — the mock `chain` root's own cluster has no security-groups-for-pods, so the shared-cluster assertion correctly reports it absent; ⚠️ ×4 not evaluated (#31 no AWS CLI in the Besu image; no `-g`; no `-r` → chain-level skipped; netpol probe opt-in). Step therefore **Failed** — the apply itself succeeded |
+| 14:41:43 | Blockscout, read-only | Claude | ✅ `blockscout`, `-frontend`, `-postgres-0`, `-proxy`, `-stats`, `-visualizer` all 1/1 Running; services ClusterIP (`blockscout-proxy` :80); no warning events |
+| ~15:05 | access path | operator / Claude | Operator-run `kubectl port-forward`s on the runner failed twice: `sudo -i` did not carry into a pasted block (kubeconfig in /root, forward as `ssm-user` → `permission denied`), then the forwards died with their shell. **Replaced:** Claude started both forwards as root via SSM `send-command`, each in a `setsid`/`nohup` restart loop (`svc/blockscout-proxy 4000:80`, `svc/besu-explorer-rpc-1-rpc 8545:8545`); verified they outlive the command (4 listeners, 18 s later). From the runner: Blockscout HTTP 200; `eth_blockNumber` = 0x23c (572). Laptop side = two `AWS-StartPortForwardingSession`s. RUNBOOK E.4's "reaching it" needs this form |
+| ~15:15 | **8 — the transaction** (`cast send`, laptop → SSM tunnel → runner → `besu-explorer-rpc-1`) | operator | First attempt refused by the node: `Max priority fee per gas exceeds max fee per gas` — `cast` sends EIP-1559 and `--gas-price 0` sets only the max fee; with `--priority-gas-price 0` too it was accepted |
+| ~15:16 | **receipt, chain and explorer** | Claude | ✅ **`0xd408b92931e613b15fe70e7dcd577966a7611061a9e761ae53067894be414dd6`**: `status 0x1`, **block 680** (0x2a8), type 2, from `0x9f7e…b248` → `0x157e…db67`, **1 ETH**, `gasUsed` 21000, `effectiveGasPrice` 0, chainId 990001. Recipient balance 1 ETH. **Blockscout: `ok`/`success`, block 680, 19 confirmations**; indexing `finished_indexing: true`, ratio 1.00; 693 blocks, 1 transaction. Sender balance in Blockscout read 0 until this tx: Blockscout does not import genesis allocations — it fetches an address's balance when the address first appears in a block (now `block_number_balance_updated_at: 680`, 2²⁴⁹ wei − 1 ETH) |
+
+## 2. Teardown (≈ 15:45 → ≈ 16:33, operator; script by Claude)
+
+One script, `plan -destroy -out` → summary → confirm → apply **that** plan, per root, resumable by
+step number. The laptop's `shared`/`runner` backends still pointed at the old bucket and were
+re-initialised on `besu-tfstate-867728055761-afs1` first (B49).
+
+| Step | Result |
+|---|---|
+| 1 — `chain`: `state rm` the in-cluster layer (laptop cannot reach the private endpoint; F30 `xargs -d '\n'`) | ✅ 19 entries (18 `helm_release` + `kubernetes_storage_class`) → 0 left |
+| 2 — `runner` | ✅ 13 destroyed (11 of 09-17 + `terraform_data.ip_guard` (B43) + `region_guard`). First attempt stopped at the prompt: an arrow key left `^[[B` in the input buffer, so the answer read `^[[By` ≠ `y` — refused, nothing applied; the prompt now flushes type-ahead and strips escape sequences |
+| 3 — `chain` AWS layer | ✅ 106 destroyed — the same 106 as 09-17 / 10-09 (the 157 in `state list` includes 51 data sources) |
+| 4 — B34 sweep + PVC volumes by `DeletionGroup` | ✅ nothing left behind (zero-check: no ENIs, SGs or volumes) |
+| 5 — `shared` | ✅ 27 |
+| 6 — `mimic_egress` | ✅ 29 |
+| 7 — `mimic_vpc` | ✅ incl. the B43 subnet CIDR reservation — the first teardown without a hand-made `scr-` to delete |
+
+## 3. Zero-check (16:35, Claude, read-only)
+
+| Check | Result |
+|---|---|
+| State: `besu/sit/{shared,chain,runner}` (af-south-1 bucket), `besu/sit/{network,egress}` (us-east-1) | **0 managed resources each**; no `.tflock` |
+| af-south-1 **and** us-east-1: non-default VPCs, instances, EKS, ENIs, VPC endpoints, load balancers, target groups, peerings, EIPs, NAT, EBS volumes, non-default SGs, log groups | **none** |
+| Route 53 hosted zones | none |
+| Buckets | the two state buckets (us-east-1: mimic, registry, Octopus and the parked `MOVED-2026-10-11/` SIT state; af-south-1: SIT platform state) + two unrelated `tf-octopus-demo-*` from 2026-09-06. CloudTrail and runner-artifacts buckets gone |
+| KMS | no enabled customer keys; 10 in `PendingDeletion` (today's 2 + earlier runs; 7-day window) |
+| Kept on purpose | secrets `sbsa-besu-primary-octopus-register-key`, `…-tentacle-cert`, `sbsa-besu-sit-octopus-deploy-config`, `sbsa-besu-octopus-terraform-key`; the ECR mirror and `mimic_registry`'s role; the Octopus space, `ci-trust`, worker `Workers-1` (Unavailable until the next `install-tentacle.sh --force`) |
+
+**Cost:** mimics from ≈ 12:15, chain from ≈ 12:29, everything gone by ≈ 16:33 — ≈ 4¼ h at
+≈ $2/h ≈ **$8–9**. The overrun against 10-10's $4.5 is the four live fix cycles (B49–B52).
+
+## 4. What's still open
+
+- **`verify-deployed.sh` #33 FAIL** — 0/3 RPC pods carry `vpc.amazonaws.com/pod-eni`. The mock's
+  own cluster has no security-groups-for-pods; on the cloud team's cluster this is their answer to
+  #33. Either the mock gains SGP, or the assertion learns that "SGP is not the route" is a declared
+  input — **not** silenced. The four WARNs (no `-g`, no `-r`, no AWS CLI in the Besu image for #31,
+  netpol probe opt-in) are the step passing too few arguments: wire the target-group ARN, an RPC URL
+  and `--probe-netpol` into `workloads-incluster.sh`.
+- **Operator access** should be a script, not hand-typed forwards: the runner-side restart loops
+  that worked today (`send-command`, `setsid`/`nohup`) belong in `scripts/access/`, with the two
+  laptop `AWS-StartPortForwardingSession`s printed by it.
+- **`-refresh=false` (B50)** leaves AWS-layer drift invisible to the runner; the end state is a
+  separate in-cluster root reading the chain's outputs — also the CT-5 shape.
+- **`secrets` and `blockscout`** still carry module-level `depends_on` (B51's pattern) — harmless
+  today, a trap the day either reads a data source into a resource.
+- **The rolling procedure** under Octopus (`besu-validators` with validators present) — now possible:
+  a chain exists for the length of a run.
+- **State bucket for the bank:** an af-south-1 bucket (B49) — add to the R-10 asks if it is theirs.

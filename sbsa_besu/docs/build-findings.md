@@ -21,8 +21,76 @@ reports success.
 
 ## Open
 
-> **2026-10-11 — B13 and B44–B52 are fixed in code and not yet proven live.** The first
-> `besu-workloads` in-cluster run proves them; they move to Closed with that run's evidence.
+### B34 — `mimic_eks` teardown leaks a VPC CNI ENI, which pins the EKS cluster SG and blocks the VPC delete
+**Provenance:** tooling (fixture teardown) · **Found:** 2026-10-10, B27 live run · **Status:** OPEN
+
+After the `mimic_eks` destroy (20 destroyed, state empty), one VPC CNI secondary ENI from a
+terminated node stayed `available` in its subnet (`eks:eni:owner=amazon-vpc-cni`,
+`cluster.k8s.amazonaws.com/name=<cluster>`), and the EKS-managed cluster security group
+(`eks-cluster-sg-<cluster>-*`, tag `aws:eks:cluster-name`) was never deleted — most likely
+because that ENI still referenced it when EKS deleted the cluster, and EKS does not retry.
+Neither is in Terraform state, so `terraform destroy` reports success. The `mimic_vpc`
+destroy then deleted every subnet and **retried `DeleteVpc` for 10 minutes** against the
+orphaned group (≈ 1 min on 10-09, which did not leak — the leak is intermittent).
+
+Both were deleted by hand after confirming ownership (tags, creation time, instance
+terminated, no remaining references). **Open work:** a read-only-then-delete sweep by the
+cluster tag between the `mimic_eks` destroy and the `mimic_vpc` destroy — RUNBOOK §E.2
+step 8 now carries the commands; it belongs in a `mimic_eks` teardown script. It is the
+same class as CLAUDE.md §9's leaked-ENI sweep, which the platform's own teardown already
+requires: the platform will hit it on the shared cluster's subnets too, where a leaked ENI
+is the cloud team's scarce address space.
+
+**Found by:** the destroy taking ten times as long as the last one, and asking why.
+
+---
+
+### B32 — F-7 (runner → cluster API) was blocked by the mimic and never checked
+**Provenance:** tooling (fixture + checker) · **Found:** 2026-10-10, while fixing B27 · **Status:** FIXED IN CODE · NACL half **proven live** 2026-10-10 (the az3 node used the C-1 ingress 443 rule F-7 shares) · **runner half open** — no runner has exercised F-7 yet
+
+Two halves of one omission. `nacl.tf` gave the runner's subnet an **egress** 443 rule for
+F-7, but no node subnet had an **ingress** 443 rule, so the control-plane ENIs could never
+answer it. And `verify-subnet-rules.sh` had **no F-7 section** — it took `--runner` and used
+it only for F-5 and F-8. Every run with a runner used `permissive` NACLs, so it never
+showed; under `flows` the runner could not have reached a private API endpoint at all,
+and nothing would have named a rule.
+
+Fix: the C-1 ingress rule's sources include the runner's (ledger) subnets, and the F-7
+egress rule targets every cluster subnet, the ledger ones too when #28 is granted. The
+checker has an F-7 section driven by `--runner` + `--control-plane`; against the 10-09
+rules it reports all three runner → control-plane pairs BLOCKED.
+
+**Found by:** reading the checker for a B27 test and noticing `--runner` drove no F-7 check
+— the B27 shape again: a check built from a list cannot see what the list leaves out.
+
+---
+
+### B30 — `mimic_eks` strict claims add-ons it never installs, and `verify-contract.sh` misjudges access entries
+**Provenance:** tooling (fixture) · **Found:** 2026-10-09 · **Status:** OPEN
+
+1. The strict hand-over says `cluster_provides_lbc = true` (and the other add-ons), but the
+   mimic installs no add-on and no CRD. `verify-cluster.sh` and `verify-admission.sh`
+   correctly reported the hand-over disagreeing with the live cluster — the gap is in the
+   fixture. Strict should install at least the four CRDs (#30).
+2. `verify-contract.sh` judges **every** cluster-scoped access entry, so strict FAILs on the
+   creator (`tfuser`) and the AWS service-linked role. It should judge only
+   `runner_role_arn`'s entry.
+3. It reports `nodes=` from the node group's **desired** size, so a `CREATE_FAILED` group
+   with two of three nodes joined (B27) still read as three.
+
+**Found by:** the first strict run. Detail: `docs/deploy-run-2026-10-09-ct5-gates-and-regression.md` §A4, §A8.
+
+---
+
+## Closed
+
+> **Proven live 2026-10-11** (`docs/deploy-run-2026-10-11-chain-explorer.md`): the chain root's
+> in-cluster layer deployed from Octopus on the runner, air-gapped — 19 releases, every chart and
+> image from the mirror (**B13, B44, B45**: kube-prometheus-stack incl. config-reloader and
+> node-exporter Running), `terraform init` offline from the bundle's provider mirror (**B46**), state in
+> af-south-1 reached through the VPC's endpoints (**B49**), a no-refresh plan behind the CD-53 gate
+> (**B50**) with no spurious AWS changes (**B51**), Blockscout's chart found (**B52**); validators in
+> namespace `besu` reading their keys through IRSA (**B47, B48**). A transaction mined and indexed.
 
 ### B52 — the root's Blockscout chart path pointed at `terraform/helm/`
 **Provenance:** port-induced (the 2026-08-30 four-root split) · **Found:** 2026-10-11, `ServerTasks-1539` · **Fixed:** same day
@@ -211,68 +279,6 @@ AWS-managed ECR in-region through the cluster's `ecr.api`/`ecr.dkr` endpoints.
 ---
 
 
-### B34 — `mimic_eks` teardown leaks a VPC CNI ENI, which pins the EKS cluster SG and blocks the VPC delete
-**Provenance:** tooling (fixture teardown) · **Found:** 2026-10-10, B27 live run · **Status:** OPEN
-
-After the `mimic_eks` destroy (20 destroyed, state empty), one VPC CNI secondary ENI from a
-terminated node stayed `available` in its subnet (`eks:eni:owner=amazon-vpc-cni`,
-`cluster.k8s.amazonaws.com/name=<cluster>`), and the EKS-managed cluster security group
-(`eks-cluster-sg-<cluster>-*`, tag `aws:eks:cluster-name`) was never deleted — most likely
-because that ENI still referenced it when EKS deleted the cluster, and EKS does not retry.
-Neither is in Terraform state, so `terraform destroy` reports success. The `mimic_vpc`
-destroy then deleted every subnet and **retried `DeleteVpc` for 10 minutes** against the
-orphaned group (≈ 1 min on 10-09, which did not leak — the leak is intermittent).
-
-Both were deleted by hand after confirming ownership (tags, creation time, instance
-terminated, no remaining references). **Open work:** a read-only-then-delete sweep by the
-cluster tag between the `mimic_eks` destroy and the `mimic_vpc` destroy — RUNBOOK §E.2
-step 8 now carries the commands; it belongs in a `mimic_eks` teardown script. It is the
-same class as CLAUDE.md §9's leaked-ENI sweep, which the platform's own teardown already
-requires: the platform will hit it on the shared cluster's subnets too, where a leaked ENI
-is the cloud team's scarce address space.
-
-**Found by:** the destroy taking ten times as long as the last one, and asking why.
-
----
-
-### B32 — F-7 (runner → cluster API) was blocked by the mimic and never checked
-**Provenance:** tooling (fixture + checker) · **Found:** 2026-10-10, while fixing B27 · **Status:** FIXED IN CODE · NACL half **proven live** 2026-10-10 (the az3 node used the C-1 ingress 443 rule F-7 shares) · **runner half open** — no runner has exercised F-7 yet
-
-Two halves of one omission. `nacl.tf` gave the runner's subnet an **egress** 443 rule for
-F-7, but no node subnet had an **ingress** 443 rule, so the control-plane ENIs could never
-answer it. And `verify-subnet-rules.sh` had **no F-7 section** — it took `--runner` and used
-it only for F-5 and F-8. Every run with a runner used `permissive` NACLs, so it never
-showed; under `flows` the runner could not have reached a private API endpoint at all,
-and nothing would have named a rule.
-
-Fix: the C-1 ingress rule's sources include the runner's (ledger) subnets, and the F-7
-egress rule targets every cluster subnet, the ledger ones too when #28 is granted. The
-checker has an F-7 section driven by `--runner` + `--control-plane`; against the 10-09
-rules it reports all three runner → control-plane pairs BLOCKED.
-
-**Found by:** reading the checker for a B27 test and noticing `--runner` drove no F-7 check
-— the B27 shape again: a check built from a list cannot see what the list leaves out.
-
----
-
-### B30 — `mimic_eks` strict claims add-ons it never installs, and `verify-contract.sh` misjudges access entries
-**Provenance:** tooling (fixture) · **Found:** 2026-10-09 · **Status:** OPEN
-
-1. The strict hand-over says `cluster_provides_lbc = true` (and the other add-ons), but the
-   mimic installs no add-on and no CRD. `verify-cluster.sh` and `verify-admission.sh`
-   correctly reported the hand-over disagreeing with the live cluster — the gap is in the
-   fixture. Strict should install at least the four CRDs (#30).
-2. `verify-contract.sh` judges **every** cluster-scoped access entry, so strict FAILs on the
-   creator (`tfuser`) and the AWS service-linked role. It should judge only
-   `runner_role_arn`'s entry.
-3. It reports `nodes=` from the node group's **desired** size, so a `CREATE_FAILED` group
-   with two of three nodes joined (B27) still read as three.
-
-**Found by:** the first strict run. Detail: `docs/deploy-run-2026-10-09-ct5-gates-and-regression.md` §A4, §A8.
-
----
-
-## Closed
 
 ### B43 — the EKS nodes' CNI warm pool took the runner's pinned IP
 **Provenance:** port-induced (CD-60 pin + CT-5 shared subnets) · **Found:** 2026-10-10, `ServerTasks-1517` · **Fixed:** same day; the bank-side half is an R-10 ask
