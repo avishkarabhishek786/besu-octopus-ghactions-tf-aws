@@ -21,8 +21,30 @@ reports success.
 
 ## Open
 
-> **2026-10-11 — B13 and B44–B48 are fixed in code and not yet proven live.** The first
+> **2026-10-11 — B13 and B44–B49 are fixed in code and not yet proven live.** The first
 > `besu-workloads` in-cluster run proves them; they move to Closed with that run's evidence.
+
+### B49 — the Terraform state bucket was in us-east-1; the runner, air-gapped in af-south-1, cannot reach it
+**Provenance:** port-induced (the 2026-09-04 move of every environment to af-south-1 left the state bucket behind) · **Found:** 2026-10-11, `ServerTasks-1535` · **Fixed:** same day
+
+The first Terraform run ever made **inside the VPC** — `besu-workloads`' in-cluster step on the
+runner — died at `terraform init` after three minutes:
+`retrieving caller identity from STS … Post "https://sts.us-east-1.amazonaws.com/": i/o timeout`.
+`besu-tfstate-867728055761` is a us-east-1 bucket. From the air-gapped VPC the S3 gateway endpoint
+serves **same-region buckets only** and STS is reachable only through the region's own interface
+endpoint, so a bucket in any other region is unreachable — and, per prime directive 2, a hang
+rather than an error. Every earlier run used a hosted worker or the laptop, both with internet, so
+nothing exposed it. **It is also a residency defect:** the chain state carries the CA private key
+and node-key material of an af-south-1 ledger.
+
+**Fixed:** SIT's platform state (`besu/sit/{shared,chain,runner}.tfstate`) moved to
+`besu-tfstate-867728055761-afs1` in af-south-1 (versioning, AES256, SSE-C blocked, public access
+blocked — as the old bucket); the originals parked under `MOVED-2026-10-11/`. Two guards so it
+cannot recur silently: the Octopus root's `state_region` must equal `aws_region` (validation,
+negative-tested: the old SIT values are refused at plan), and `lib.sh init_root` — every Octopus
+step — dies in a second on a mismatch (tested both ways). The mimic, registry and Octopus states
+stay in us-east-1: only the laptop and hosted workers use them. **For the bank:** the state bucket
+is an af-south-1 bucket; add it to the R-10 asks if it is theirs to create.
 
 ### B44 — `CHART_IMAGES.md` missed `prometheus-config-reloader`, so the mirror never copied it
 **Provenance:** tooling · **Found:** 2026-10-11, rendering the ECR-mirrored charts before the first in-cluster apply · **Fixed in code:** same day

@@ -77,8 +77,13 @@ variable "state_bucket" {
 }
 
 variable "state_region" {
-  description = "Region of the state bucket."
+  description = "Region of the state bucket. MUST be aws_region (B49): the In-VPC EC2 Runner reaches state through the region's own S3 gateway and STS endpoints, which serve no other region -- and the state holds this region's key material."
   type        = string
+
+  validation {
+    condition     = var.state_region == var.aws_region
+    error_message = "state_region must equal aws_region (B49): from inside the air-gapped VPC the runner cannot reach a state bucket in any other region."
+  }
 }
 
 variable "cluster_names" {

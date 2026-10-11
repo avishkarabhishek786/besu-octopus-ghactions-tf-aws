@@ -15,6 +15,6 @@ aws_role_arns = {                          # octopus/aws-trust output deploy_rol
   prod = "arn:aws:iam::<account>:role/<prefix>-prod-octopus-deploy"
 }
 state_bucket  = "<state-bucket>"
-state_region  = "<state-region>"
+state_region  = "<state-region>" # MUST equal aws_region (B49) — the runner reaches state only in-region
 cluster_names = { SIT = "<cluster>", UAT = "<cluster>", PROD = "<cluster>" }
 tools_image   = "<account>.dkr.ecr.<region>.amazonaws.com/mirror/alpine/k8s@sha256:<digest>"   # mirror.manifest

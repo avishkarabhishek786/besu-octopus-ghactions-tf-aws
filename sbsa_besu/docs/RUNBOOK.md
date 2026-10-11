@@ -640,6 +640,10 @@ charts as OCI from the mirror and every chart image overridden (PORTING item 4);
 Terraform providers in the runner bundle (D-20, B46); the namespace taken from the chain
 root, not Octopus (B47).
 
+**Precondition (B49): the platform state bucket is in the deploy region.** The runner reaches
+state only through af-south-1's S3 gateway and STS endpoints; a bucket elsewhere times out at
+`init`. Octopus's `state_region` is validated against `aws_region`, and every step re-checks it.
+
 | Step | Who / where | What | Why |
 |---|---|---|---|
 | 1 | GitHub Actions | `supply-chain.yml` → **Run workflow** on `shared-eks-namespace`, scope `images-only`, `create_repos` **on** | copies `prometheus-config-reloader` (B44) into a new repository. Idempotent for the rest (tag immutability: "already present") |

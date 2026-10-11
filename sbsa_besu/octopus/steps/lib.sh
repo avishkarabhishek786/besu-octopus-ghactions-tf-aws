@@ -30,7 +30,16 @@ install_pinned_terraform() {
 
 # init a root on this environment's state (besu/<env>/<root>.tfstate — the <env>
 # segment is load-bearing, CLAUDE.md §2).
+#
+# B49: the state bucket MUST be in the deploy region. The In-VPC EC2 Runner
+# applies the chain root's in-cluster layer, and from inside the air-gapped VPC
+# the S3 gateway endpoint reaches same-region buckets only, and STS only through
+# the region's own endpoint — a bucket elsewhere is a 3-minute i/o timeout at
+# init, not an error. It is also residency: the state holds this region's key
+# material. Checked here, in every step, so besu-infra's first step refuses it.
 init_root() {
+  [[ "${BESU_STATE_REGION}" == "${AWS_REGION}" ]] \
+    || die "state bucket region ${BESU_STATE_REGION} != deploy region ${AWS_REGION} (B49): the runner cannot reach it from inside the VPC. Use a state bucket in ${AWS_REGION}"
   terraform -chdir="$PKG/terraform/$1" init -input=false -no-color \
     -backend-config="bucket=${BESU_STATE_BUCKET}" \
     -backend-config="key=besu/${ENV_LC}/$1.tfstate" \
