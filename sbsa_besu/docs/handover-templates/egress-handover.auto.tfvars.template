@@ -1,0 +1,32 @@
+# =============================================================================
+# egress-handover.auto.tfvars — the one outbound path, through the shared proxy
+# -----------------------------------------------------------------------------
+# Fill in every value marked <...> and return this file to the ledger platform
+# team. Keep the variable names and the format exactly as they are.
+#
+# Only the In-VPC EC2 Runner uses this path, and only for the Octopus polling
+# agent: outbound CONNECT to two hostnames on port 443, from one /32, with no
+# TLS inspection on those two names (Octopus pins its certificate).
+#
+# Build reference: "VPC and EKS Build Checklist" Step 6, and
+# VPC_EKS_ARCHITECTURE.md §4.9.
+# =============================================================================
+
+# The proxy address the agent connects to (hostname or IP), and its port.
+egress_proxy_host = "<proxy hostname or IP>"
+egress_proxy_port = "<port, e.g. 3128 or 8080>"
+
+# The prefix routed to the proxy over the Transit Gateway, from the runner
+# subnet's route table only. Never 0.0.0.0/0.
+egress_vpc_cidr = "<proxy prefix, e.g. 10.61.0.0/24>"
+
+# The single source address the proxy allows: the runner's fixed IP, with /32.
+# It must be inside a ledger subnet and have an explicit subnet CIDR reservation.
+# The platform team proposes this address; confirm it here.
+egress_allowed_source = "<runner IP>/32"
+
+# The destinations the proxy allows. The platform team sends you <instance>.
+egress_allowed_destinations = [
+  "<instance>.octopus.app",
+  "polling.<instance>.octopus.app",
+]

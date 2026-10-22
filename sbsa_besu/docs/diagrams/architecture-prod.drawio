@@ -1,0 +1,396 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="besu-prod-arch" name="Besu Prod Architecture (shared VPC + shared EKS, Oct 2026)">
+    <mxGraphModel dx="1400" dy="900" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1820" pageHeight="1720" math="0" shadow="0" background="#15151f">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ================= TITLE ================= -->
+        <mxCell id="title" value="Besu ledger platform — production architecture (current state, Oct 2026: namespace + node group in the cloud team's shared EKS, inside their shared VPC)" style="text;html=1;align=left;verticalAlign=middle;fontColor=#E6E6E6;fontSize=15;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="12" width="1400" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ================= CONTAINERS (drawn first) ================= -->
+        <mxCell id="acct" value="AWS account — cloud team (we are tenants)" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=13;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_aws_cloud_alt;strokeColor=#FF9900;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#FF9900;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="260" y="60" width="1220" height="1200" as="geometry" />
+        </mxCell>
+        <mxCell id="region" value="Region af-south-1 — three AZs, addressed by AZ ID (afs1-az1 / az2 / az3)" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#00A4A6;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="275" y="95" width="1190" height="1150" as="geometry" />
+        </mxCell>
+
+        <!-- shared egress (cloud team) -->
+        <mxCell id="egressbox" value="Shared egress (cloud team) — reached over the Transit Gateway by a specific-prefix route from the runner subnet only" style="rounded=1;arcSize=4;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#5AA9DA;dashed=1;dashPattern=8 4;fontColor=#5AA9DA;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="290" y="130" width="560" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- VPC -->
+        <mxCell id="vpc" value="Shared VPC (cloud team) — private subnets only · NO IGW / NAT / 0.0.0.0/0 route · tenancy default · DNS support + hostnames on · Amazon-resolvable DNS" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc2;strokeColor=#248814;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#4CC23A;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="290" y="235" width="900" height="995" as="geometry" />
+        </mxCell>
+
+        <!-- lb subnets row -->
+        <mxCell id="lbsub" value="lb subnets (×3 AZ) — internal load balancers only" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=11;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_private_subnet;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#00A4A6;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="310" y="275" width="860" height="105" as="geometry" />
+        </mxCell>
+
+        <!-- EKS cluster -->
+        <mxCell id="eks" value="Shared Amazon EKS cluster (cloud team) — PRIVATE API endpoint only · IRSA · managed add-ons (VPC CNI with NetworkPolicy, CoreDNS, kube-proxy, EBS CSI, LB controller, Secrets Store CSI)" style="html=1;whiteSpace=wrap;fontSize=11;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;rounded=1;arcSize=2;strokeColor=#5AA9DA;dashed=1;dashPattern=8 4;fillColor=none;verticalAlign=top;align=left;spacingLeft=34;fontColor=#5AA9DA;" vertex="1" parent="1">
+          <mxGeometry x="310" y="395" width="860" height="520" as="geometry" />
+        </mxCell>
+        <mxCell id="eksicon" value="" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_kubernetes_service;fillColor=#ED7100;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="315" y="398" width="24" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- ledger node group (ours to use, theirs to run) -->
+        <mxCell id="ledgerng" value="Ledger node group — dedicated, tainted dedicated=besu-ledger · ≥4 × m6i.xlarge across 3 AZs · ledger subnets · namespace besu-ledger (PSA baseline, ResourceQuota, default-deny NetworkPolicy)" style="rounded=1;arcSize=3;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#ED7100;strokeWidth=2;fontColor=#F5A65B;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="325" y="470" width="830" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="az_a" value="afs1-az1" style="rounded=0;dashed=1;dashPattern=6 4;strokeColor=#147EBA;fillColor=none;verticalAlign=top;align=center;fontColor=#5AA9DA;fontSize=10;html=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="505" width="265" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="az_b" value="afs1-az2" style="rounded=0;dashed=1;dashPattern=6 4;strokeColor=#147EBA;fillColor=none;verticalAlign=top;align=center;fontColor=#5AA9DA;fontSize=10;html=1;" vertex="1" parent="1">
+          <mxGeometry x="610" y="505" width="265" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="az_c" value="afs1-az3" style="rounded=0;dashed=1;dashPattern=6 4;strokeColor=#147EBA;fillColor=none;verticalAlign=top;align=center;fontColor=#5AA9DA;fontSize=10;html=1;" vertex="1" parent="1">
+          <mxGeometry x="880" y="505" width="265" height="210" as="geometry" />
+        </mxCell>
+
+        <!-- shared node group (other tenants + our app namespace) -->
+        <mxCell id="sharedng" value="Shared node group(s) — app subnets · other tenants' pods · namespace besu-app" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#5AA9DA;dashed=1;dashPattern=8 4;fontColor=#5AA9DA;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="325" y="785" width="830" height="115" as="geometry" />
+        </mxCell>
+
+        <!-- runner subnet + endpoint subnets -->
+        <mxCell id="runsub" value="Runner subnet" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=11;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_private_subnet;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#00A4A6;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="310" y="930" width="300" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="epsub" value="endpoint subnets (×3 AZ)" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=11;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_private_subnet;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#00A4A6;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="625" y="930" width="545" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="datasub" value="data subnets (×3 AZ) — RDS for the Blockscout DB only if your policy requires it (#37); otherwise Postgres stays in-namespace" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=11;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_private_subnet;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#00A4A6;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="310" y="1095" width="860" height="115" as="geometry" />
+        </mxCell>
+
+        <!-- ledger-team AWS resources beside the cluster -->
+        <mxCell id="ours" value="Ledger team's AWS resources (beside the cluster, reached through VPC endpoints)" style="rounded=1;arcSize=3;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#ED7100;strokeWidth=2;fontColor=#F5A65B;fontSize=11;align=center;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1205" y="235" width="245" height="995" as="geometry" />
+        </mxCell>
+
+        <!-- shared-services account -->
+        <mxCell id="ssacct" value="Shared-services account (cloud team)" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=11;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;strokeColor=#CD2264;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#F06BA0;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="1515" y="235" width="285" height="190" as="geometry" />
+        </mxCell>
+
+        <!-- ================= EXTERNAL ================= -->
+        <mxCell id="github" value="&lt;b&gt;GitHub Actions&lt;/b&gt; (outside the bank network)&lt;br&gt;supply-chain.yml — mirror images + charts&lt;br&gt;release.yml — validate, package, publish&lt;br&gt;&lt;i&gt;never deploys (CD-2)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#24292E;strokeColor=#8B949E;fontColor=#E6E6E6;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="1515" y="60" width="285" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="octopus" value="&lt;b&gt;Octopus Cloud&lt;/b&gt; (SaaS)&lt;br&gt;besu-infra · besu-workloads · besu-validators&lt;br&gt;approvals + audit trail" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0D2A3F;strokeColor=#2F93E0;fontColor=#E6E6E6;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="20" y="120" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="swift" value="SWIFT&lt;br&gt;(reaches us over SIPN,&lt;br&gt;private — never internet)" style="sketch=0;html=1;dashed=0;whiteSpace=wrap;fillColor=none;strokeColor=#DD344C;fontColor=#F2A9B4;shape=cloud;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="270" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="bankapps" value="Internal bank&lt;br&gt;applications" style="sketch=0;html=1;dashed=1;whiteSpace=wrap;fillColor=none;strokeColor=#B59BFF;fontColor=#B59BFF;shape=cloud;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="55" y="410" width="150" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ops" value="Operator" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.user;fillColor=#232F3E;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="100" y="975" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="banksys" value="Bank systems&lt;br&gt;(event consumers —&lt;br&gt;transport open: EQ-2)" style="sketch=0;html=1;dashed=1;whiteSpace=wrap;fillColor=none;strokeColor=#B59BFF;fontColor=#B59BFF;shape=cloud;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1530" y="820" width="190" height="105" as="geometry" />
+        </mxCell>
+
+        <!-- ================= EGRESS ================= -->
+        <mxCell id="tgw" value="Transit Gateway" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.transit_gateway;fillColor=#8C4FFF;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="330" y="155" width="42" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="proxy" value="Egress proxy (LB VIP)&lt;br&gt;explicit CONNECT :443 · src = runner /32 only&lt;br&gt;dst = 2 Octopus hostnames · NO TLS inspection" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=middle;labelPosition=right;align=left;verticalAlign=middle;spacingLeft=6;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_load_balancing;fillColor=#8C4FFF;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="470" y="155" width="42" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- ================= LB SUBNETS ================= -->
+        <mxCell id="nlb_swift" value="Internal NLB — SWIFT edge (ours)&lt;br&gt;TCP pass-through · IP targets · TargetGroupBinding" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=middle;labelPosition=right;align=left;verticalAlign=middle;spacingLeft=6;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.network_load_balancer;fillColor=#8C4FFF;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="340" y="310" width="46" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="nlb_app" value="Internal NLB — app edge (ours)&lt;br&gt;HTTP + WS · JWT at Besu" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=middle;labelPosition=right;align=left;verticalAlign=middle;spacingLeft=6;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.network_load_balancer;fillColor=#8C4FFF;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="760" y="310" width="46" height="46" as="geometry" />
+        </mxCell>
+
+        <!-- ================= EKS: control plane ================= -->
+        <mxCell id="api" value="Private API endpoint&lt;br&gt;(namespace-scoped access entry for the runner)" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=middle;labelPosition=right;align=left;verticalAlign=middle;spacingLeft=6;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_kubernetes_service;fillColor=#ED7100;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="340" y="425" width="36" height="36" as="geometry" />
+        </mxCell>
+
+        <!-- ================= LEDGER POD ICONS ================= -->
+        <!-- AZ1: V1, V4, RPC-SWIFT-1, app-RPC -->
+        <mxCell id="val1" value="Validator 1" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;fillColor=#ED7100;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="385" y="530" width="44" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="val4" value="Validator 4" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;fillColor=#ED7100;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="515" y="530" width="44" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="rpc1" value="RPC (SWIFT) 1&lt;br&gt;mTLS + method scope" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;fillColor=#D45B07;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="385" y="620" width="44" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="apprpc" value="app-RPC&lt;br&gt;(JWT)" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;fillColor=#D45B07;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="515" y="620" width="44" height="44" as="geometry" />
+        </mxCell>
+        <!-- AZ2: V2, Bootnode 1, RPC-SWIFT-2, explorer-RPC -->
+        <mxCell id="val2" value="Validator 2" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;fillColor=#ED7100;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="655" y="530" width="44" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="boot1" value="Bootnode 1" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;fillColor=#B85450;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="785" y="530" width="44" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="rpc2" value="RPC (SWIFT) 2" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;fillColor=#D45B07;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="655" y="620" width="44" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="exprpc" value="explorer-RPC&lt;br&gt;(DEBUG/TRACE)" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;fillColor=#D45B07;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="785" y="620" width="44" height="44" as="geometry" />
+        </mxCell>
+        <!-- AZ3: V3, Bootnode 2, Blockscout, monitoring -->
+        <mxCell id="val3" value="Validator 3" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;fillColor=#ED7100;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="925" y="530" width="44" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="boot2" value="Bootnode 2" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;fillColor=#B85450;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1055" y="530" width="44" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="blockscout" value="Blockscout&lt;br&gt;(+ Postgres)" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;fillColor=#7AA116;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="925" y="620" width="44" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="obs" value="Prometheus /&lt;br&gt;Alertmanager" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch;fillColor=#E7157B;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1055" y="620" width="44" height="44" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ngnote" value="One validator per node (required anti-affinity) · PDB maxUnavailable 0 · OnDelete updates, rolled one at a time · EBS gp3, WaitForFirstConsumer, expandable · pod placement other than validators is indicative" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontColor=#C8C8C8;fontSize=10;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="335" y="725" width="810" height="36" as="geometry" />
+        </mxCell>
+
+        <!-- shared node group contents -->
+        <mxCell id="tailer" value="Event tailer + consumers&lt;br&gt;(planned — no Lambda)" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=middle;labelPosition=right;align=left;verticalAlign=middle;spacingLeft=6;fontSize=10;fontColor=#B59BFF;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;fillColor=#8C4FFF;strokeColor=none;opacity=70;" vertex="1" parent="1">
+          <mxGeometry x="345" y="830" width="40" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="others" value="Other teams' pods&lt;br&gt;(kept off ledger nodes by the taint;&lt;br&gt;kept away from ledger pods by NetworkPolicy)" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontColor=#5AA9DA;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="760" y="822" width="380" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- ================= RUNNER + ENDPOINTS ================= -->
+        <mxCell id="runner" value="In-VPC EC2 Runner (ours)&lt;br&gt;polling Tentacle · terraform · helm · kubectl&lt;br&gt;SSM only · pinned IP, reserved (B43)" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=middle;labelPosition=right;align=left;verticalAlign=middle;spacingLeft=6;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;fillColor=#ED7100;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="325" y="985" width="46" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="vpce" value="Interface endpoints (Private DNS on)&lt;br&gt;ssm · ssmmessages · ec2messages · ecr.api · ecr.dkr&lt;br&gt;sts · eks · ec2 · elasticloadbalancing · kms&lt;br&gt;secretsmanager · logs · monitoring · sns · sqs&lt;br&gt;(+ eks-auth only if Pod Identity)" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=middle;labelPosition=right;align=left;verticalAlign=middle;spacingLeft=6;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.endpoints;fillColor=#8C4FFF;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="640" y="975" width="46" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="gwe" value="Gateway endpoints&lt;br&gt;s3 (image layers, state, bundle)&lt;br&gt;dynamodb" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=middle;labelPosition=right;align=left;verticalAlign=middle;spacingLeft=6;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.endpoints;fillColor=#7AA116;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="980" y="980" width="40" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ================= OUR REGIONAL RESOURCES ================= -->
+        <mxCell id="kms" value="KMS CMK (ours)&lt;br&gt;validator key custody" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.key_management_service;fillColor=#DD344C;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="275" width="54" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="sm" value="Secrets Manager&lt;br&gt;node keys · TLS · CA" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;fillColor=#DD344C;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="400" width="54" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="cw" value="CloudWatch&lt;br&gt;logs · metrics · alarms" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch;fillColor=#E7157B;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="525" width="54" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="sns" value="SNS — alerts&lt;br&gt;to operators" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.simple_notification_service;fillColor=#E7157B;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="650" width="54" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="sqs" value="SNS FIFO → SQS FIFO&lt;br&gt;event pipeline (planned)" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#B59BFF;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.simple_queue_service;fillColor=#E7157B;strokeColor=none;opacity=70;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="790" width="54" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="S3 (af-south-1)&lt;br&gt;TF state · runner bundle&lt;br&gt;CloudTrail · event archive" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.simple_storage_service;fillColor=#7AA116;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="930" width="54" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="trail" value="CloudTrail&lt;br&gt;every key decrypt" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudtrail;fillColor=#E7157B;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="1080" width="54" height="54" as="geometry" />
+        </mxCell>
+
+        <!-- ECR -->
+        <mxCell id="ecr" value="ECR — the only registry&lt;br&gt;tag immutability ON · no expiry&lt;br&gt;repo policy grants the node role" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;verticalLabelPosition=middle;labelPosition=right;align=left;verticalAlign=middle;spacingLeft=6;fontSize=10;fontColor=#E6E6E6;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_container_registry;fillColor=#ED7100;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1530" y="285" width="54" height="54" as="geometry" />
+        </mxCell>
+
+        <!-- ================= EDGES ================= -->
+        <!-- SWIFT ingress -->
+        <mxCell id="e_swift" value="mTLS JSON-RPC over SIPN" style="endArrow=block;html=1;rounded=0;strokeColor=#DD344C;fontColor=#F2A9B4;fontSize=10;strokeWidth=2;" edge="1" parent="1" source="swift" target="nlb_swift">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_nlb_rpc" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#DD344C;strokeWidth=2;" edge="1" parent="1" source="nlb_swift" target="rpc1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_nlb_rpc2" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#DD344C;strokeWidth=1;" edge="1" parent="1" source="nlb_swift" target="rpc2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_apps" value="" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#B59BFF;" edge="1" parent="1" source="bankapps" target="nlb_app">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="250" y="450" />
+              <mxPoint x="250" y="385" />
+              <mxPoint x="783" y="385" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_appnlb" value="" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#B59BFF;" edge="1" parent="1" source="nlb_app" target="apprpc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Deployment path -->
+        <mxCell id="e_mirror" value="crane copy&lt;br&gt;by digest" style="endArrow=block;html=1;rounded=0;strokeColor=#F5A65B;fontColor=#F5A65B;fontSize=10;" edge="1" parent="1" source="github" target="ecr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_release" value="release.yml → versioned package + release (OIDC)" style="endArrow=block;html=1;rounded=0;strokeColor=#2F93E0;fontColor=#7FBFF0;fontSize=10;" edge="1" parent="1" source="github" target="octopus">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1657" y="48" />
+              <mxPoint x="130" y="48" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_infra" value="besu-infra: AWS-API Terraform&lt;br&gt;(hosted worker — no cluster access)" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#2F93E0;fontColor=#7FBFF0;fontSize=10;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="octopus" target="region">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="130" y="240" />
+            </Array>
+            <mxPoint x="275" y="240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_poll" value="Tentacle polls OUT&lt;br&gt;(CONNECT :443)" style="endArrow=block;html=1;rounded=0;strokeColor=#2F93E0;fontColor=#7FBFF0;fontSize=10;strokeWidth=2;" edge="1" parent="1" source="proxy" target="octopus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_runner_tgw" value="specific-prefix route" style="endArrow=block;html=1;rounded=0;strokeColor=#2F93E0;fontColor=#7FBFF0;fontSize=10;strokeWidth=2;" edge="1" parent="1" source="runner" target="tgw">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="300" y="1008" />
+              <mxPoint x="300" y="176" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_tgw_proxy" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#2F93E0;strokeWidth=2;" edge="1" parent="1" source="tgw" target="proxy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_runner_api" value="helm / kubectl / rolling script&lt;br&gt;(our 2 namespaces only)" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#9AA0FF;fontColor=#B9BDFF;fontSize=10;" edge="1" parent="1" source="runner" target="api">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="460" y="1008" />
+              <mxPoint x="460" y="920" />
+              <mxPoint x="320" y="920" />
+              <mxPoint x="320" y="443" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_ops" value="SSM Session Manager&lt;br&gt;(no SSH, no public IP)" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#9AA0FF;fontColor=#B9BDFF;fontSize=10;" edge="1" parent="1" source="ops" target="runner">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Supply into the cluster -->
+        <mxCell id="e_pull" value="nodes pull by digest&lt;br&gt;(ecr.api / ecr.dkr + S3 layers)" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#F5A65B;fontColor=#F5A65B;fontSize=10;" edge="1" parent="1" source="ecr" target="vpce">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1490" y="312" />
+              <mxPoint x="1490" y="1060" />
+              <mxPoint x="663" y="1060" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_irsa" value="IRSA: each pod reads only its own keys" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#F2A9B4;fontColor=#F2A9B4;fontSize=10;" edge="1" parent="1" source="ledgerng" target="sm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_kms" value="" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#F2A9B4;" edge="1" parent="1" source="sm" target="kms">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_logs" value="logs + metrics" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#F39DC7;fontColor=#F39DC7;fontSize=10;" edge="1" parent="1" source="obs" target="cw">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_alarm" value="alarms" style="endArrow=block;html=1;rounded=0;strokeColor=#F39DC7;fontColor=#F39DC7;fontSize=10;" edge="1" parent="1" source="cw" target="sns">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_events" value="publish events" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#B59BFF;fontColor=#B59BFF;fontSize=10;" edge="1" parent="1" source="tailer" target="sqs">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="365" y="890" />
+              <mxPoint x="1180" y="890" />
+              <mxPoint x="1180" y="817" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_banksys" value="deliver (durable ack)" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#B59BFF;fontColor=#B59BFF;fontSize=10;" edge="1" parent="1" source="sqs" target="banksys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tail" value="eth_getLogs" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#B59BFF;fontColor=#B59BFF;fontSize=10;" edge="1" parent="1" source="tailer" target="apprpc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_explorer" value="" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#A9D08E;" edge="1" parent="1" source="blockscout" target="exprpc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ================= CALLOUTS ================= -->
+        <mxCell id="c1" value="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#F58536;strokeColor=none;fontColor=#FFFFFF;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="225" y="285" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="c2" value="2" style="ellipse;whiteSpace=wrap;html=1;fillColor=#F58536;strokeColor=none;fontColor=#FFFFFF;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="478" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="3" style="ellipse;whiteSpace=wrap;html=1;fillColor=#F58536;strokeColor=none;fontColor=#FFFFFF;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1135" y="940" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="c4" value="4" style="ellipse;whiteSpace=wrap;html=1;fillColor=#F58536;strokeColor=none;fontColor=#FFFFFF;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1215" y="285" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="c5" value="5" style="ellipse;whiteSpace=wrap;html=1;fillColor=#F58536;strokeColor=none;fontColor=#FFFFFF;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="815" y="140" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="c6" value="6" style="ellipse;whiteSpace=wrap;html=1;fillColor=#F58536;strokeColor=none;fontColor=#FFFFFF;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1060" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="c7" value="7" style="ellipse;whiteSpace=wrap;html=1;fillColor=#F58536;strokeColor=none;fontColor=#FFFFFF;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1215" y="535" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="c8" value="8" style="ellipse;whiteSpace=wrap;html=1;fillColor=#F58536;strokeColor=none;fontColor=#FFFFFF;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1215" y="800" width="28" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- ================= OWNERSHIP KEY ================= -->
+        <mxCell id="key" value="Ownership" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#888888;fontColor=#E6E6E6;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1515" y="450" width="285" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="key_ours" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#ED7100;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1530" y="480" width="40" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="key_ours_t" value="Ledger team — deployed and run by us" style="text;html=1;align=left;verticalAlign=middle;fontColor=#E6E6E6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1580" y="480" width="215" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="key_theirs" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#5AA9DA;dashed=1;dashPattern=8 4;" vertex="1" parent="1">
+          <mxGeometry x="1530" y="512" width="40" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="key_theirs_t" value="Cloud team — provided to us" style="text;html=1;align=left;verticalAlign=middle;fontColor=#E6E6E6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1580" y="512" width="215" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="key_planned" value="" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#B59BFF;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1530" y="555" as="sourcePoint" />
+            <mxPoint x="1570" y="555" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="key_planned_t" value="Planned / not yet built (purple)" style="text;html=1;align=left;verticalAlign=middle;fontColor=#E6E6E6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1580" y="544" width="215" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="key_note" value="Trial arrangement; long-term options A (own account) or B (own EKS) keep this design." style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontColor=#AAAAAA;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1530" y="568" width="265" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- ================= LEGEND ================= -->
+        <mxCell id="legend" value="What the numbers mean" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FF9900;fontColor=#FF9900;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="1280" width="1780" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_txt" value="① &lt;b&gt;SWIFT ingress.&lt;/b&gt; SWIFT reaches an internal NLB in the lb subnets over SIPN. The NLB passes TCP straight through to the RPC pods (IP targets, registered by the load-balancer controller's TargetGroupBinding). mTLS, method scoping and the account allowlist are enforced by Besu itself. No public endpoint anywhere. Internal applications use a second internal NLB (JWT-authenticated).&lt;br&gt;&lt;br&gt;② &lt;b&gt;The ledger.&lt;/b&gt; Four QBFT validators (keeps running with 1 down, stops with 2 down) on a dedicated, tainted node group in ledger subnets, one validator per node (required anti-affinity), spread across all three AZs. PodDisruptionBudget maxUnavailable 0 and OnDelete updates mean neither a drain nor a Helm upgrade can take two at once. Node rotation follows the written agreement: never forced, one node at a time. Default-deny NetworkPolicy, enforced by the CNI, keeps every other pod away from them.&lt;br&gt;&lt;br&gt;③ &lt;b&gt;Air-gapped.&lt;/b&gt; No IGW, NAT or default route. Every AWS call goes through an interface endpoint with Private DNS; image layers and Terraform state go through the S3 gateway endpoint. A missing endpoint hangs rather than errors, so it is checked before every deployment. Subnet rules must allow flows F-1 to F-10 (ours) and C-1 to C-4 (the cluster's); NACLs separate roles, while security groups and NetworkPolicy protect services.&lt;br&gt;&lt;br&gt;④ &lt;b&gt;Keys.&lt;/b&gt; Each pod has its own IAM role (IRSA, trust limited by sub + aud to our namespace's service account) and reads only its own secrets, encrypted with our KMS key. Every decrypt is in CloudTrail. The node role has no access to our data, and IMDSv2 hop limit 1 keeps pods off the node role.&lt;br&gt;&lt;br&gt;⑤ &lt;b&gt;Deployment.&lt;/b&gt; GitHub Actions mirrors images into ECR by digest and publishes a versioned package to Octopus Cloud; it never deploys. Octopus applies the AWS-API Terraform from a hosted worker, and runs the in-cluster layer and the one-validator-at-a-time rolling script on the In-VPC EC2 Runner. The runner's Tentacle polls out through the cloud team's shared egress proxy: runner /32 only, two hostnames, port 443, no TLS inspection, specific-prefix route over the Transit Gateway. Nothing inbound.&lt;br&gt;&lt;br&gt;⑥ &lt;b&gt;Operator access.&lt;/b&gt; Session Manager to the runner only (no SSH, no bastion, no public IP); kubectl port-forward from there for Blockscout and the admin RPC listener, which is never behind a load balancer.&lt;br&gt;&lt;br&gt;⑦ &lt;b&gt;Observability.&lt;/b&gt; Metrics and logs go to CloudWatch; alarms go to operators through SNS. Key alarms: a validator out of the producing set for more than 5 minutes, blocks stalled, pod sandbox failures (address exhaustion), unhealthy NLB targets.&lt;br&gt;&lt;br&gt;⑧ &lt;b&gt;Event pipeline (planned, purple).&lt;/b&gt; A tailer in the besu-app namespace reads contract events (eth_getLogs, durable cursor) → SNS FIFO → SQS FIFO → consumers → bank systems, deleting a message only after the receiver's durable acknowledgement; archived to S3. No Lambda anywhere." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontColor=#E6E6E6;fontSize=11;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="1310" width="1760" height="385" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
