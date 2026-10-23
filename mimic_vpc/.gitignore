@@ -1,9 +1,0 @@
-.terraform/
-.terraform.lock.hcl
-*.tfstate
-*.tfstate.*
-*.tfvars
-!*.tfvars.example
-network-handover.auto.tfvars
-crash.log
-.DS_Store

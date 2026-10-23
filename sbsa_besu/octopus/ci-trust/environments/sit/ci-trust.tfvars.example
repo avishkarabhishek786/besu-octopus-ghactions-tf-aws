@@ -1,7 +1,0 @@
-# COPY to ci-trust.tfvars (gitignored). One state per instance+space; applied by an Octopus administrator, never by CI.
-octopus_server_url  = "https://<instance>.octopus.app"
-space_name          = "Default"
-github_repository   = "<owner>/<name>"
-github_ids          = { owner = "<owner-id>", repository = "<repo-id>" } # null for a repository created before 2026-07-15
-allowed_refs        = ["refs/heads/main"]                                 # add a branch only while releasing from it
-deploy_environments = ["SIT"]                                             # never UAT or PROD (CD-41)

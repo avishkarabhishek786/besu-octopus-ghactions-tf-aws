@@ -113,16 +113,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # -----------------------------------------------------------------------
-      # Fail fast and for free, before touching AWS or any public registry.
-      # -----------------------------------------------------------------------
-      # The 8 platform images live in two places: var.container_images (what
-      # Terraform deploys) and mirror.manifest (what we mirror). If they
-      # disagree, the mirror copies a version the cluster will never request
-      # while the one it does request is absent — and that presents as
-      # ImagePullBackOff against a registry that looks fully populated.
-      - name: Check manifest agrees with Terraform
-        run: ./scripts/supply-chain/mirror.sh --check-drift
+      # manual-setup branch: no Terraform here, so the manifest-vs-Terraform drift
+      # check (mirror.sh --check-drift) is gone. mirror.manifest is the only list
+      # of images; the manual build's helm values name the same digests.
 
       # Crane is used for copying images between registries — 
       # crane copy docker.io/library/nginx:1.27 my-registry.example.com/nginx:1.27.

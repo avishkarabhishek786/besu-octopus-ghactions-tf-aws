@@ -1,9 +1,0 @@
-# COPY to aws-trust.tfvars (gitignored). One state for the account; applied by a human, never by Octopus.
-deletion_group     = "sbsa-octopus-trust-001"
-owner              = "ledger-platform"
-cost_center        = "REPLACE-ME"
-region             = "af-south-1"
-octopus_server_url = "https://<instance>.octopus.app"
-space_slug         = "default"
-environments       = ["sit", "uat", "prod"]
-aws_projects       = ["besu-infra"]

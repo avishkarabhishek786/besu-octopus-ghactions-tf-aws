@@ -1,5 +1,16 @@
 # CLAUDE.md — Besu Ledger + Application Platform (`sbsa_besu`)
 
+> ## Branch `manual-setup` (2026-10-23) — the platform built BY HAND, no Terraform
+>
+> This branch holds only what a manual build uses. The AWS layer is built with the AWS CLI;
+> the in-cluster layer is deployed by Octopus through hand-written script steps on the runner.
+> **The guide and run log is `docs/deploy-run-2026-10-23-manual.md`; hand-written files it uses
+> live in `manual/`.** All Terraform (`terraform/`, `octopus/`, the `mimic_*` projects) and the
+> design records were removed here and remain on branch `testing` — read them there
+> (`git show testing:<path>`) for the *why* behind a control. Sections below that describe
+> Terraform roots, states or `terraform apply` do not apply on this branch; the prime directives
+> (§0) and the design decisions (§1, §5–§7) still do.
+
 > Consumes the shared VPC **and, since CT-5, the shared EKS cluster** provided by the
 > bank cloud team. During development those are produced by the sibling projects
 > `mimic_vpc` and `mimic_eks` (built and **first applied live 2026-10-09**; **hostile by default** —

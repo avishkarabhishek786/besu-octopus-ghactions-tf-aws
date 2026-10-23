@@ -1,5 +1,9 @@
 # besu-octopus-ghactions-tf-aws
 
+> **Branch `manual-setup`:** the platform built by hand with no Terraform. The guide is
+> [`sbsa_besu/docs/deploy-run-2026-10-23-manual.md`](sbsa_besu/docs/deploy-run-2026-10-23-manual.md);
+> the Terraform build and its design records are on branch `testing`.
+
 A permissioned **Hyperledger Besu (QBFT)** ledger for a bank on AWS EKS, in a VPC
 the bank's cloud team owns, with no internet egress; built by GitHub Actions and
 Octopus Deploy. One repository, three projects, since 2026-09-18.

@@ -66,10 +66,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "$RECORD" = false ]; then
-  if [ -z "$BUCKET" ]; then
-    BUCKET="$(terraform -chdir="${REPO_ROOT}/terraform/chain" output -raw runner_artifacts_bucket 2>/dev/null || true)"
-  fi
-  [ -n "$BUCKET" ] || die "bucket not given and not found in terraform output (runner_artifacts_bucket). Apply the chain root first, or pass the name as arg 1."
+  [ -n "$BUCKET" ] || die "bucket not given. Pass the runner artefacts bucket name as arg 1 (created in guide P6)."
 fi
 
 WORK="$(mktemp -d)"
@@ -132,33 +129,7 @@ if [ "$DO_TOOLS" = true ]; then
     exit 0
   fi
 
-  # D-20 — Terraform providers, as a FILESYSTEM mirror inside the bundle. The
-  # runner applies the chain root's in-cluster layer, and `terraform init` there
-  # would otherwise reach for registry.terraform.io: no route, so a hang. Mirrored
-  # with the bundled terraform, against the committed lock file, so the runner
-  # gets exactly the provider builds the lock pins. The terraformrc carries ONLY
-  # the mirror -- no `direct` fallback -- so a provider missing from it fails
-  # init at once instead of hanging. Only the chain root: shared and runner are
-  # applied by hosted workers, which have the internet.
-  # Built in a scratch copy: `providers mirror` needs the local modules installed,
-  # and an init in the source tree would leave a .terraform/ behind.
-  log "  terraform providers (chain root) -> filesystem mirror"
-  cp -r "$REPO_ROOT/terraform" "$WORK/tfsrc"
-  rm -rf "$WORK/tfsrc/chain/.terraform"
-  "$WORK/tools/bin/terraform" -chdir="$WORK/tfsrc/chain" init -backend=false -input=false >/dev/null \
-    || die "terraform init (to resolve modules for the provider mirror) failed"
-  "$WORK/tools/bin/terraform" -chdir="$WORK/tfsrc/chain" providers mirror -platform=linux_amd64 "$WORK/tools/providers" >/dev/null \
-    || die "terraform providers mirror failed"
-  rm -rf "$WORK/tfsrc"
-  cat > "$WORK/tools/terraformrc" <<'RC'
-provider_installation {
-  filesystem_mirror {
-    path    = "/usr/local/besu-tools/providers"
-    include = ["*/*/*"]
-  }
-}
-RC
-  ok "    $(find "$WORK/tools/providers" -name '*.zip' | wc -l) provider package(s) mirrored"
+  # manual-setup branch: no Terraform, so no provider mirror (D-20) and no terraformrc.
 
   {
     echo "# runner toolchain bundle -- built $(_ts) from runner-tools.manifest"
@@ -180,7 +151,7 @@ fi
 # Secrets Manager, by push-deploy-config.sh -- it must never land in an S3
 # object alongside the source.
 if [ "$DO_SOURCE" = true ] && [ -n "$SOURCE_DIR" ]; then
-  [ -d "$SOURCE_DIR/scripts" ] && [ -d "$SOURCE_DIR/terraform" ] || die "--source-dir $SOURCE_DIR is not a platform tree (no scripts/ or terraform/)"
+  [ -d "$SOURCE_DIR/scripts" ] && [ -d "$SOURCE_DIR/helm" ] || die "--source-dir $SOURCE_DIR is not a platform tree (no scripts/ or helm/)"
   REF="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["commit"][:7]+"/"+d["version"])' "$SOURCE_DIR/RELEASE.json" 2>/dev/null || echo unknown)"
   BRANCH="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["ref"].split("/")[-1])' "$SOURCE_DIR/RELEASE.json" 2>/dev/null || echo unknown)"
   log "archiving source from ${SOURCE_DIR} (release ${REF})"
@@ -205,4 +176,4 @@ elif [ "$DO_SOURCE" = true ]; then
   ok "source uploaded (${BRANCH}@${REF})"
 fi
 
-ok "done. Now apply terraform/runner; the instance fetches both objects at boot."
+ok "done. Now launch the runner (guide P6); it fetches both objects at boot."

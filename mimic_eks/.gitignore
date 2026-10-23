@@ -1,9 +1,0 @@
-# Hand-over files are generated, and in production they carry bank-specific
-# values (CD-10). Never committed — the same rule as mimic_vpc and mimic_egress.
-*.auto.tfvars
-*.tfstate
-*.tfstate.*
-.terraform/
-.terraform.lock.hcl.bak
-# Rendered tenancy manifests: generated from tfvars, applied from the runner.
-manifests/
