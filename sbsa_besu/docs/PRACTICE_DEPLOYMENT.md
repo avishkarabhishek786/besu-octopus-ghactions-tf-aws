@@ -147,10 +147,11 @@ GitHub → repo **Settings → Secrets and variables → Actions**:
 | variable | `ECR_PREFIX` | `terraform output -raw ecr_prefix` |
 | variable | `AWS_REGION` | `af-south-1` |
 | variable | `CI_RUNNER_LABELS` | `["ubuntu-latest"]` (JSON) |
-| variable | `RELEASE_RUNNER_LABELS` | `["ubuntu-latest"]` (JSON) |
+| variable | `RELEASE_RUNNER_LABELS` | *optional* — `release.yml` falls back to `CI_RUNNER_LABELS`; set only to run releases elsewhere |
+| secret | `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN` | *optional, both or neither* — `mirror.sh` logs in to Docker Hub to avoid the anonymous pull rate limit; one alone is ignored (anonymous, with a warning). Token: Docker Hub → Account settings → Personal access tokens, **read-only** |
 
 **🔁 Already done looks like:** the provider check prints its ARN (nothing created);
-`No changes. Your infrastructure matches the configuration.`; and the six entries already listed in GitHub.
+`No changes. Your infrastructure matches the configuration.`; and the five required entries (two secrets, three variables) already listed in GitHub.
 **🏦 In the bank:** the registry is the cloud team's shared-services ECR (CD-27); the push role is
 theirs to grant (R-7). **The GitHub OIDC provider is theirs too, and may not exist at all.** It
 lives in the account holding the push role (theirs), and is needed only if their runners use GitHub
